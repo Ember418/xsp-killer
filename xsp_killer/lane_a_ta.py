@@ -37,6 +37,7 @@ class TaRules:
     suppress_morning_cut_dte_gte: int
     entry_mode: str  # close_window_and_bb | bb_bounce | close_window_only
     intraday_entry_enabled: bool
+    confirm_optional: bool
 
     @classmethod
     def from_yaml(cls, path: Path) -> TaRules:
@@ -54,8 +55,9 @@ class TaRules:
             require_vwap_reclaim=bool(entry_ta.get("require_vwap_reclaim", True)),
             upper_bb_touch_tolerance_pct=float(exit_ta.get("upper_bb_touch_tolerance_pct", 0.002)),
             suppress_morning_cut_dte_gte=int(hold.get("suppress_morning_cut_dte_gte", 30)),
-            entry_mode=str(entry_ta.get("mode", "close_window_and_bb")),
-            intraday_entry_enabled=bool(entry_ta.get("intraday_enabled", True)),
+            entry_mode=str(entry_ta.get("mode", "close_window_only")),
+            intraday_entry_enabled=bool(entry_ta.get("intraday_enabled", False)),
+            confirm_optional=bool(ta.get("confirm_optional", True)),
         )
 
 
@@ -82,6 +84,7 @@ class TaSignal:
     confirm: BarSnapshot | None
     entry_ok: bool
     exit_ok: bool
+    upper_bb_touched: bool
     detail: str
     errors: list[str] = field(default_factory=list)
 
@@ -173,11 +176,18 @@ def detect_bb_bounce_entry(prev: BarSnapshot, curr: BarSnapshot, *, require_vwap
     return True, f"bb_bounce off {band} band (close {curr.close:.2f} > mid {curr.bb_mid:.2f})"
 
 
+def detect_upper_bb_touch(prev: BarSnapshot, curr: BarSnapshot, *, tolerance_pct: float) -> bool:
+    """True when price has reached the upper Bollinger band."""
+    upper = curr.bb_upper
+    return curr.high >= upper * (1.0 - tolerance_pct) or prev.high >= prev.bb_upper * (
+        1.0 - tolerance_pct
+    )
+
+
 def detect_upper_bb_exit(prev: BarSnapshot, curr: BarSnapshot, *, tolerance_pct: float) -> tuple[bool, str]:
     """Pump reached upper BB then rejected."""
     upper = curr.bb_upper
-    touch = curr.high >= upper * (1.0 - tolerance_pct) or prev.high >= prev.bb_upper * (1.0 - tolerance_pct)
-    if not touch:
+    if not detect_upper_bb_touch(prev, curr, tolerance_pct=tolerance_pct):
         return False, "no upper BB touch"
 
     rejected = curr.close < upper or curr.close < curr.open
@@ -218,7 +228,7 @@ def evaluate_ta_signals(
 
     if curr_p is None:
         errors.append("insufficient primary bars")
-        return TaSignal("none", None, curr_c, False, False, "no primary TA data", errors)
+        return TaSignal("none", None, curr_c, False, False, False, "no primary TA data", errors)
 
     entry_p, entry_detail_p = detect_bb_bounce_entry(prev_p, curr_p, require_vwap=rules.require_vwap_reclaim)
     entry_c = True
@@ -226,7 +236,7 @@ def evaluate_ta_signals(
     if curr_c is not None and prev_c is not None:
         entry_c, entry_detail_c = detect_bb_bounce_entry(prev_c, curr_c, require_vwap=rules.require_vwap_reclaim)
 
-    entry_ok = entry_p and entry_c
+    entry_ok = entry_p and (entry_c or rules.confirm_optional)
     detail_parts = [f"primary: {entry_detail_p}"]
     if curr_c is not None:
         detail_parts.append(f"confirm: {entry_detail_c}")
@@ -239,6 +249,15 @@ def evaluate_ta_signals(
 
     exit_ok = exit_p or exit_c
     exit_detail = f"primary: {exit_detail_p}; confirm: {exit_detail_c}"
+    upper_touched = False
+    if prev_p is not None and curr_p is not None:
+        upper_touched = detect_upper_bb_touch(
+            prev_p, curr_p, tolerance_pct=rules.upper_bb_touch_tolerance_pct
+        )
+    if not upper_touched and prev_c is not None and curr_c is not None:
+        upper_touched = detect_upper_bb_touch(
+            prev_c, curr_c, tolerance_pct=rules.upper_bb_touch_tolerance_pct
+        )
 
     signal = "none"
     if entry_ok:
@@ -252,6 +271,7 @@ def evaluate_ta_signals(
         confirm=curr_c,
         entry_ok=entry_ok,
         exit_ok=exit_ok,
+        upper_bb_touched=upper_touched,
         detail="; ".join(detail_parts) if entry_ok else exit_detail,
     )
 

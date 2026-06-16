@@ -28,7 +28,8 @@ RULES = TaRules(
     upper_bb_touch_tolerance_pct=0.002,
     suppress_morning_cut_dte_gte=30,
     entry_mode="close_window_and_bb",
-    intraday_entry_enabled=True,
+    intraday_entry_enabled=False,
+    confirm_optional=True,
 )
 
 

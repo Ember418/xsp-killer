@@ -28,12 +28,10 @@ DEFAULT_PAPER_BRIEF = ROOT / "briefs" / "xsp-lane-a-paper-pnl-latest.json"
 
 ET = ZoneInfo("America/New_York")
 ExitReason = Literal[
-    "morning_cut",
-    "max_loss",
-    "open_plus_30_red",
-    "manual",
-    "target_hit",
+    "stop_loss",
+    "take_profit",
     "upper_bb_rejection",
+    "manual",
 ]
 
 
@@ -44,10 +42,13 @@ class LaneRules:
     dte_max: int
     exclude_expiry_month: tuple[str, ...]
     chain_symbols: tuple[str, ...]
-    hard_max_loss_usd_per_contract: float
-    morning_eval_start_et: time
-    morning_cut_deadline_et: time
-    rth_open_cut_minutes: int
+    stop_loss_pct: float
+    take_profit_pct: float
+    sell_eval_start_et: time
+    sell_deadline_et: time
+    no_sell_start_et: time
+    no_sell_end_et: time
+    require_upper_bb_for_take_profit: bool
     logic_version: str
     regime_gate: str = "GREEN"
 
@@ -68,11 +69,16 @@ class LaneRules:
             dte_max=int(entry.get("dte_max", 60)),
             exclude_expiry_month=tuple(str(x) for x in entry.get("exclude_expiry_month") or []),
             chain_symbols=tuple(str(x).upper() for x in entry.get("chain_symbols") or ["SPX", "XSP"]),
-            hard_max_loss_usd_per_contract=float(exit_cfg.get("hard_max_loss_usd_per_contract", 75)),
-            morning_eval_start_et=_parse_time(str(exit_cfg.get("morning_eval_start_et", "09:30"))),
-            morning_cut_deadline_et=_parse_time(str(exit_cfg.get("morning_cut_deadline_et", "10:30"))),
-            rth_open_cut_minutes=int(exit_cfg.get("rth_open_cut_minutes", 30)),
-            logic_version=str(logging_cfg.get("logic_version", "xsp_lane_a_v1")),
+            stop_loss_pct=float(exit_cfg.get("stop_loss_pct", 0.20)),
+            take_profit_pct=float(exit_cfg.get("take_profit_pct", 0.20)),
+            sell_eval_start_et=_parse_time(str(exit_cfg.get("sell_eval_start_et", "09:30"))),
+            sell_deadline_et=_parse_time(str(exit_cfg.get("sell_deadline_et", "10:00"))),
+            no_sell_start_et=_parse_time(str(exit_cfg.get("no_sell_start_et", "08:30"))),
+            no_sell_end_et=_parse_time(str(exit_cfg.get("no_sell_end_et", "09:30"))),
+            require_upper_bb_for_take_profit=bool(
+                exit_cfg.get("require_upper_bb_for_take_profit", True)
+            ),
+            logic_version=str(logging_cfg.get("logic_version", "xsp_lane_a_v2")),
             regime_gate=str(entry.get("regime_gate", "GREEN")),
         )
 
@@ -201,13 +207,7 @@ def classify_position(raw: dict[str, Any], rules: LaneRules) -> LaneAPosition | 
     mark = float(mark_raw) if mark_raw is not None else None
     pos_id = str(raw.get("id") or raw.get("option_id") or raw.get("url") or f"{chain}:{exp}:{raw.get('strike_price')}")
     strike = float(raw.get("strike_price") or raw.get("strike") or 0)
-    pnl_usd = None
-    pnl_per_contract = None
-    if mark is not None and avg > 0:
-        # Options multiplier 100
-        pnl_per_contract = (mark - avg) * 100.0
-        pnl_usd = pnl_per_contract * qty
-    return LaneAPosition(
+    pos = LaneAPosition(
         position_id=pos_id,
         chain_symbol=chain,
         option_type=opt_type,
@@ -217,27 +217,76 @@ def classify_position(raw: dict[str, Any], rules: LaneRules) -> LaneAPosition | 
         average_price=avg,
         mark_price=mark,
         dte=compute_dte(exp),
-        pnl_usd=pnl_usd,
-        pnl_per_contract=pnl_per_contract,
+        pnl_usd=None,
+        pnl_per_contract=None,
     )
+    _attach_economics_pnl(pos)
+    return pos
 
 
 def read_regime() -> tuple[str | None, bool]:
+    """Read regime from intel bus, else local macro_regime fallback."""
+    regime: str | None = None
     try:
         from xsp_killer.intel import IntelReader
 
         snap = IntelReader.read("intel:playbook_snapshot")
-        if not snap:
-            return None, True
-        value = snap.get("value") if isinstance(snap, dict) else snap
-        if isinstance(value, dict):
-            regime = str(value.get("regime") or value.get("status") or "").upper()
-            if regime in ("YELLOW", "RED"):
-                return regime, False
-            return regime or None, True
+        if snap:
+            value = snap.get("value") if isinstance(snap, dict) else snap
+            if isinstance(value, dict):
+                regime = str(value.get("regime") or value.get("status") or "").upper() or None
     except Exception as exc:
         logger.warning("playbook_snapshot read failed: %s", exc)
-    return None, True
+
+    if not regime:
+        try:
+            from xsp_killer.macro_regime import classify_regime
+
+            state = classify_regime()
+            regime = state.regime
+            logger.info("macro_regime fallback: %s (%s)", regime, state.reason)
+        except Exception as exc:
+            logger.warning("macro_regime fallback failed: %s", exc)
+            return "UNKNOWN", False
+
+    if regime in ("YELLOW", "RED"):
+        return regime, False
+    if regime == "GREEN":
+        return regime, True
+    return regime, False
+
+
+def in_no_sell_window(now: datetime, rules: LaneRules) -> bool:
+    t = now.time()
+    return rules.no_sell_start_et <= t < rules.no_sell_end_et
+
+
+def in_sell_window(now: datetime, rules: LaneRules) -> bool:
+    t = now.time()
+    return rules.sell_eval_start_et <= t <= rules.sell_deadline_et
+
+
+def _position_return_pct(pos: LaneAPosition) -> float | None:
+    if pos.average_price <= 0 or pos.mark_price is None:
+        return None
+    return (pos.mark_price - pos.average_price) / pos.average_price
+
+
+def _attach_economics_pnl(pos: LaneAPosition, *, rules_path: Path | None = None) -> None:
+    if pos.mark_price is None or pos.average_price <= 0:
+        return
+    try:
+        from xsp_killer.paper_economics import PaperEconomics, pnl_per_contract
+
+        econ = PaperEconomics.from_yaml(rules_path or DEFAULT_RULES)
+        pos.pnl_per_contract = pnl_per_contract(
+            entry_mid=pos.average_price,
+            exit_mid=pos.mark_price,
+            econ=econ,
+        )
+        pos.pnl_usd = pos.pnl_per_contract * pos.quantity
+    except Exception as exc:
+        logger.warning("economics pnl failed: %s", exc)
 
 
 def evaluate_exit_alerts(
@@ -248,65 +297,62 @@ def evaluate_exit_alerts(
     ta_signal: Any | None = None,
     suppress_morning_cut_dte: int | None = None,
 ) -> list[ExitAlert]:
+    """Mentor v2: sell 09:30–10:00 ET; skip 08:30–09:30; 20% SL/TP with BB patience."""
+    _ = suppress_morning_cut_dte  # legacy param — morning cuts removed in v2
     now = now_et or datetime.now(ET)
-    t = now.time()
     alerts: list[ExitAlert] = []
+
+    if in_no_sell_window(now, rules):
+        return alerts
+    if not in_sell_window(now, rules):
+        return alerts
+
+    ret_pct = _position_return_pct(pos)
+    if ret_pct is None:
+        return alerts
+
     pnl_c = pos.pnl_per_contract
     pnl = pos.pnl_usd
 
-    if pnl_c is not None and pnl_c <= -rules.hard_max_loss_usd_per_contract:
+    if ret_pct <= -rules.stop_loss_pct:
         alerts.append(
             ExitAlert(
                 position_id=pos.position_id,
-                exit_reason="max_loss",
-                message=f"Loss ${pnl_c:.2f}/contract exceeds max ${rules.hard_max_loss_usd_per_contract}",
+                exit_reason="stop_loss",
+                message=f"Stop loss {ret_pct * 100:.1f}% (limit -{rules.stop_loss_pct * 100:.0f}%)",
                 pnl_usd=pnl,
                 pnl_per_contract=pnl_c,
             )
         )
+        return alerts
 
-    if ta_signal is not None and getattr(ta_signal, "exit_ok", False):
-        if pnl_c is None or pnl_c > 0:
-            detail = getattr(ta_signal, "detail", "upper BB rejection")
+    if ret_pct >= rules.take_profit_pct:
+        can_take = True
+        if rules.require_upper_bb_for_take_profit and ta_signal is not None:
+            touched = getattr(ta_signal, "upper_bb_touched", False)
+            rejected = getattr(ta_signal, "exit_ok", False)
+            if not touched and not rejected:
+                can_take = False
+        if can_take:
+            reason: ExitReason = (
+                "upper_bb_rejection"
+                if ta_signal is not None and getattr(ta_signal, "exit_ok", False)
+                else "take_profit"
+            )
+            detail = getattr(ta_signal, "detail", "") if ta_signal else ""
             alerts.append(
                 ExitAlert(
                     position_id=pos.position_id,
-                    exit_reason="upper_bb_rejection",
-                    message=f"Upper BB rejection — {detail}",
+                    exit_reason=reason,
+                    message=(
+                        f"Take profit {ret_pct * 100:.1f}% (target +{rules.take_profit_pct * 100:.0f}%)"
+                        + (f" — {detail}" if detail else "")
+                    ),
                     pnl_usd=pnl,
                     pnl_per_contract=pnl_c,
                 )
             )
 
-    hold_extended = (
-        suppress_morning_cut_dte is not None and pos.dte >= suppress_morning_cut_dte
-    )
-
-    if pnl_c is not None and pnl_c < 0 and not hold_extended:
-        open_cut = (
-            datetime.combine(now.date(), rules.morning_eval_start_et, tzinfo=ET)
-            + timedelta(minutes=rules.rth_open_cut_minutes)
-        ).time()
-        if t >= open_cut and t < rules.morning_cut_deadline_et:
-            alerts.append(
-                ExitAlert(
-                    position_id=pos.position_id,
-                    exit_reason="open_plus_30_red",
-                    message=f"Still red (${pnl_c:.2f}/contract) after open+{rules.rth_open_cut_minutes}m",
-                    pnl_usd=pnl,
-                    pnl_per_contract=pnl_c,
-                )
-            )
-        if t >= rules.morning_cut_deadline_et:
-            alerts.append(
-                ExitAlert(
-                    position_id=pos.position_id,
-                    exit_reason="morning_cut",
-                    message=f"Morning cut deadline {rules.morning_cut_deadline_et} — still red (${pnl_c:.2f}/contract)",
-                    pnl_usd=pnl,
-                    pnl_per_contract=pnl_c,
-                )
-            )
     return alerts
 
 
@@ -352,13 +398,7 @@ def paper_positions_to_lane(
         mark = float(mark_raw) if mark_raw is not None else None
         pos_id = str(raw.get("position_id") or "")
         strike = float(raw.get("strike") or 0)
-        pnl_usd = None
-        pnl_per_contract = None
-        if mark is not None and avg > 0:
-            pnl_per_contract = (mark - avg) * 100.0
-            pnl_usd = pnl_per_contract * qty
-        out.append(
-            LaneAPosition(
+        lane_pos = LaneAPosition(
                 position_id=pos_id,
                 chain_symbol=chain,
                 option_type=opt_type,
@@ -371,10 +411,11 @@ def paper_positions_to_lane(
                 lane=str(raw.get("lane") or "A"),
                 entry_ts=raw.get("entry_ts"),
                 delta_at_entry=raw.get("delta_at_entry"),
-                pnl_usd=pnl_usd,
-                pnl_per_contract=pnl_per_contract,
+                pnl_usd=None,
+                pnl_per_contract=None,
             )
-        )
+        _attach_economics_pnl(lane_pos)
+        out.append(lane_pos)
     return out
 
 

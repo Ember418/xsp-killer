@@ -9,7 +9,9 @@ venv/
 logs/*.jsonl
 briefs/*-latest.json
 briefs/lane-a-state.json
+reports/gap-audit/
 !.gitkeep
 *.egg-info/
 dist/
 build/
+briefs/xsp-lane-a-state.json

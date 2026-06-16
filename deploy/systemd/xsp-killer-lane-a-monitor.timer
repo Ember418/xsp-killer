@@ -1,11 +1,10 @@
 [Unit]
-Description=XSP Killer Lane A morning — 09:35/09:45/10:00/10:30 ET
+Description=XSP Killer Lane A morning sell window — 09:35/09:45/10:00 ET (Mon-Fri)
 
 [Timer]
-OnCalendar=*-*-* 09:35:00 America/New_York
-OnCalendar=*-*-* 09:45:00 America/New_York
-OnCalendar=*-*-* 10:00:00 America/New_York
-OnCalendar=*-*-* 10:30:00 America/New_York
+OnCalendar=Mon..Fri *-*-* 09:35:00 America/New_York
+OnCalendar=Mon..Fri *-*-* 09:45:00 America/New_York
+OnCalendar=Mon..Fri *-*-* 10:00:00 America/New_York
 Persistent=true
 RandomizedDelaySec=30
 

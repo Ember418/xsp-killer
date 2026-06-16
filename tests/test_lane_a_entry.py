@@ -10,6 +10,7 @@ from xsp_killer.lane_a_entry import (
     already_entered_today,
     in_entry_window,
     open_paper_positions,
+    pick_cheapest_atm_strike,
     round_xsp_strike,
     run_paper_entry,
 )
@@ -21,7 +22,7 @@ ET = ZoneInfo("America/New_York")
 ENTRY_RULES = EntryRules(
     window_start_et=time(15, 45),
     window_end_et=time(16, 0),
-    prior_day_spy_positive=True,
+    prior_day_spy_positive=False,
     max_open_positions=1,
     quantity=1.0,
     enabled=True,
@@ -33,18 +34,21 @@ LANE_RULES = LaneRules(
     dte_max=60,
     exclude_expiry_month=("01",),
     chain_symbols=("SPX", "XSP"),
-    hard_max_loss_usd_per_contract=75.0,
-    morning_eval_start_et=time(9, 30),
-    morning_cut_deadline_et=time(10, 30),
-    rth_open_cut_minutes=30,
-    logic_version="xsp_lane_a_v1",
+    stop_loss_pct=0.20,
+    take_profit_pct=0.20,
+    sell_eval_start_et=time(9, 30),
+    sell_deadline_et=time(10, 0),
+    no_sell_start_et=time(8, 30),
+    no_sell_end_et=time(9, 30),
+    require_upper_bb_for_take_profit=True,
+    logic_version="xsp_lane_a_v2",
 )
 
 
 def test_in_entry_window_weekday():
-    inside = datetime(2026, 6, 16, 15, 47, tzinfo=ET)  # Tue
+    inside = datetime(2026, 6, 16, 15, 47, tzinfo=ET)
     outside = datetime(2026, 6, 16, 15, 30, tzinfo=ET)
-    weekend = datetime(2026, 6, 14, 15, 47, tzinfo=ET)  # Sun
+    weekend = datetime(2026, 6, 14, 15, 47, tzinfo=ET)
     assert in_entry_window(inside, ENTRY_RULES) is True
     assert in_entry_window(outside, ENTRY_RULES) is False
     assert in_entry_window(weekend, ENTRY_RULES) is False
@@ -52,6 +56,18 @@ def test_in_entry_window_weekday():
 
 def test_round_xsp_strike():
     assert round_xsp_strike(6012.3) == 6010.0
+
+
+def test_pick_cheapest_atm_strike(monkeypatch):
+    exp = date(2026, 7, 18)
+
+    def _quote(strike, expiration):
+        return (2.0 if strike == 601.0 else 2.5, 0.5)
+
+    monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spy_call_quote", _quote)
+    strike, prem, _ = pick_cheapest_atm_strike(6012.0, exp, max_steps_from_atm=1)
+    assert strike == 6010.0
+    assert prem == 2.0
 
 
 def test_open_paper_positions_filters_closed():
@@ -76,12 +92,13 @@ def test_already_entered_today():
 
 def _mock_ta_entry_ok(monkeypatch):
     fake = TaSignal(
-        signal="bb_bounce_entry",
+        signal="none",
         primary=None,
         confirm=None,
-        entry_ok=True,
+        entry_ok=False,
         exit_ok=False,
-        detail="test bounce",
+        upper_bb_touched=False,
+        detail="not used in close_window_only",
     )
     monkeypatch.setattr("xsp_killer.lane_a_entry.evaluate_ta_signals", lambda rules: fake)
 
@@ -91,6 +108,7 @@ def test_run_paper_entry_outside_window(tmp_path, monkeypatch):
     _mock_ta_entry_ok(monkeypatch)
     decision = run_paper_entry(
         state_path=tmp_path / "state.json",
+        log_path=tmp_path / "paper.jsonl",
         now_et=datetime(2026, 6, 16, 10, 0, tzinfo=ET),
         publish_intel=False,
     )
@@ -101,6 +119,7 @@ def test_run_paper_entry_outside_window(tmp_path, monkeypatch):
 def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
     monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
     _mock_ta_entry_ok(monkeypatch)
+
     def _regime():
         return "GREEN", True
 
@@ -112,19 +131,20 @@ def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
         lambda rules, today=None: date(2026, 7, 18),
     )
     monkeypatch.setattr(
-        "xsp_killer.lane_a_entry.fetch_spy_call_quote",
-        lambda strike, exp: (2.45, 0.52),
+        "xsp_killer.lane_a_entry.pick_cheapest_atm_strike",
+        lambda spx, exp, max_steps_from_atm=1: (6010.0, 2.45, 0.52),
     )
 
     decision = run_paper_entry(
         state_path=tmp_path / "state.json",
+        log_path=tmp_path / "paper.jsonl",
         now_et=datetime(2026, 6, 16, 15, 47, tzinfo=ET),
         publish_intel=False,
     )
     assert decision.entered is True
     assert decision.position is not None
     assert decision.position["strike"] == 6010.0
-    assert decision.position["average_price"] == 2.45
+    assert decision.position["average_price"] > 2.45
 
 
 def test_run_paper_entry_blocks_when_open_position(tmp_path, monkeypatch):
@@ -137,6 +157,7 @@ def test_run_paper_entry_blocks_when_open_position(tmp_path, monkeypatch):
     )
     decision = run_paper_entry(
         state_path=state_path,
+        log_path=tmp_path / "paper.jsonl",
         now_et=datetime(2026, 6, 16, 15, 47, tzinfo=ET),
         force=True,
         publish_intel=False,

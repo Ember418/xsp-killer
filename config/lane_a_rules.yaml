@@ -1,5 +1,6 @@
-# XSP Lane A — overnight swing + mentor BB/VWAP playbook (paper log-only)
-# Source: briefs/2026-06-14_xsp-lane-a-overnight-swing-monitor-cemini-prod.md
+# XSP Lane A — mentor playbook v2 (buy at close, sell by 10am)
+# Entry: close window, ≥2wk DTE, cheapest near-ATM strike
+# Exit: 20% stop / 20% take-profit (patient until upper BB touched)
 
 lane: A
 instrument: XSP
@@ -10,38 +11,46 @@ entry:
   manual_or_confirm: false
   window_start_et: "15:45"
   window_end_et: "16:00"
-  prior_day_spy_positive: true
+  prior_day_spy_positive: false
   regime_gate: GREEN
   dte_min: 14
   dte_max: 60
   exclude_expiry_month: ["01"]
   chain_symbols: ["SPX", "XSP"]
+  strike_max_steps_from_atm: 1
 
 exit:
-  hard_max_loss_usd_per_contract: 75
-  morning_eval_start_et: "09:30"
-  morning_cut_deadline_et: "10:30"
-  rth_open_cut_minutes: 30
+  stop_loss_pct: 0.20
+  take_profit_pct: 0.20
+  sell_eval_start_et: "09:30"
+  sell_deadline_et: "10:00"
+  no_sell_start_et: "08:30"
+  no_sell_end_et: "09:30"
+  require_upper_bb_for_take_profit: true
 
-# Mentor playbook: Bollinger Bands + VWAP on SPY (15m confirm, 1h primary)
+paper_economics:
+  commission_usd_per_contract: 0.65
+  slippage_pct_of_premium: 0.005
+
 ta:
   symbol: SPY
   primary_timeframe: 1h
   confirm_timeframe: 15m
   bb_period: 20
   bb_std: 2.0
+  confirm_optional: true
   entry:
-    mode: close_window_and_bb   # close_window_and_bb | bb_bounce | close_window_only
-    intraday_enabled: true      # scan every 15m RTH for BB bounce entry
-    require_vwap_reclaim: true  # bounce bar must close above session VWAP
+    mode: close_window_only
+    intraday_enabled: false
+    require_vwap_reclaim: false
   exit:
     upper_bb_rejection: true
     upper_bb_touch_tolerance_pct: 0.002
   hold:
-    suppress_morning_cut_dte_gte: 30  # ≥30 DTE: skip morning_cut / open_plus_30_red
+    suppress_morning_cut_dte_gte: 30
 
 logging:
-  logic_version: xsp_lane_a_v1
+  logic_version: xsp_lane_a_v2
   required_fields:
     - lane
     - entry_ts
@@ -52,18 +61,16 @@ logging:
     - pnl_usd
 
 exit_reasons:
-  - morning_cut
-  - max_loss
-  - open_plus_30_red
-  - manual
-  - target_hit
+  - stop_loss
+  - take_profit
   - upper_bb_rejection
+  - manual
 
 monitor:
-  et_check_minutes: [35, 45, 0, 30]  # 09:35, 09:45, 10:00, 10:30 morning
-  et_check_hours: [9, 9, 10, 10]
-  intraday_minutes: [0, 15, 30, 45]  # every 15m during RTH (09:30–16:00)
-  phase: 0  # alerts only — no auto-close
+  et_check_minutes: [35, 45, 0]
+  et_check_hours: [9, 9, 10]
+  intraday_minutes: [0, 15, 30, 45]
+  phase: 0
   rh_poll: false
 
 paper_pnl:

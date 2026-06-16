@@ -46,6 +46,7 @@ class EntryRules:
     quantity: float
     enabled: bool
     chain_symbol: str = "XSP"
+    strike_max_steps_from_atm: int = 1
 
     @classmethod
     def from_yaml(cls, path: Path) -> EntryRules:
@@ -60,11 +61,12 @@ class EntryRules:
         return cls(
             window_start_et=_parse_time(str(entry.get("window_start_et", "15:45"))),
             window_end_et=_parse_time(str(entry.get("window_end_et", "16:00"))),
-            prior_day_spy_positive=bool(entry.get("prior_day_spy_positive", True)),
+            prior_day_spy_positive=bool(entry.get("prior_day_spy_positive", False)),
             max_open_positions=int(paper.get("max_open_positions", 1)),
             quantity=float(paper.get("quantity", 1)),
             enabled=bool(paper.get("enabled", True)),
             chain_symbol=str(data.get("instrument", "XSP")).upper(),
+            strike_max_steps_from_atm=int(entry.get("strike_max_steps_from_atm", 1)),
         )
 
 
@@ -185,6 +187,35 @@ def round_xsp_strike(spx_level: float) -> float:
     return round(spx_level / step) * step
 
 
+def pick_cheapest_atm_strike(
+    spx_level: float,
+    expiration: date,
+    *,
+    max_steps_from_atm: int = 1,
+) -> tuple[float, float | None, float | None]:
+    """Cheapest near-ATM XSP strike (mentor: closest to money, lowest premium)."""
+    atm = round_xsp_strike(spx_level)
+    step = 5.0
+    candidates = [atm + i * step for i in range(-max_steps_from_atm, max_steps_from_atm + 1)]
+    best_strike = atm
+    best_premium: float | None = None
+    best_delta: float | None = None
+    best_dist = float("inf")
+    for xsp_strike in candidates:
+        prem, delta = fetch_spy_call_quote(xsp_strike / 10.0, expiration)
+        if prem is None or prem <= 0:
+            continue
+        dist = abs(xsp_strike - spx_level)
+        if dist < best_dist or (dist == best_dist and (best_premium is None or prem < best_premium)):
+            best_strike = xsp_strike
+            best_premium = prem
+            best_delta = delta
+            best_dist = dist
+    if best_premium is None:
+        return atm, None, None
+    return best_strike, best_premium, best_delta
+
+
 def fetch_spy_call_quote(strike_spy: float, expiration: date) -> tuple[float | None, float | None]:
     """Mid premium and delta proxy from SPY chain (XSP price proxy)."""
     try:
@@ -257,6 +288,7 @@ def build_paper_position(
         "quantity": entry_rules.quantity,
         "average_price": round(premium, 4),
         "mark_price": round(premium, 4),
+        "entry_mid_premium": round(premium, 4),
         "delta_at_entry": delta,
         "entry_ts": evaluated_at,
         "dte": compute_dte(expiration),
@@ -280,7 +312,7 @@ def append_entry_log(
     *,
     log_path: Path | None = None,
 ) -> None:
-    path = log_path or DEFAULT_PAPER_LOG
+    path = log_path if log_path is not None else DEFAULT_PAPER_LOG
     path.parent.mkdir(parents=True, exist_ok=True)
     row = {
         "ts": decision.evaluated_at,
@@ -348,6 +380,7 @@ def run_paper_entry(
     *,
     rules_path: Path | None = None,
     state_path: Path | None = None,
+    log_path: Path | None = None,
     now_et: datetime | None = None,
     force: bool = False,
     intraday: bool = False,
@@ -380,12 +413,12 @@ def run_paper_entry(
 
     if not paper_entry_enabled():
         decision.skip_reason = "XSP_LANE_A_PAPER_ENTRY disabled"
-        _finalize_entry(state, state_path, decision, publish_intel)
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
     if not entry_rules.enabled:
         decision.skip_reason = "paper_entry.disabled in rules"
-        _finalize_entry(state, state_path, decision, publish_intel)
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
     gates_ok, gate_reason = entry_gates_ok(
@@ -398,23 +431,23 @@ def run_paper_entry(
     )
     if not gates_ok:
         decision.skip_reason = gate_reason
-        _finalize_entry(state, state_path, decision, publish_intel)
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
     open_pos = open_paper_positions(state)
     if len(open_pos) >= entry_rules.max_open_positions:
         decision.skip_reason = f"max open paper positions ({entry_rules.max_open_positions})"
-        _finalize_entry(state, state_path, decision, publish_intel)
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
     if not force and already_entered_today(state, now.date()):
         decision.skip_reason = "already entered or attempted today"
-        _finalize_entry(state, state_path, decision, publish_intel)
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
     if lane_rules.regime_gate == "GREEN" and not regime_ok:
         decision.skip_reason = f"regime {regime} blocks new risk"
-        _finalize_entry(state, state_path, decision, publish_intel)
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
     _, _, spy_ret = fetch_spy_ohlcv()
@@ -423,30 +456,39 @@ def run_paper_entry(
         decision.prior_day_ok = spy_ret is not None and spy_ret > 0
         if not decision.prior_day_ok:
             decision.skip_reason = "prior-day SPY not positive"
-            _finalize_entry(state, state_path, decision, publish_intel)
+            _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
             return decision
 
     spx = fetch_spx_proxy()
     if spx is None:
         decision.skip_reason = "SPX proxy unavailable"
         decision.errors.append("spx_proxy_failed")
-        _finalize_entry(state, state_path, decision, publish_intel)
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
     expiration = pick_expiration(lane_rules, today=now.date())
     if expiration is None:
         decision.skip_reason = "no eligible expiration in DTE window"
-        _finalize_entry(state, state_path, decision, publish_intel)
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
-    strike = round_xsp_strike(spx)
-    premium, delta = fetch_spy_call_quote(strike / 10.0, expiration)
-    quote_source = "SPY_chain_proxy"
+    strike, premium, delta = pick_cheapest_atm_strike(
+        spx,
+        expiration,
+        max_steps_from_atm=entry_rules.strike_max_steps_from_atm,
+    )
+    quote_source = "SPY_chain_proxy_cheapest_atm"
     if premium is None or premium <= 0:
+        strike = round_xsp_strike(spx)
         spy_px = spx / 10.0
         premium = estimate_fallback_premium(spy_px, compute_dte(expiration, today=now.date()))
         quote_source = "fallback_estimate_after_hours"
         decision.errors.append("quote_fallback_used")
+    else:
+        from xsp_killer.paper_economics import PaperEconomics, entry_fill_premium
+
+        econ = PaperEconomics.from_yaml(rules_path or DEFAULT_RULES)
+        premium = entry_fill_premium(premium, econ)
 
     position = build_paper_position(
         rules=lane_rules,
@@ -468,7 +510,7 @@ def run_paper_entry(
     decision.position = position
     decision.skip_reason = None
 
-    _finalize_entry(state, state_path, decision, publish_intel)
+    _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
     return decision
 
 
@@ -545,6 +587,7 @@ def _finalize_entry(
     state_path: Path | None,
     decision: EntryDecision,
     publish_intel: bool,
+    log_path: Path | None = None,
 ) -> None:
     log = list(state.get("entry_log") or [])
     log.append(
@@ -559,7 +602,7 @@ def _finalize_entry(
     )
     state["entry_log"] = log[-200:]
     save_state(state_path or DEFAULT_STATE, state)
-    append_entry_log(decision)
+    append_entry_log(decision, log_path=log_path)
     write_entry_brief(decision)
 
     if publish_intel:
