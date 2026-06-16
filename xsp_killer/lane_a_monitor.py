@@ -6,11 +6,12 @@ No auto-close until Phase 1 gates pass.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 import os
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -31,6 +32,7 @@ ExitReason = Literal[
     "stop_loss",
     "take_profit",
     "upper_bb_rejection",
+    "time_stop",
     "manual",
 ]
 
@@ -97,6 +99,7 @@ class LaneAPosition:
     lane: str = "A"
     entry_ts: str | None = None
     delta_at_entry: float | None = None
+    entry_mid_premium: float | None = None
     pnl_usd: float | None = None
     pnl_per_contract: float | None = None
 
@@ -140,18 +143,35 @@ class MonitorReport:
         return asdict(self)
 
 
+def _state_lock(path: Path):
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = lock_path.open("a+", encoding="utf-8")
+    fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+    return fh
+
+
 def load_state(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {"positions": {}}
+    lock = _state_lock(path)
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {"positions": {}}
+    finally:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        lock.close()
 
 
 def save_state(path: Path, state: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    lock = _state_lock(path)
+    try:
+        path.write_text(json.dumps(state, indent=2) + chr(10), encoding="utf-8")
+    finally:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        lock.close()
 
 
 def parse_expiration(raw: str) -> date | None:
@@ -207,6 +227,7 @@ def classify_position(raw: dict[str, Any], rules: LaneRules) -> LaneAPosition | 
     mark = float(mark_raw) if mark_raw is not None else None
     pos_id = str(raw.get("id") or raw.get("option_id") or raw.get("url") or f"{chain}:{exp}:{raw.get('strike_price')}")
     strike = float(raw.get("strike_price") or raw.get("strike") or 0)
+    entry_mid = raw.get("entry_mid_premium")
     pos = LaneAPosition(
         position_id=pos_id,
         chain_symbol=chain,
@@ -217,6 +238,7 @@ def classify_position(raw: dict[str, Any], rules: LaneRules) -> LaneAPosition | 
         average_price=avg,
         mark_price=mark,
         dte=compute_dte(exp),
+        entry_mid_premium=float(entry_mid) if entry_mid is not None else (avg if avg > 0 else None),
         pnl_usd=None,
         pnl_per_contract=None,
     )
@@ -231,10 +253,10 @@ def read_regime() -> tuple[str | None, bool]:
         from xsp_killer.intel import IntelReader
 
         snap = IntelReader.read("intel:playbook_snapshot")
-        if snap:
-            value = snap.get("value") if isinstance(snap, dict) else snap
-            if isinstance(value, dict):
-                regime = str(value.get("regime") or value.get("status") or "").upper() or None
+        if isinstance(snap, dict):
+            regime = str(snap.get("regime") or snap.get("status") or "").upper() or None
+        elif isinstance(snap, str):
+            regime = snap.upper()
     except Exception as exc:
         logger.warning("playbook_snapshot read failed: %s", exc)
 
@@ -267,23 +289,38 @@ def in_sell_window(now: datetime, rules: LaneRules) -> bool:
 
 
 def _position_return_pct(pos: LaneAPosition) -> float | None:
-    if pos.average_price <= 0 or pos.mark_price is None:
+    entry = pos.entry_mid_premium if pos.entry_mid_premium is not None else pos.average_price
+    if entry <= 0 or pos.mark_price is None:
         return None
-    return (pos.mark_price - pos.average_price) / pos.average_price
+    return (pos.mark_price - entry) / entry
 
 
 def _attach_economics_pnl(pos: LaneAPosition, *, rules_path: Path | None = None) -> None:
     if pos.mark_price is None or pos.average_price <= 0:
         return
     try:
-        from xsp_killer.paper_economics import PaperEconomics, pnl_per_contract
+        from xsp_killer.paper_economics import PaperEconomics, pnl_from_entry_fill, pnl_per_contract
 
         econ = PaperEconomics.from_yaml(rules_path or DEFAULT_RULES)
-        pos.pnl_per_contract = pnl_per_contract(
-            entry_mid=pos.average_price,
-            exit_mid=pos.mark_price,
-            econ=econ,
-        )
+        entry_mid = pos.entry_mid_premium
+        if entry_mid is not None and abs(pos.average_price - entry_mid) > 1e-6:
+            pos.pnl_per_contract = pnl_from_entry_fill(
+                entry_fill=pos.average_price,
+                exit_mid=pos.mark_price,
+                econ=econ,
+            )
+        elif entry_mid is not None:
+            pos.pnl_per_contract = pnl_per_contract(
+                entry_mid=entry_mid,
+                exit_mid=pos.mark_price,
+                econ=econ,
+            )
+        else:
+            pos.pnl_per_contract = pnl_from_entry_fill(
+                entry_fill=pos.average_price,
+                exit_mid=pos.mark_price,
+                econ=econ,
+            )
         pos.pnl_usd = pos.pnl_per_contract * pos.quantity
     except Exception as exc:
         logger.warning("economics pnl failed: %s", exc)
@@ -297,14 +334,12 @@ def evaluate_exit_alerts(
     ta_signal: Any | None = None,
     suppress_morning_cut_dte: int | None = None,
 ) -> list[ExitAlert]:
-    """Mentor v2: sell 09:30–10:00 ET; skip 08:30–09:30; 20% SL/TP with BB patience."""
-    _ = suppress_morning_cut_dte  # legacy param — morning cuts removed in v2
+    """Mentor v2: no-sell 08:30–09:30; SL anytime after; TP in sell window; time-stop at 10:00."""
+    _ = suppress_morning_cut_dte
     now = now_et or datetime.now(ET)
     alerts: list[ExitAlert] = []
 
     if in_no_sell_window(now, rules):
-        return alerts
-    if not in_sell_window(now, rules):
         return alerts
 
     ret_pct = _position_return_pct(pos)
@@ -326,7 +361,9 @@ def evaluate_exit_alerts(
         )
         return alerts
 
-    if ret_pct >= rules.take_profit_pct:
+    in_sell = in_sell_window(now, rules)
+
+    if in_sell and ret_pct >= rules.take_profit_pct:
         can_take = True
         if rules.require_upper_bb_for_take_profit and ta_signal is not None:
             touched = getattr(ta_signal, "upper_bb_touched", False)
@@ -352,6 +389,21 @@ def evaluate_exit_alerts(
                     pnl_per_contract=pnl_c,
                 )
             )
+            return alerts
+
+    if now.time() >= rules.sell_deadline_et:
+        alerts.append(
+            ExitAlert(
+                position_id=pos.position_id,
+                exit_reason="time_stop",
+                message=(
+                    f"Time stop at {rules.sell_deadline_et.strftime('%H:%M')} ET "
+                    f"(return {ret_pct * 100:.1f}%)"
+                ),
+                pnl_usd=pnl,
+                pnl_per_contract=pnl_c,
+            )
+        )
 
     return alerts
 
@@ -396,6 +448,8 @@ def paper_positions_to_lane(
         avg = float(raw.get("average_price") or 0)
         mark_raw = raw.get("mark_price") or raw.get("mark")
         mark = float(mark_raw) if mark_raw is not None else None
+        entry_mid_raw = raw.get("entry_mid_premium")
+        entry_mid = float(entry_mid_raw) if entry_mid_raw is not None else (avg if avg > 0 else None)
         pos_id = str(raw.get("position_id") or "")
         strike = float(raw.get("strike") or 0)
         lane_pos = LaneAPosition(
@@ -411,6 +465,7 @@ def paper_positions_to_lane(
                 lane=str(raw.get("lane") or "A"),
                 entry_ts=raw.get("entry_ts"),
                 delta_at_entry=raw.get("delta_at_entry"),
+                entry_mid_premium=entry_mid,
                 pnl_usd=None,
                 pnl_per_contract=None,
             )
@@ -433,9 +488,11 @@ def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]
         if exp is None or strike <= 0:
             updated.append(pos)
             continue
+        from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
+
         mid, _ = fetch_spy_call_quote(strike / 10.0, exp)
         if mid is not None:
-            pos["mark_price"] = round(mid, 4)
+            pos["mark_price"] = round(mid * SPY_TO_XSP_PREMIUM_SCALE, 4)
         updated.append(pos)
     return updated
 
@@ -468,19 +525,26 @@ def close_paper_positions_on_exit(
         paper[pos_id] = raw
         closed.append(raw)
         events = list(state.get("paper_events") or [])
-        events.append(
-            {
-                "evaluated_at": evaluated_at,
-                "position_id": pos_id,
-                "exit_reason": raw["exit_reason"],
-                "paper_pnl_usd": raw.get("exit_pnl_usd"),
-                "paper_pnl_per_contract": raw.get("exit_pnl_per_contract"),
-                "logic_version": logic_version,
-                "paper_mode": "automated_paper_close",
-                "entry_ts": raw.get("entry_ts"),
-            }
-        )
-        state["paper_events"] = events[-500:]
+        day_key = evaluated_at[:10]
+        seen = {
+            (e.get("position_id"), e.get("exit_reason"), (e.get("evaluated_at") or "")[:10])
+            for e in events
+        }
+        evt_key = (pos_id, raw["exit_reason"], day_key)
+        if evt_key not in seen:
+            events.append(
+                {
+                    "evaluated_at": evaluated_at,
+                    "position_id": pos_id,
+                    "exit_reason": raw["exit_reason"],
+                    "paper_pnl_usd": raw.get("exit_pnl_usd"),
+                    "paper_pnl_per_contract": raw.get("exit_pnl_per_contract"),
+                    "logic_version": logic_version,
+                    "paper_mode": "automated_paper_close",
+                    "entry_ts": raw.get("entry_ts"),
+                }
+            )
+            state["paper_events"] = events[-500:]
     state["paper_positions"] = paper
     return closed
 
@@ -700,30 +764,31 @@ def run_monitor(
 
     report.alerts = [a.to_dict() for a in all_alerts]
 
-    report.paper_hypothetical_exits = record_paper_exit_signals(
-        state,
-        all_alerts,
-        evaluated_at=report.evaluated_at,
-        logic_version=rules.logic_version,
-    )
-    closed_paper = close_paper_positions_on_exit(
-        state,
-        all_alerts,
-        evaluated_at=report.evaluated_at,
-        logic_version=rules.logic_version,
-    )
-    if closed_paper:
-        report.paper_hypothetical_exits.extend(
-            [
-                {
-                    "evaluated_at": report.evaluated_at,
-                    "position_id": c.get("position_id"),
-                    "exit_reason": c.get("exit_reason"),
-                    "paper_pnl_usd": c.get("exit_pnl_usd"),
-                    "paper_mode": "paper_position_closed",
-                }
-                for c in closed_paper
-            ]
+    paper_positions_active = bool(state.get("paper_positions")) and report.rh_poll_skipped
+    if paper_positions_active and not positions_override:
+        closed_paper = close_paper_positions_on_exit(
+            state,
+            all_alerts,
+            evaluated_at=report.evaluated_at,
+            logic_version=rules.logic_version,
+        )
+        report.paper_hypothetical_exits = [
+            {
+                "evaluated_at": report.evaluated_at,
+                "position_id": c.get("position_id"),
+                "exit_reason": c.get("exit_reason"),
+                "paper_pnl_usd": c.get("exit_pnl_usd"),
+                "paper_pnl_per_contract": c.get("exit_pnl_per_contract"),
+                "paper_mode": "automated_paper_close",
+            }
+            for c in closed_paper
+        ]
+    else:
+        report.paper_hypothetical_exits = record_paper_exit_signals(
+            state,
+            all_alerts,
+            evaluated_at=report.evaluated_at,
+            logic_version=rules.logic_version,
         )
     append_paper_pnl_log(report=report, classified=classified, alerts=all_alerts)
     write_paper_pnl_brief(state, report=report)

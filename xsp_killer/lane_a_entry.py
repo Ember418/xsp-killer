@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
 from xsp_killer.lane_a_monitor import (
     DEFAULT_PAPER_LOG,
     DEFAULT_RULES,
@@ -25,7 +26,6 @@ from xsp_killer.lane_a_monitor import (
     is_lane_a_contract,
     load_state,
     read_regime,
-    run_monitor,
     save_state,
 )
 from xsp_killer.lane_a_ta import TaRules, TaSignal, evaluate_ta_signals, in_rth
@@ -113,10 +113,21 @@ def open_paper_positions(state: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def already_entered_today(state: dict[str, Any], today: date) -> bool:
+    """True only after a successful entry today (not failed attempts)."""
+    day = today.isoformat()
+    for pos in (state.get("paper_positions") or {}).values():
+        if not isinstance(pos, dict):
+            continue
+        if str(pos.get("entry_ts") or "")[:10] == day:
+            return True
     for evt in state.get("entry_log") or []:
         if not isinstance(evt, dict):
             continue
-        if evt.get("entered") and str(evt.get("evaluated_at", ""))[:10] == today.isoformat():
+        if (
+            evt.get("entered")
+            and evt.get("position_id")
+            and str(evt.get("evaluated_at", ""))[:10] == day
+        ):
             return True
     return False
 
@@ -206,9 +217,12 @@ def pick_cheapest_atm_strike(
         if prem is None or prem <= 0:
             continue
         dist = abs(xsp_strike - spx_level)
-        if dist < best_dist or (dist == best_dist and (best_premium is None or prem < best_premium)):
+        xsp_prem = prem * SPY_TO_XSP_PREMIUM_SCALE
+        if dist < best_dist or (
+            dist == best_dist and (best_premium is None or xsp_prem < best_premium)
+        ):
             best_strike = xsp_strike
-            best_premium = prem
+            best_premium = xsp_prem
             best_delta = delta
             best_dist = dist
     if best_premium is None:
@@ -272,6 +286,7 @@ def build_paper_position(
     expiration: date,
     strike: float,
     premium: float,
+    entry_mid_premium: float,
     delta: float | None,
     evaluated_at: str,
     spy_return_pct: float | None,
@@ -287,8 +302,8 @@ def build_paper_position(
         "expiration_date": expiration.isoformat(),
         "quantity": entry_rules.quantity,
         "average_price": round(premium, 4),
-        "mark_price": round(premium, 4),
-        "entry_mid_premium": round(premium, 4),
+        "mark_price": round(entry_mid_premium, 4),
+        "entry_mid_premium": round(entry_mid_premium, 4),
         "delta_at_entry": delta,
         "entry_ts": evaluated_at,
         "dte": compute_dte(expiration),
@@ -478,24 +493,27 @@ def run_paper_entry(
         max_steps_from_atm=entry_rules.strike_max_steps_from_atm,
     )
     quote_source = "SPY_chain_proxy_cheapest_atm"
+    from xsp_killer.paper_economics import PaperEconomics, entry_fill_premium
+
+    econ = PaperEconomics.from_yaml(rules_path or DEFAULT_RULES)
     if premium is None or premium <= 0:
         strike = round_xsp_strike(spx)
         spy_px = spx / 10.0
-        premium = estimate_fallback_premium(spy_px, compute_dte(expiration, today=now.date()))
+        entry_mid = estimate_fallback_premium(spy_px, compute_dte(expiration, today=now.date()))
+        entry_mid *= SPY_TO_XSP_PREMIUM_SCALE
         quote_source = "fallback_estimate_after_hours"
         decision.errors.append("quote_fallback_used")
     else:
-        from xsp_killer.paper_economics import PaperEconomics, entry_fill_premium
-
-        econ = PaperEconomics.from_yaml(rules_path or DEFAULT_RULES)
-        premium = entry_fill_premium(premium, econ)
+        entry_mid = premium
+    fill_premium = entry_fill_premium(entry_mid, econ)
 
     position = build_paper_position(
         rules=lane_rules,
         entry_rules=entry_rules,
         expiration=expiration,
         strike=strike,
-        premium=premium,
+        premium=fill_premium,
+        entry_mid_premium=entry_mid,
         delta=delta,
         evaluated_at=evaluated_at,
         spy_return_pct=spy_ret,

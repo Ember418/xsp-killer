@@ -118,12 +118,20 @@ def test_take_profit_fires_with_upper_bb_touch():
     assert any(a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts)
 
 
-def test_no_alert_outside_sell_window():
-    pos = classify_position(_raw(avg=2.00, mark=2.80), RULES)
+def test_time_stop_at_deadline():
+    pos = classify_position(_raw(avg=2.00, mark=2.10), RULES)
     assert pos is not None
-    now = datetime(2026, 6, 14, 10, 15, tzinfo=ET)
+    now = datetime(2026, 6, 14, 10, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
-    assert alerts == []
+    assert any(a.exit_reason == "time_stop" for a in alerts)
+
+
+def test_stop_loss_outside_tp_window():
+    pos = classify_position(_raw(avg=2.00, mark=1.50), RULES)
+    assert pos is not None
+    now = datetime(2026, 6, 14, 10, 30, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
+    assert any(a.exit_reason == "stop_loss" for a in alerts)
 
 
 def test_rh_poll_skipped_by_default(monkeypatch):
@@ -192,3 +200,25 @@ def test_is_lane_a_contract_boundary():
         rules=RULES,
         today=date(2026, 6, 14),
     )
+
+def test_read_regime_from_intel_dict(monkeypatch):
+    from xsp_killer import intel
+
+    monkeypatch.setattr(intel.IntelReader, "read", lambda key: {"regime": "GREEN"})
+    from xsp_killer.lane_a_monitor import read_regime
+
+    regime, ok = read_regime()
+    assert regime == "GREEN"
+    assert ok is True
+
+
+def test_pnl_uses_entry_fill_not_double_count():
+    from xsp_killer.paper_economics import PaperEconomics, entry_fill_premium, pnl_from_entry_fill
+
+    econ = PaperEconomics(commission_usd_per_contract=0.65, slippage_pct_of_premium=0.015)
+    entry_mid = 24.5
+    entry_fill = entry_fill_premium(entry_mid, econ)
+    pnl = pnl_from_entry_fill(entry_fill=entry_fill, exit_mid=29.4, econ=econ)
+    assert pnl < (29.4 - 24.5) * 100.0
+    assert pnl > 0
+

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import date
 
 from xsp_killer.lane_b_monitor import (
     LaneBRules,

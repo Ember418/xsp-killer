@@ -67,7 +67,7 @@ def test_pick_cheapest_atm_strike(monkeypatch):
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spy_call_quote", _quote)
     strike, prem, _ = pick_cheapest_atm_strike(6012.0, exp, max_steps_from_atm=1)
     assert strike == 6010.0
-    assert prem == 2.0
+    assert prem == 20.0
 
 
 def test_open_paper_positions_filters_closed():
@@ -83,7 +83,7 @@ def test_open_paper_positions_filters_closed():
 def test_already_entered_today():
     state = {
         "entry_log": [
-            {"entered": True, "evaluated_at": "2026-06-16T19:45:00+00:00"},
+            {"entered": True, "evaluated_at": "2026-06-16T19:45:00+00:00", "position_id": "paper:XSP:2026-07-18:6010"},
         ]
     }
     assert already_entered_today(state, date(2026, 6, 16)) is True
@@ -164,3 +164,39 @@ def test_run_paper_entry_blocks_when_open_position(tmp_path, monkeypatch):
     )
     assert decision.entered is False
     assert "max open" in (decision.skip_reason or "").lower()
+
+def test_already_entered_skips_failed_attempt():
+    state = {
+        "entry_log": [
+            {"entered": False, "evaluated_at": "2026-06-16T19:45:00+00:00", "skip_reason": "regime"},
+            {"entered": True, "evaluated_at": "2026-06-16T19:45:00+00:00"},
+        ]
+    }
+    assert already_entered_today(state, date(2026, 6, 16)) is False
+
+
+def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
+    _mock_ta_entry_ok(monkeypatch)
+    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime", lambda: ("GREEN", True))
+    monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spy_ohlcv", lambda: (600.0, 595.0, 0.5))
+    monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6010.0)
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.pick_expiration",
+        lambda rules, today=None: date(2026, 7, 18),
+    )
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.pick_cheapest_atm_strike",
+        lambda spx, exp, max_steps_from_atm=1: (6010.0, 24.5, 0.52),
+    )
+    decision = run_paper_entry(
+        state_path=tmp_path / "state.json",
+        log_path=tmp_path / "paper.jsonl",
+        now_et=datetime(2026, 6, 16, 15, 47, tzinfo=ET),
+        publish_intel=False,
+    )
+    assert decision.entered is True
+    pos = decision.position
+    assert pos["entry_mid_premium"] == 24.5
+    assert pos["average_price"] > pos["entry_mid_premium"]
+

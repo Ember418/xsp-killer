@@ -30,7 +30,7 @@ exit:
 
 paper_economics:
   commission_usd_per_contract: 0.65
-  slippage_pct_of_premium: 0.005
+  slippage_pct_of_premium: 0.015
 
 ta:
   symbol: SPY
@@ -64,10 +64,11 @@ exit_reasons:
   - stop_loss
   - take_profit
   - upper_bb_rejection
+  - time_stop
   - manual
 
 monitor:
-  et_check_minutes: [35, 45, 0]
+  et_check_minutes: [30, 35, 45, 0]
   et_check_hours: [9, 9, 10]
   intraday_minutes: [0, 15, 30, 45]
   phase: 0

@@ -10,6 +10,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RULES = ROOT / "config" / "lane_a_rules.yaml"
 
+# SPY option chain mid → XSP notional premium (1/10th index, ~10× per-share premium).
+SPY_TO_XSP_PREMIUM_SCALE = 10.0
+
 
 @dataclass
 class PaperEconomics:
@@ -44,12 +47,24 @@ def pnl_per_contract(
     exit_mid: float,
     econ: PaperEconomics,
 ) -> float:
-    """Realized PnL per contract in USD (100 multiplier)."""
+    """Realized PnL per contract in USD when entry is a raw mid (applies both legs)."""
     if entry_mid <= 0:
         return 0.0
     entry = entry_fill_premium(entry_mid, econ)
+    return pnl_from_entry_fill(entry_fill=entry, exit_mid=exit_mid, econ=econ)
+
+
+def pnl_from_entry_fill(
+    *,
+    entry_fill: float,
+    exit_mid: float,
+    econ: PaperEconomics,
+) -> float:
+    """Realized PnL when entry economics are already baked into entry_fill."""
+    if entry_fill <= 0:
+        return 0.0
     exit_px = exit_fill_premium(exit_mid, econ)
-    return round((exit_px - entry) * 100.0, 2)
+    return round((exit_px - entry_fill) * 100.0, 2)
 
 
 def pnl_pct(entry_mid: float, exit_mid: float) -> float | None:
