@@ -1,0 +1,16 @@
+[Unit]
+Description=XSP Killer — Lane A morning exit monitor
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/xsp-killer
+Environment=PYTHONPATH=/opt/xsp-killer
+Environment=XSP_LANE_A_RH_POLL=false
+EnvironmentFile=-/opt/xsp-killer/.env
+ExecStart=/opt/xsp-killer/scripts/lane_a_monitor_cron.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

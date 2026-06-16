@@ -1,0 +1,45 @@
+# XSP Lane B — LEAPS core book + protective put hedge monitor (Phase 0: alerts only)
+# Brief: briefs/2026-06-14_xsp-lane-b-leaps-hedge-monitor-cemini-prod.md
+
+lane: B
+instrument: XSP
+asset_class: option
+chain_symbols: ["SPX", "XSP"]
+
+calls:
+  option_type: call
+  dte_min: 180
+  delta_target_min: 0.35
+  delta_target_max: 0.55
+  entry: manual_only
+  regime_gate_new_lots: GREEN
+
+hedge_puts:
+  option_type: put
+  direction: long
+  link_to: call_inventory
+  roll_alert_triggers:
+    call_delta_above: 0.65
+    portfolio_drawdown_pct: 8
+    hedge_dte_below: 45
+    regime_yellow: review
+  roll_action: alert_only
+
+risk:
+  max_lane_b_notional_pct: 50
+  max_single_add_contracts: null
+  kill_switch_daily_loss_usd: null
+
+scorecard:
+  metric: delta_adjusted_return
+  logic_version: xsp_lane_b_v1
+
+monitor:
+  phase: 0
+  et_daily_check: "08:00"
+  rh_poll: false  # shared with Lane A — enable when RH positions exist
+
+paper_pnl:
+  mode: hypothetical
+  log_path: logs/lane_b_paper.jsonl
+  brief_path: briefs/lane-b-monitor-latest.json

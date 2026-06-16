@@ -1,0 +1,7 @@
+{
+  "positions": {},
+  "hedge_links": {},
+  "closed_trades": [],
+  "mtm_peak_usd": 0,
+  "notes": "Operator: tag Lane B calls with lane=B and hedge_pair_id; link puts via hedge_links"
+}

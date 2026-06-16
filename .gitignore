@@ -1,0 +1,15 @@
+# XSP Killer
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.env
+.venv/
+venv/
+logs/*.jsonl
+briefs/*-latest.json
+briefs/lane-a-state.json
+!.gitkeep
+*.egg-info/
+dist/
+build/

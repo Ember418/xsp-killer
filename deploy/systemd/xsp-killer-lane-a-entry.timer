@@ -1,0 +1,12 @@
+[Unit]
+Description=XSP Killer Lane A entry — 15:45/15:50/15:55 ET
+
+[Timer]
+OnCalendar=*-*-* 15:45:00 America/New_York
+OnCalendar=*-*-* 15:50:00 America/New_York
+OnCalendar=*-*-* 15:55:00 America/New_York
+Persistent=true
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

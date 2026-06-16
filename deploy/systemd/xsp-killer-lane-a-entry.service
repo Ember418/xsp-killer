@@ -1,0 +1,17 @@
+[Unit]
+Description=XSP Killer — Lane A paper entry (15:45–16:00 ET)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/xsp-killer
+Environment=PYTHONPATH=/opt/xsp-killer
+Environment=XSP_LANE_A_RH_POLL=false
+Environment=XSP_LANE_A_PAPER_ENTRY=true
+EnvironmentFile=-/opt/xsp-killer/.env
+ExecStart=/opt/xsp-killer/scripts/lane_a_entry_cron.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

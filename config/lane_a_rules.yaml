@@ -1,0 +1,77 @@
+# XSP Lane A — overnight swing + mentor BB/VWAP playbook (paper log-only)
+# Source: briefs/2026-06-14_xsp-lane-a-overnight-swing-monitor-cemini-prod.md
+
+lane: A
+instrument: XSP
+asset_class: option
+option_type: call
+
+entry:
+  manual_or_confirm: false
+  window_start_et: "15:45"
+  window_end_et: "16:00"
+  prior_day_spy_positive: true
+  regime_gate: GREEN
+  dte_min: 14
+  dte_max: 60
+  exclude_expiry_month: ["01"]
+  chain_symbols: ["SPX", "XSP"]
+
+exit:
+  hard_max_loss_usd_per_contract: 75
+  morning_eval_start_et: "09:30"
+  morning_cut_deadline_et: "10:30"
+  rth_open_cut_minutes: 30
+
+# Mentor playbook: Bollinger Bands + VWAP on SPY (15m confirm, 1h primary)
+ta:
+  symbol: SPY
+  primary_timeframe: 1h
+  confirm_timeframe: 15m
+  bb_period: 20
+  bb_std: 2.0
+  entry:
+    mode: close_window_and_bb   # close_window_and_bb | bb_bounce | close_window_only
+    intraday_enabled: true      # scan every 15m RTH for BB bounce entry
+    require_vwap_reclaim: true  # bounce bar must close above session VWAP
+  exit:
+    upper_bb_rejection: true
+    upper_bb_touch_tolerance_pct: 0.002
+  hold:
+    suppress_morning_cut_dte_gte: 30  # ≥30 DTE: skip morning_cut / open_plus_30_red
+
+logging:
+  logic_version: xsp_lane_a_v1
+  required_fields:
+    - lane
+    - entry_ts
+    - dte
+    - strike
+    - delta_at_entry
+    - exit_reason
+    - pnl_usd
+
+exit_reasons:
+  - morning_cut
+  - max_loss
+  - open_plus_30_red
+  - manual
+  - target_hit
+  - upper_bb_rejection
+
+monitor:
+  et_check_minutes: [35, 45, 0, 30]  # 09:35, 09:45, 10:00, 10:30 morning
+  et_check_hours: [9, 9, 10, 10]
+  intraday_minutes: [0, 15, 30, 45]  # every 15m during RTH (09:30–16:00)
+  phase: 0  # alerts only — no auto-close
+  rh_poll: false
+
+paper_pnl:
+  mode: hypothetical
+  log_path: logs/lane_a_paper.jsonl
+  brief_path: briefs/lane-a-paper-pnl-latest.json
+
+paper_entry:
+  enabled: true
+  max_open_positions: 1
+  quantity: 1
