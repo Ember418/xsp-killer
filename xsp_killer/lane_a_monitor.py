@@ -209,15 +209,49 @@ def is_lane_a_contract(
     return rules.dte_min <= dte <= rules.dte_max
 
 
-def classify_position(raw: dict[str, Any], rules: LaneRules) -> LaneAPosition | None:
+def is_lane_a_monitor_contract(
+    *,
+    chain_symbol: str,
+    option_type: str,
+    expiration: date,
+    rules: LaneRules,
+    today: date | None = None,
+) -> bool:
+    """Exit monitoring — keep open holds even when DTE drops below entry dte_min."""
+    sym = (chain_symbol or "").upper()
+    if sym not in rules.chain_symbols:
+        return False
+    if (option_type or "").lower() != "call":
+        return False
+    month = f"{expiration.month:02d}"
+    if month in rules.exclude_expiry_month:
+        return False
+    dte = compute_dte(expiration, today=today)
+    return 0 <= dte <= rules.dte_max
+
+
+def classify_position(
+    raw: dict[str, Any],
+    rules: LaneRules,
+    *,
+    for_monitor: bool = False,
+    today: date | None = None,
+) -> LaneAPosition | None:
     chain = str(raw.get("chain_symbol") or raw.get("symbol") or "").upper()
     opt_type = str(raw.get("type") or raw.get("option_type") or "").lower()
     exp = parse_expiration(str(raw.get("expiration_date") or raw.get("expiration") or ""))
     if exp is None:
         return None
-    if not is_lane_a_contract(
-        chain_symbol=chain, option_type=opt_type, expiration=exp, rules=rules
-    ):
+    eligible = (
+        is_lane_a_monitor_contract(
+            chain_symbol=chain, option_type=opt_type, expiration=exp, rules=rules, today=today
+        )
+        if for_monitor
+        else is_lane_a_contract(
+            chain_symbol=chain, option_type=opt_type, expiration=exp, rules=rules, today=today
+        )
+    )
+    if not eligible:
         return None
     qty = float(raw.get("quantity") or raw.get("qty") or 0)
     if qty <= 0:
@@ -434,7 +468,7 @@ def paper_positions_to_lane(
             continue
         chain = str(raw.get("chain_symbol") or "XSP").upper()
         opt_type = str(raw.get("option_type") or "call").lower()
-        if not is_lane_a_contract(
+        if not is_lane_a_monitor_contract(
             chain_symbol=chain,
             option_type=opt_type,
             expiration=exp,
@@ -737,14 +771,14 @@ def run_monitor(
         else:
             report.rh_connected = True
 
+    today = (now_et or datetime.now(ET)).date()
     classified: list[LaneAPosition] = []
     for raw in raw_positions:
-        pos = classify_position(raw, rules)
+        pos = classify_position(raw, rules, for_monitor=True, today=today)
         if pos is not None:
             classified.append(pos)
 
     if not classified and report.rh_poll_skipped and not positions_override:
-        today = (now_et or datetime.now(ET)).date()
         classified = paper_positions_to_lane(load_open_paper_positions(state), rules, today=today)
 
     merge_state_tags(classified, state)

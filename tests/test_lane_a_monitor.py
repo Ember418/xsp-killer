@@ -222,3 +222,30 @@ def test_pnl_uses_entry_fill_not_double_count():
     assert pnl < (29.4 - 24.5) * 100.0
     assert pnl > 0
 
+def test_open_paper_position_monitored_below_entry_dte_min(tmp_path):
+    """Hold entered at dte_min must still get exit monitoring when DTE drops."""
+    from xsp_killer.lane_a_monitor import paper_positions_to_lane
+
+    state = {
+        "paper_positions": {
+            "paper:XSP:2026-06-30:7520": {
+                "position_id": "paper:XSP:2026-06-30:7520",
+                "lane": "A",
+                "chain_symbol": "XSP",
+                "option_type": "call",
+                "strike": 7520.0,
+                "expiration_date": "2026-06-30",
+                "quantity": 1.0,
+                "average_price": 66.39,
+                "mark_price": 61.8,
+                "entry_mid_premium": 65.4,
+                "status": "open",
+            }
+        }
+    }
+    today = __import__("datetime").date(2026, 6, 17)
+    rows = [state["paper_positions"]["paper:XSP:2026-06-30:7520"]]
+    classified = paper_positions_to_lane(rows, RULES, today=today)
+    assert len(classified) == 1
+    assert classified[0].dte == 13
+
