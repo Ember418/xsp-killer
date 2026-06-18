@@ -121,9 +121,19 @@ def test_take_profit_fires_with_upper_bb_touch():
 def test_time_stop_at_deadline():
     pos = classify_position(_raw(avg=2.00, mark=2.10), RULES)
     assert pos is not None
+    pos.entry_ts = "2026-06-13T19:45:00+00:00"
     now = datetime(2026, 6, 14, 10, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
     assert any(a.exit_reason == "time_stop" for a in alerts)
+
+
+def test_time_stop_skips_same_entry_day():
+    pos = classify_position(_raw(avg=2.00, mark=2.10), RULES)
+    assert pos is not None
+    pos.entry_ts = "2026-06-14T19:45:00+00:00"
+    now = datetime(2026, 6, 14, 15, 45, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
+    assert not any(a.exit_reason == "time_stop" for a in alerts)
 
 
 def test_stop_loss_outside_tp_window():

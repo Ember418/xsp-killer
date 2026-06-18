@@ -47,6 +47,9 @@ class EntryRules:
     enabled: bool
     chain_symbol: str = "XSP"
     strike_max_steps_from_atm: int = 1
+    dte_pick: str = "min"
+    dte_target: int | None = None
+    strike_pick: str = "cheapest_near_atm"
 
     @classmethod
     def from_yaml(cls, path: Path) -> EntryRules:
@@ -67,6 +70,9 @@ class EntryRules:
             enabled=bool(paper.get("enabled", True)),
             chain_symbol=str(data.get("instrument", "XSP")).upper(),
             strike_max_steps_from_atm=int(entry.get("strike_max_steps_from_atm", 1)),
+            dte_pick=str(entry.get("dte_pick", "min")).strip().lower(),
+            dte_target=int(entry["dte_target"]) if entry.get("dte_target") is not None else None,
+            strike_pick=str(entry.get("strike_pick", "cheapest_near_atm")).strip().lower(),
         )
 
 
@@ -164,7 +170,13 @@ def fetch_spx_proxy() -> float | None:
     return None
 
 
-def pick_expiration(rules: LaneRules, *, today: date) -> date | None:
+def pick_expiration(
+    rules: LaneRules,
+    *,
+    today: date,
+    dte_pick: str = "min",
+    dte_target: int | None = None,
+) -> date | None:
     try:
         import yfinance as yf
 
@@ -190,6 +202,11 @@ def pick_expiration(rules: LaneRules, *, today: date) -> date | None:
     if not candidates:
         return None
     candidates.sort(key=lambda x: x[0])
+    mode = (dte_pick or "min").lower()
+    if mode == "max":
+        return candidates[-1][1]
+    if mode == "target" and dte_target is not None:
+        return min(candidates, key=lambda x: abs(x[0] - dte_target))[1]
     return candidates[0][1]
 
 
@@ -228,6 +245,34 @@ def pick_cheapest_atm_strike(
     if best_premium is None:
         return atm, None, None
     return best_strike, best_premium, best_delta
+
+
+
+
+def pick_strike(
+    spx_level: float,
+    expiration: date,
+    *,
+    strike_pick: str = "cheapest_near_atm",
+    max_steps_from_atm: int = 1,
+) -> tuple[float, float | None, float | None]:
+    """Select strike by mode: cheapest_near_atm | atm_only | otm_one."""
+    mode = (strike_pick or "cheapest_near_atm").lower()
+    atm = round_xsp_strike(spx_level)
+    if mode == "atm_only":
+        prem, delta = fetch_spy_call_quote(atm / 10.0, expiration)
+        if prem is None or prem <= 0:
+            return atm, None, None
+        return atm, prem * SPY_TO_XSP_PREMIUM_SCALE, delta
+    if mode == "otm_one":
+        otm = atm + 5.0
+        prem, delta = fetch_spy_call_quote(otm / 10.0, expiration)
+        if prem is None or prem <= 0:
+            return otm, None, None
+        return otm, prem * SPY_TO_XSP_PREMIUM_SCALE, delta
+    return pick_cheapest_atm_strike(
+        spx_level, expiration, max_steps_from_atm=max_steps_from_atm
+    )
 
 
 def fetch_spy_call_quote(strike_spy: float, expiration: date) -> tuple[float | None, float | None]:
@@ -481,18 +526,24 @@ def run_paper_entry(
         _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
-    expiration = pick_expiration(lane_rules, today=now.date())
+    expiration = pick_expiration(
+        lane_rules,
+        today=now.date(),
+        dte_pick=entry_rules.dte_pick,
+        dte_target=entry_rules.dte_target,
+    )
     if expiration is None:
         decision.skip_reason = "no eligible expiration in DTE window"
         _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
-    strike, premium, delta = pick_cheapest_atm_strike(
+    strike, premium, delta = pick_strike(
         spx,
         expiration,
+        strike_pick=entry_rules.strike_pick,
         max_steps_from_atm=entry_rules.strike_max_steps_from_atm,
     )
-    quote_source = "SPY_chain_proxy_cheapest_atm"
+    quote_source = f"SPY_chain_proxy_{entry_rules.strike_pick}"
     from xsp_killer.paper_economics import PaperEconomics, entry_fill_premium
 
     econ = PaperEconomics.from_yaml(rules_path or DEFAULT_RULES)

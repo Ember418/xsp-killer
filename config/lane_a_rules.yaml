@@ -18,6 +18,8 @@ entry:
   exclude_expiry_month: ["01"]
   chain_symbols: ["SPX", "XSP"]
   strike_max_steps_from_atm: 1
+  dte_pick: min
+  strike_pick: cheapest_near_atm
 
 exit:
   stop_loss_pct: 0.20

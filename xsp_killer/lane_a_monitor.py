@@ -360,6 +360,21 @@ def _attach_economics_pnl(pos: LaneAPosition, *, rules_path: Path | None = None)
         logger.warning("economics pnl failed: %s", exc)
 
 
+
+
+def _entry_date_et(entry_ts: str | None) -> date | None:
+    """Calendar entry date in America/New_York (for overnight hold logic)."""
+    if not entry_ts:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(entry_ts).replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        return ts.astimezone(ET).date()
+    except (ValueError, TypeError):
+        return None
+
+
 def evaluate_exit_alerts(
     pos: LaneAPosition,
     rules: LaneRules,
@@ -425,7 +440,8 @@ def evaluate_exit_alerts(
             )
             return alerts
 
-    if now.time() >= rules.sell_deadline_et:
+    entry_day = _entry_date_et(pos.entry_ts)
+    if entry_day is not None and entry_day < now.date() and now.time() >= rules.sell_deadline_et:
         alerts.append(
             ExitAlert(
                 position_id=pos.position_id,

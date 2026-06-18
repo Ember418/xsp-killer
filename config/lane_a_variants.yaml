@@ -1,0 +1,187 @@
+# Parallel shadow variants — same close entry / morning exit cadence, different params.
+# Production baseline still runs via lane_a_rules.yaml + systemd.
+# Scoreboard: briefs/xsp-lane-a-variants-scoreboard.json
+#
+# Capacity (8GB VPS): ~12 variants ≈ 30s + ~150MB peak at 15:45 entry; safe headroom.
+
+variants:
+  # --- DTE axis (ATM, no BB gate on TP) ---
+  v2_14dte_atm:
+    active: true
+    description: "Min DTE (~14), ATM — isolate short-dated gamma"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_14dte_atm
+      entry:
+        dte_pick: min
+        strike_pick: atm_only
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  v2_21dte_atm:
+    active: true
+    description: "21 DTE target, ATM — between min and 28"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_21dte_atm
+      entry:
+        dte_pick: target
+        dte_target: 21
+        strike_pick: atm_only
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  v2_28dte_atm:
+    active: true
+    description: "28 DTE target, ATM — less gamma than min-DTE baseline"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_28dte_atm
+      entry:
+        dte_pick: target
+        dte_target: 28
+        strike_pick: atm_only
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  v2_35dte_atm:
+    active: true
+    description: "35 DTE target, ATM — mid-range theta"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_35dte_atm
+      entry:
+        dte_pick: target
+        dte_target: 35
+        strike_pick: atm_only
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  v2_45dte_atm:
+    active: true
+    description: "45 DTE target, ATM — compare vs OTM at same DTE"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_45dte_atm
+      entry:
+        dte_pick: target
+        dte_target: 45
+        strike_pick: atm_only
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  v2_60dte_atm:
+    active: true
+    description: "Max DTE (60), ATM — slowest theta"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_60dte_atm
+      entry:
+        dte_pick: max
+        strike_pick: atm_only
+      exit:
+        stop_loss_pct: 0.15
+        take_profit_pct: 0.10
+        require_upper_bb_for_take_profit: false
+
+  # --- Strike axis (28 DTE) ---
+  v2_28dte_otm:
+    active: true
+    description: "28 DTE, 1-step OTM — cheaper premium vs ATM"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_28dte_otm
+      entry:
+        dte_pick: target
+        dte_target: 28
+        strike_pick: otm_one
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  v2_28dte_cheapest:
+    active: true
+    description: "28 DTE, cheapest near ATM — mentor-style scan"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_28dte_cheapest
+      entry:
+        dte_pick: target
+        dte_target: 28
+        strike_pick: cheapest_near_atm
+        strike_max_steps_from_atm: 2
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  # --- Exit axis (28 DTE ATM) ---
+  v2_28dte_wide_sl:
+    active: true
+    description: "28 DTE ATM, 30% SL / 15% TP — room for overnight noise"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_28dte_wide_sl
+      entry:
+        dte_pick: target
+        dte_target: 28
+        strike_pick: atm_only
+      exit:
+        stop_loss_pct: 0.30
+        take_profit_pct: 0.15
+        require_upper_bb_for_take_profit: false
+
+  v2_28dte_easy_tp:
+    active: true
+    description: "28 DTE ATM, 10% TP no BB — easier profit take"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_28dte_easy_tp
+      entry:
+        dte_pick: target
+        dte_target: 28
+        strike_pick: atm_only
+      exit:
+        take_profit_pct: 0.10
+        require_upper_bb_for_take_profit: false
+
+  # --- Tape filter ---
+  v2_14dte_green_day:
+    active: true
+    description: "Min DTE, prior-day SPY green required"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_14dte_green
+      entry:
+        dte_pick: min
+        strike_pick: cheapest_near_atm
+        prior_day_spy_positive: true
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  v2_28dte_green_day:
+    active: true
+    description: "28 DTE ATM, prior-day SPY green required"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_28dte_green
+      entry:
+        dte_pick: target
+        dte_target: 28
+        strike_pick: atm_only
+        prior_day_spy_positive: true
+      exit:
+        require_upper_bb_for_take_profit: false
+
+  # --- OTM far DTE ---
+  v2_45dte_otm:
+    active: true
+    description: "45 DTE OTM, 25% SL / 15% TP — cheap convexity bet"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_45dte_otm
+      entry:
+        dte_pick: target
+        dte_target: 45
+        strike_pick: otm_one
+      exit:
+        stop_loss_pct: 0.25
+        take_profit_pct: 0.15
+        require_upper_bb_for_take_profit: false

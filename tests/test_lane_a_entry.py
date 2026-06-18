@@ -128,11 +128,11 @@ def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6010.0)
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_expiration",
-        lambda rules, today=None: date(2026, 7, 18),
+        lambda rules, today=None, dte_pick="min", dte_target=None: date(2026, 7, 18),
     )
     monkeypatch.setattr(
-        "xsp_killer.lane_a_entry.pick_cheapest_atm_strike",
-        lambda spx, exp, max_steps_from_atm=1: (6010.0, 2.45, 0.52),
+        "xsp_killer.lane_a_entry.pick_strike",
+        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (6010.0, 2.45, 0.52),
     )
 
     decision = run_paper_entry(
@@ -183,11 +183,11 @@ def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6010.0)
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_expiration",
-        lambda rules, today=None: date(2026, 7, 18),
+        lambda rules, today=None, dte_pick="min", dte_target=None: date(2026, 7, 18),
     )
     monkeypatch.setattr(
-        "xsp_killer.lane_a_entry.pick_cheapest_atm_strike",
-        lambda spx, exp, max_steps_from_atm=1: (6010.0, 24.5, 0.52),
+        "xsp_killer.lane_a_entry.pick_strike",
+        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (6010.0, 24.5, 0.52),
     )
     decision = run_paper_entry(
         state_path=tmp_path / "state.json",
