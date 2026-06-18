@@ -15,3 +15,8 @@ reports/gap-audit/
 dist/
 build/
 briefs/xsp-lane-a-state.json
+briefs/xsp-lane-a-variants-state.json
+briefs/xsp-lane-a-variants-scoreboard.json
+briefs/variant_rules_cache/
+briefs/.variant-*
+briefs/*.lock
