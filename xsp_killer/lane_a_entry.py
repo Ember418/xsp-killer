@@ -17,6 +17,8 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
+from xsp_killer.conductor_shadow import shadow_review_entry
+from xsp_killer.risk_gates import entry_allowed_by_risk
 from xsp_killer.lane_a_monitor import (
     DEFAULT_PAPER_LOG,
     DEFAULT_RULES,
@@ -180,7 +182,9 @@ def pick_expiration(
     try:
         import yfinance as yf
 
-        expirations = yf.Ticker("SPY").options
+        from xsp_killer.chain_cache import get_spy_expirations
+
+        expirations = get_spy_expirations()
     except Exception as exc:
         logger.warning("SPY options list failed: %s", exc)
         return None
@@ -281,7 +285,9 @@ def fetch_spy_call_quote(strike_spy: float, expiration: date) -> tuple[float | N
         import pandas as pd
         import yfinance as yf
 
-        chain = yf.Ticker("SPY").option_chain(expiration.isoformat())
+        from xsp_killer.chain_cache import get_spy_option_chain
+
+        chain = get_spy_option_chain(expiration)
         calls = chain.calls
         if calls is None or calls.empty:
             return None, None
@@ -317,11 +323,21 @@ def fetch_spy_call_quote(strike_spy: float, expiration: date) -> tuple[float | N
         return None, None
 
 
-def estimate_fallback_premium(spy_price: float, dte: int) -> float:
-    """Conservative ATM paper premium when live quote unavailable (e.g. after hours)."""
+def estimate_fallback_premium(
+    spy_price: float,
+    dte: int,
+    *,
+    xsp_strike: float | None = None,
+    spx_level: float | None = None,
+) -> float:
+    """Strike-aware paper premium when live quote unavailable."""
     base = max(0.35, spy_price * 0.012)
     scale = max(0.6, min(1.4, (dte / 30.0) ** 0.5))
-    return round(base * scale, 4)
+    prem = base * scale
+    if xsp_strike is not None and spx_level is not None and spx_level > 0:
+        otm_steps = max(0.0, (xsp_strike - spx_level) / 5.0)
+        prem *= max(0.55, 1.0 - 0.08 * otm_steps)
+    return round(prem, 4)
 
 
 def build_paper_position(
@@ -352,6 +368,7 @@ def build_paper_position(
         "delta_at_entry": delta,
         "entry_ts": evaluated_at,
         "dte": compute_dte(expiration),
+        "dte_actual": compute_dte(expiration),
         "status": "open",
         "paper_mode": "automated_log_only",
         "entry_reason": "bb_bounce_long_call",
@@ -371,6 +388,7 @@ def append_entry_log(
     decision: EntryDecision,
     *,
     log_path: Path | None = None,
+    brief_path: Path | None = None,
 ) -> None:
     path = log_path if log_path is not None else DEFAULT_PAPER_LOG
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -446,6 +464,7 @@ def run_paper_entry(
     intraday: bool = False,
     publish_intel: bool = True,
     ta_signal: TaSignal | None = None,
+    brief_path: Path | None = None,
 ) -> EntryDecision:
     lane_rules = LaneRules.from_yaml(rules_path or DEFAULT_RULES)
     entry_rules = EntryRules.from_yaml(rules_path or DEFAULT_RULES)
@@ -455,7 +474,7 @@ def run_paper_entry(
     evaluated_at = datetime.now(timezone.utc).isoformat()
 
     if ta_signal is None:
-        ta_signal = evaluate_ta_signals(ta_rules)
+        ta_signal = evaluate_ta_signals(ta_rules, now_et=now)
 
     regime, regime_ok = read_regime()
     decision = EntryDecision(
@@ -519,6 +538,12 @@ def run_paper_entry(
             _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
             return decision
 
+    ok_risk, risk_reason = entry_allowed_by_risk(state)
+    if not ok_risk:
+        decision.skip_reason = risk_reason
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path, brief_path=brief_path)
+        return decision
+
     spx = fetch_spx_proxy()
     if spx is None:
         decision.skip_reason = "SPX proxy unavailable"
@@ -548,11 +573,16 @@ def run_paper_entry(
 
     econ = PaperEconomics.from_yaml(rules_path or DEFAULT_RULES)
     if premium is None or premium <= 0:
-        strike = round_xsp_strike(spx)
         spy_px = spx / 10.0
-        entry_mid = estimate_fallback_premium(spy_px, compute_dte(expiration, today=now.date()))
+        dte_actual = compute_dte(expiration, today=now.date())
+        entry_mid = estimate_fallback_premium(
+            spy_px,
+            dte_actual,
+            xsp_strike=strike,
+            spx_level=spx,
+        )
         entry_mid *= SPY_TO_XSP_PREMIUM_SCALE
-        quote_source = "fallback_estimate_after_hours"
+        quote_source = "fallback_estimate_strike_aware"
         decision.errors.append("quote_fallback_used")
     else:
         entry_mid = premium
@@ -571,15 +601,30 @@ def run_paper_entry(
         regime=regime,
     )
     stamp_quote_source(position, quote_source)
+    position["dte_actual"] = compute_dte(expiration, today=now.date())
+    position["dte_pick"] = entry_rules.dte_pick
+    position["dte_target"] = entry_rules.dte_target
     position["entry_ta_detail"] = ta_signal.detail
     paper_positions = state.setdefault("paper_positions", {})
     paper_positions[position["position_id"]] = position
+
+    ok_shadow, shadow_reason = shadow_review_entry(
+        regime=regime,
+        prior_day_spy_return_pct=spy_ret,
+        ta_detail=ta_signal.detail,
+        position=position,
+    )
+    if not ok_shadow:
+        paper_positions.pop(position["position_id"], None)
+        decision.skip_reason = shadow_reason
+        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path, brief_path=brief_path)
+        return decision
 
     decision.entered = True
     decision.position = position
     decision.skip_reason = None
 
-    _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+    _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path, brief_path=brief_path)
     return decision
 
 
@@ -657,6 +702,7 @@ def _finalize_entry(
     decision: EntryDecision,
     publish_intel: bool,
     log_path: Path | None = None,
+    brief_path: Path | None = None,
 ) -> None:
     log = list(state.get("entry_log") or [])
     log.append(
@@ -672,7 +718,8 @@ def _finalize_entry(
     state["entry_log"] = log[-200:]
     save_state(state_path or DEFAULT_STATE, state)
     append_entry_log(decision, log_path=log_path)
-    write_entry_brief(decision)
+    if brief_path is not False:
+        write_entry_brief(decision, out_path=brief_path)
 
     if publish_intel:
         try:

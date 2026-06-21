@@ -100,7 +100,7 @@ def _mock_ta_entry_ok(monkeypatch):
         upper_bb_touched=False,
         detail="not used in close_window_only",
     )
-    monkeypatch.setattr("xsp_killer.lane_a_entry.evaluate_ta_signals", lambda rules: fake)
+    monkeypatch.setattr("xsp_killer.lane_a_entry.evaluate_ta_signals", lambda rules, now_et=None: fake)
 
 
 def test_run_paper_entry_outside_window(tmp_path, monkeypatch):

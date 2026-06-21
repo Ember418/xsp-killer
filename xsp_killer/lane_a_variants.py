@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import logging
 from copy import deepcopy
@@ -104,6 +105,13 @@ def variant_state_slice(root: dict[str, Any], variant_id: str) -> dict[str, Any]
     return variants[variant_id]
 
 
+def _variants_state_lock(path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(path, "a+", encoding="utf-8")
+    fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+    return fh
+
+
 def save_variant_state_slice(
     root: dict[str, Any],
     variant_id: str,
@@ -113,8 +121,12 @@ def save_variant_state_slice(
 ) -> None:
     root.setdefault("variants", {})[variant_id] = slice_state
     p = path or DEFAULT_VARIANTS_STATE
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
+    lock = _variants_state_lock(p)
+    try:
+        p.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
+    finally:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        lock.close()
 
 
 def run_variant_entry(
@@ -139,6 +151,7 @@ def run_variant_entry(
         now_et=now_et,
         force=force,
         publish_intel=False,
+        brief_path=False,
     )
     updated = load_state(tmp_state)
     if decision.entered and decision.position:
@@ -172,6 +185,8 @@ def run_variant_monitor(
         state_path=tmp_state,
         now_et=now_et,
         publish_intel=False,
+        log_path=log_path,
+        write_paper_brief=False,
     )
     updated = load_state(tmp_state)
     save_variant_state_slice(root, spec.variant_id, updated, path=state_path)
@@ -182,6 +197,18 @@ def run_variant_monitor(
     return report
 
 
+def _prune_variant_rules_cache(active_ids: set[str]) -> None:
+    cache_dir = ROOT / "briefs" / "variant_rules_cache"
+    if not cache_dir.is_dir():
+        return
+    for fp in cache_dir.glob("*.yaml"):
+        if fp.stem not in active_ids:
+            try:
+                fp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def run_all_variant_entries(
     *,
     config_path: Path | None = None,
@@ -190,9 +217,14 @@ def run_all_variant_entries(
     exclude: set[str] | None = None,
     force: bool = False,
 ) -> list[tuple[VariantSpec, Any]]:
+    from xsp_killer.chain_cache import clear_chain_cache
+
+    specs = load_variant_specs(config_path)
+    _prune_variant_rules_cache({s.variant_id for s in specs if s.active})
+    clear_chain_cache()
     root = load_variants_state(state_path)
     results: list[tuple[VariantSpec, Any]] = []
-    for spec in load_variant_specs(config_path):
+    for spec in specs:
         if not spec.active:
             continue
         if exclude and spec.variant_id in exclude:
@@ -224,6 +256,9 @@ def run_all_variant_monitors(
     now_et: datetime | None = None,
     exclude: set[str] | None = None,
 ) -> list[tuple[VariantSpec, Any]]:
+    from xsp_killer.chain_cache import clear_chain_cache
+
+    clear_chain_cache()
     root = load_variants_state(state_path)
     results: list[tuple[VariantSpec, Any]] = []
     for spec in load_variant_specs(config_path):

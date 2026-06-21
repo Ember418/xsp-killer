@@ -100,6 +100,7 @@ class LaneAPosition:
     entry_ts: str | None = None
     delta_at_entry: float | None = None
     entry_mid_premium: float | None = None
+    mark_quote_stale: bool = False
     pnl_usd: float | None = None
     pnl_per_contract: float | None = None
 
@@ -384,11 +385,13 @@ def evaluate_exit_alerts(
     suppress_morning_cut_dte: int | None = None,
 ) -> list[ExitAlert]:
     """Mentor v2: no-sell 08:30–09:30; SL anytime after; TP in sell window; time-stop at 10:00."""
-    _ = suppress_morning_cut_dte
     now = now_et or datetime.now(ET)
     alerts: list[ExitAlert] = []
 
     if in_no_sell_window(now, rules):
+        return alerts
+
+    if pos.mark_quote_stale:
         return alerts
 
     ret_pct = _position_return_pct(pos)
@@ -441,7 +444,17 @@ def evaluate_exit_alerts(
             return alerts
 
     entry_day = _entry_date_et(pos.entry_ts)
-    if entry_day is not None and entry_day < now.date() and now.time() >= rules.sell_deadline_et:
+    suppress_cut = (
+        suppress_morning_cut_dte is not None
+        and pos.dte is not None
+        and pos.dte >= suppress_morning_cut_dte
+    )
+    if (
+        entry_day is not None
+        and entry_day < now.date()
+        and now.time() >= rules.sell_deadline_et
+        and not suppress_cut
+    ):
         alerts.append(
             ExitAlert(
                 position_id=pos.position_id,
@@ -516,6 +529,7 @@ def paper_positions_to_lane(
                 entry_ts=raw.get("entry_ts"),
                 delta_at_entry=raw.get("delta_at_entry"),
                 entry_mid_premium=entry_mid,
+                mark_quote_stale=bool(raw.get("mark_quote_stale")),
                 pnl_usd=None,
                 pnl_per_contract=None,
             )
@@ -525,11 +539,18 @@ def paper_positions_to_lane(
 
 
 def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Update mark_price on open paper positions via SPY chain proxy."""
+    """Update mark_price on open paper positions via per-strike SPY chain proxy."""
     try:
-        from xsp_killer.lane_a_entry import fetch_spy_call_quote
+        from xsp_killer.lane_a_entry import (
+            estimate_fallback_premium,
+            fetch_spy_call_quote,
+            fetch_spx_proxy,
+        )
     except ImportError:
         return positions
+    from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
+
+    spx = fetch_spx_proxy()
     updated: list[dict[str, Any]] = []
     for raw in positions:
         pos = dict(raw)
@@ -538,11 +559,18 @@ def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]
         if exp is None or strike <= 0:
             updated.append(pos)
             continue
-        from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
-
+        dte = compute_dte(exp)
         mid, _ = fetch_spy_call_quote(strike / 10.0, exp)
         if mid is not None:
             pos["mark_price"] = round(mid * SPY_TO_XSP_PREMIUM_SCALE, 4)
+            pos["mark_quote_stale"] = False
+        elif spx is not None:
+            spy_px = spx / 10.0
+            fb = estimate_fallback_premium(spy_px, dte, xsp_strike=strike, spx_level=spx)
+            pos["mark_price"] = round(fb * SPY_TO_XSP_PREMIUM_SCALE, 4)
+            pos["mark_quote_stale"] = True
+        else:
+            pos["mark_quote_stale"] = True
         updated.append(pos)
     return updated
 
@@ -737,6 +765,9 @@ def run_monitor(
     publish_intel: bool = True,
     ta_signal: Any | None = None,
     fetch_ta: bool = True,
+    log_path: Path | None = None,
+    paper_brief_path: Path | None = None,
+    write_paper_brief: bool = True,
 ) -> MonitorReport:
     rules = LaneRules.from_yaml(rules_path or DEFAULT_RULES)
     state = load_state(state_path or DEFAULT_STATE)
@@ -750,7 +781,7 @@ def run_monitor(
             ta_rules = TaRules.from_yaml(rules_path or DEFAULT_RULES)
             suppress_dte = ta_rules.suppress_morning_cut_dte_gte
             if ta_signal is None and fetch_ta:
-                ta_signal = evaluate_ta_signals(ta_rules)
+                ta_signal = evaluate_ta_signals(ta_rules, now_et=now_et or datetime.now(ET))
         except Exception as exc:
             ta_signal = None
             logger.warning("TA evaluation skipped: %s", exc)
@@ -840,8 +871,9 @@ def run_monitor(
             evaluated_at=report.evaluated_at,
             logic_version=rules.logic_version,
         )
-    append_paper_pnl_log(report=report, classified=classified, alerts=all_alerts)
-    write_paper_pnl_brief(state, report=report)
+    append_paper_pnl_log(report=report, classified=classified, alerts=all_alerts, log_path=log_path)
+    if write_paper_brief:
+        write_paper_pnl_brief(state, report=report, out_path=paper_brief_path)
 
     if publish_intel and all_alerts:
         try:

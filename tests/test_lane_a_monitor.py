@@ -225,7 +225,7 @@ def test_read_regime_from_intel_dict(monkeypatch):
 def test_pnl_uses_entry_fill_not_double_count():
     from xsp_killer.paper_economics import PaperEconomics, entry_fill_premium, pnl_from_entry_fill
 
-    econ = PaperEconomics(commission_usd_per_contract=0.65, slippage_pct_of_premium=0.015)
+    econ = PaperEconomics(commission_usd_per_contract=0.65, slippage_pct_of_premium=0.005, slippage_usd_per_share=0.12, slippage_max_pct_of_premium=0.015)
     entry_mid = 24.5
     entry_fill = entry_fill_premium(entry_mid, econ)
     pnl = pnl_from_entry_fill(entry_fill=entry_fill, exit_mid=29.4, econ=econ)
@@ -259,3 +259,50 @@ def test_open_paper_position_monitored_below_entry_dte_min(tmp_path):
     assert len(classified) == 1
     assert classified[0].dte == 13
 
+
+
+def test_stale_mark_skips_exit_alerts():
+    from xsp_killer.lane_a_monitor import LaneAPosition, evaluate_exit_alerts
+
+    pos = LaneAPosition(
+        position_id="paper:XSP:2026-07-17:7505",
+        chain_symbol="XSP",
+        option_type="call",
+        strike=7505.0,
+        expiration_date=date(2026, 7, 17),
+        quantity=1.0,
+        average_price=6.0,
+        mark_price=5.5,
+        dte=28,
+        entry_ts="2026-06-16T19:45:00+00:00",
+        entry_mid_premium=5.8,
+        mark_quote_stale=True,
+    )
+    pos.pnl_per_contract = -50.0
+    pos.pnl_usd = -50.0
+    now = datetime(2026, 6, 17, 10, 0, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
+    assert alerts == []
+
+
+def test_suppress_morning_cut_for_long_dte():
+    from xsp_killer.lane_a_monitor import LaneAPosition, evaluate_exit_alerts
+
+    pos = LaneAPosition(
+        position_id="paper:XSP:2026-07-31:7500",
+        chain_symbol="XSP",
+        option_type="call",
+        strike=7500.0,
+        expiration_date=date(2026, 7, 31),
+        quantity=1.0,
+        average_price=6.0,
+        mark_price=5.9,
+        dte=35,
+        entry_ts="2026-06-16T19:45:00+00:00",
+        entry_mid_premium=5.8,
+    )
+    pos.pnl_per_contract = -10.0
+    pos.pnl_usd = -10.0
+    now = datetime(2026, 6, 17, 10, 0, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, RULES, now_et=now, suppress_morning_cut_dte=30)
+    assert alerts == []

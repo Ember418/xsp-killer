@@ -65,6 +65,7 @@ class TaRules:
 class BarSnapshot:
     timeframe: str
     ts: str
+    open: float
     close: float
     high: float
     low: float
@@ -117,13 +118,25 @@ def fetch_intraday_bars(symbol: str, timeframe: Timeframe, *, period: str = "10d
 
 
 def compute_vwap(df: pd.DataFrame) -> pd.Series:
+    """Session-reset VWAP: cumulate within each ET calendar day."""
     typical = (df["high"] + df["low"] + df["close"]) / 3.0
     vol = df.get("volume")
     if vol is None or vol.sum() == 0:
         return typical.expanding().mean()
-    cum_vol = vol.cumsum()
-    cum_pv = (typical * vol).cumsum()
-    return cum_pv / cum_vol.replace(0, pd.NA)
+    out = pd.Series(index=df.index, dtype=float)
+    idx = df.index
+    if hasattr(idx, "tz") and idx.tz is not None:
+        days = idx.tz_convert(ET).date
+    else:
+        days = pd.to_datetime(idx).date
+    for day in pd.unique(days):
+        mask = days == day
+        sub_typ = typical.loc[mask]
+        sub_vol = vol.loc[mask]
+        cum_vol = sub_vol.cumsum()
+        cum_pv = (sub_typ * sub_vol).cumsum()
+        out.loc[mask] = (cum_pv / cum_vol.replace(0, pd.NA)).values
+    return out
 
 
 def enrich_bars(df: pd.DataFrame, *, period: int, std: float) -> pd.DataFrame:
@@ -142,9 +155,11 @@ def _bar_snapshot(row: pd.Series, timeframe: str) -> BarSnapshot:
         ts_s = ts.isoformat()
     else:
         ts_s = str(ts)
+    open_px = float(row["open"]) if "open" in row.index else float(row["close"])
     return BarSnapshot(
         timeframe=timeframe,
         ts=ts_s,
+        open=open_px,
         close=float(row["close"]),
         high=float(row["high"]),
         low=float(row["low"]),
@@ -190,11 +205,36 @@ def detect_upper_bb_exit(prev: BarSnapshot, curr: BarSnapshot, *, tolerance_pct:
     if not detect_upper_bb_touch(prev, curr, tolerance_pct=tolerance_pct):
         return False, "no upper BB touch"
 
-    rejected = curr.close < upper or curr.close < curr.open
+    rejected = curr.close < upper and (curr.close < curr.open or curr.close < prev.close)
     if not rejected:
         return False, "upper BB touch without rejection candle"
 
     return True, f"upper BB rejection (high {curr.high:.2f}, close {curr.close:.2f}, upper {upper:.2f})"
+
+
+
+_MAX_BAR_AGE_MINUTES = {"15m": 30, "1h": 120}
+
+
+def _bar_age_minutes(bar_ts: str, now_et: datetime) -> float | None:
+    try:
+        ts = pd.Timestamp(bar_ts)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize(ET)
+        else:
+            ts = ts.tz_convert(ET)
+        return (now_et - ts.to_pydatetime()).total_seconds() / 60.0
+    except (ValueError, TypeError):
+        return None
+
+
+def _bars_fresh(curr: BarSnapshot | None, timeframe: str, now_et: datetime) -> bool:
+    if curr is None:
+        return False
+    age = _bar_age_minutes(curr.ts, now_et)
+    if age is None:
+        return False
+    return age <= _MAX_BAR_AGE_MINUTES.get(timeframe, 120)
 
 
 def evaluate_timeframe(df: pd.DataFrame, timeframe: str, rules: TaRules) -> tuple[BarSnapshot | None, BarSnapshot | None]:
@@ -214,9 +254,11 @@ def evaluate_ta_signals(
     bars_primary: pd.DataFrame | None = None,
     bars_confirm: pd.DataFrame | None = None,
     symbol: str | None = None,
+    now_et: datetime | None = None,
 ) -> TaSignal:
     sym = symbol or rules.symbol
     errors: list[str] = []
+    now = now_et or datetime.now(ET)
 
     if bars_primary is None:
         bars_primary = fetch_intraday_bars(sym, rules.primary_timeframe)
@@ -229,6 +271,13 @@ def evaluate_ta_signals(
     if curr_p is None:
         errors.append("insufficient primary bars")
         return TaSignal("none", None, curr_c, False, False, False, "no primary TA data", errors)
+
+    if not _bars_fresh(curr_p, rules.primary_timeframe, now):
+        errors.append(f"stale primary bar ({curr_p.ts})")
+        return TaSignal("none", curr_p, curr_c, False, False, False, "stale primary TA data", errors)
+    if curr_c is not None and not _bars_fresh(curr_c, rules.confirm_timeframe, now):
+        errors.append(f"stale confirm bar ({curr_c.ts})")
+        curr_c = None
 
     entry_p, entry_detail_p = detect_bb_bounce_entry(prev_p, curr_p, require_vwap=rules.require_vwap_reclaim)
     entry_c = True

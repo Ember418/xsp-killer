@@ -18,6 +18,8 @@ SPY_TO_XSP_PREMIUM_SCALE = 10.0
 class PaperEconomics:
     commission_usd_per_contract: float
     slippage_pct_of_premium: float
+    slippage_usd_per_share: float
+    slippage_max_pct_of_premium: float
 
     @classmethod
     def from_yaml(cls, path: Path | None = None) -> PaperEconomics:
@@ -26,18 +28,26 @@ class PaperEconomics:
         return cls(
             commission_usd_per_contract=float(cfg.get("commission_usd_per_contract", 0.65)),
             slippage_pct_of_premium=float(cfg.get("slippage_pct_of_premium", 0.005)),
+            slippage_usd_per_share=float(cfg.get("slippage_usd_per_share", 0.12)),
+            slippage_max_pct_of_premium=float(cfg.get("slippage_max_pct_of_premium", 0.015)),
         )
+
+
+def _slippage_per_share(mid_premium: float, econ: PaperEconomics) -> float:
+    pct_slip = mid_premium * econ.slippage_pct_of_premium
+    capped_pct = min(pct_slip, mid_premium * econ.slippage_max_pct_of_premium)
+    return max(econ.slippage_usd_per_share, capped_pct)
 
 
 def entry_fill_premium(mid_premium: float, econ: PaperEconomics) -> float:
     """Effective premium paid per share (mid + slippage + commission/100)."""
-    slip = mid_premium * econ.slippage_pct_of_premium
+    slip = _slippage_per_share(mid_premium, econ)
     return round(mid_premium + slip + econ.commission_usd_per_contract / 100.0, 4)
 
 
 def exit_fill_premium(mid_premium: float, econ: PaperEconomics) -> float:
     """Effective premium received per share (mid - slippage - commission/100)."""
-    slip = mid_premium * econ.slippage_pct_of_premium
+    slip = _slippage_per_share(mid_premium, econ)
     return round(max(0.0, mid_premium - slip - econ.commission_usd_per_contract / 100.0), 4)
 
 

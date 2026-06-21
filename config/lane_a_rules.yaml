@@ -32,7 +32,9 @@ exit:
 
 paper_economics:
   commission_usd_per_contract: 0.65
-  slippage_pct_of_premium: 0.015
+  slippage_usd_per_share: 0.12
+  slippage_pct_of_premium: 0.005
+  slippage_max_pct_of_premium: 0.015
 
 ta:
   symbol: SPY

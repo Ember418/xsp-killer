@@ -14,7 +14,7 @@ from pathlib import Path
 XSP_ROOT = Path(__file__).resolve().parent.parent
 CEMINI = Path("/opt/cemini")
 PROMPT = XSP_ROOT / "prompts" / "xsp_killer_super_audit.md"
-DEFAULT_OUT = XSP_ROOT / "reports" / "gap-audit" / "pack-xsp-killer"
+DEFAULT_OUT = XSP_ROOT / "reports" / "gap-audit" / "pack-xsp-killer-v3"
 
 
 def _read_tail(path: Path, max_chars: int = 12000) -> str:
@@ -111,6 +111,22 @@ def main() -> int:
         ),
         "paper_log_lane_a.jsonl": _read_tail(XSP_ROOT / "logs" / "xsp_lane_a_paper.jsonl", 15000),
         "paper_log_lane_b.jsonl": _read_tail(XSP_ROOT / "logs" / "xsp_lane_b_paper.jsonl", 8000),
+        "lane_a_variants.yaml": _read_tail(XSP_ROOT / "config" / "lane_a_variants.yaml", 12000),
+        "variants_scoreboard.json": _read_json_pretty(
+            XSP_ROOT / "briefs" / "xsp-lane-a-variants-scoreboard.json"
+        ),
+        "variants_state.json": _read_json_pretty(
+            XSP_ROOT / "briefs" / "xsp-lane-a-variants-state.json"
+        ),
+        "strategy_diagnosis.md": _read_tail(
+            XSP_ROOT / "docs" / "lane-a-strategy-diagnosis.md", 8000
+        ),
+        "prior_audit_synthesis_v2.md": _read_tail(
+            XSP_ROOT / "briefs" / "2026-06-16_xsp-killer-super-audit-synthesis-v2.md", 15000
+        ),
+        "lane_a_monitor_latest.json": _read_json_pretty(
+            XSP_ROOT / "briefs" / "xsp-lane-a-monitor-latest.json"
+        ),
         "README.md": _read_tail(XSP_ROOT / "README.md", 8000),
         "env_example.txt": _read_tail(XSP_ROOT / ".env.example", 4000),
     }
@@ -155,16 +171,20 @@ def main() -> int:
     brief_dir = out / "cemini_briefs"
     brief_dir.mkdir(parents=True, exist_ok=True)
     brief_names: list[str] = []
-    for pat in [
-        "2026-06-14_xsp-lane-a-overnight-swing-monitor-cemini-prod.md",
-        "2026-06-14_xsp-lane-b-leaps-hedge-monitor-cemini-prod.md",
-        "2026-05-29_k79-smb-capital-youtube-synthesis-cemini.md",
-        "2026-06-09_cemini-suite-fable-super-audit-synthesis-v2.md",
-    ]:
-        src = CEMINI / "briefs" / pat
+    brief_candidates = [
+        CEMINI / "briefs" / "archive" / "pivot-2026-06" / "xsp-cemini-superseded"
+        / "2026-06-14_xsp-lane-a-overnight-swing-monitor-cemini-prod.md",
+        CEMINI / "briefs" / "archive" / "pivot-2026-06" / "xsp-cemini-superseded"
+        / "2026-06-14_xsp-lane-b-leaps-hedge-monitor-cemini-prod.md",
+        CEMINI / "briefs" / "2026-05-29_k79-smb-capital-youtube-synthesis-cemini.md",
+        CEMINI / "briefs" / "2026-06-09_cemini-suite-fable-super-audit-synthesis-v2.md",
+        CEMINI / "briefs" / "2026-06-15_k117-regime-vol-gating-equity-signals-cemini-prod.md",
+    ]
+    for src in brief_candidates:
         if src.is_file():
-            (brief_dir / pat).write_text(_read_tail(src, 20000), encoding="utf-8")
-            brief_names.append(f"cemini_briefs/{pat}")
+            name = src.name
+            (brief_dir / name).write_text(_read_tail(src, 20000), encoding="utf-8")
+            brief_names.append(f"cemini_briefs/{name}")
 
     # --- OSINT wiki excerpts ---
     wiki_dir = out / "wiki_excerpts"
@@ -242,6 +262,8 @@ def main() -> int:
         "- Librarian/OSINT remote wiki **destroyed**; local research_wiki only",
         "- XSP timers: xsp-killer-* on prod; cemini-xsp-lane-* disabled post-cutover",
         "- RH poll off by default; paper log only for Lane A entries",
+        "- **13 variant shadow soak active** — scoreboard + variant logs in artifacts",
+        "- Pre-2026-06-16 14:18 UTC paper logs are **invalid** for PnL conclusions",
         "",
     ]
 
@@ -251,8 +273,13 @@ def main() -> int:
     # Slim prompt for cursor-audit + API: index + curated excerpts only
     key_excerpts = [
         out / "lane_a_rules.yaml",
+        out / "lane_a_variants.yaml",
+        out / "variants_scoreboard.json",
+        out / "strategy_diagnosis.md",
+        out / "prior_audit_synthesis_v2.md",
         out / "xsp_killer_source" / "lane_a_entry.py",
         out / "xsp_killer_source" / "lane_a_monitor.py",
+        out / "xsp_killer_source" / "lane_a_variants.py",
         out / "xsp_killer_source" / "lane_a_ta.py",
         out / "xsp_killer_source" / "macro_regime.py",
         out / "xsp_killer_source" / "paper_economics.py",
