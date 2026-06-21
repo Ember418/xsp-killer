@@ -567,7 +567,7 @@ def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]
         elif spx is not None:
             spy_px = spx / 10.0
             fb = estimate_fallback_premium(spy_px, dte, xsp_strike=strike, spx_level=spx)
-            pos["mark_price"] = round(fb * SPY_TO_XSP_PREMIUM_SCALE, 4)
+            pos["mark_price"] = round(fb, 4)
             pos["mark_quote_stale"] = True
         else:
             pos["mark_quote_stale"] = True

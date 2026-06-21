@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 
 from xsp_killer.lane_a_variants import (  # noqa: E402
     build_scoreboard,
+    reset_soak,
     run_all_variant_entries,
     run_all_variant_monitors,
 )
@@ -54,6 +55,18 @@ def main() -> int:
 
     sub.add_parser("scoreboard", help="Rebuild variant comparison scoreboard")
 
+    p_reset = sub.add_parser(
+        "reset-soak",
+        help="Archive pre-patch soak data and start fresh scoreboard epoch",
+    )
+    p_reset.add_argument("--commit", help="Git commit hash for reset metadata")
+    p_reset.add_argument("--reason", default="post-patch scoreboard epoch")
+    p_reset.add_argument(
+        "--keep-baseline-events",
+        action="store_true",
+        help="Do not clear production baseline paper_events",
+    )
+
     args = parser.parse_args()
     now_et = _parse_at_et(getattr(args, "at_et", None))
 
@@ -75,6 +88,30 @@ def main() -> int:
                 f"alerts={len(report.alerts)} mtm={report.paper_mtm_usd}"
             )
         build_scoreboard()
+        return 0
+
+    if args.cmd == "reset-soak":
+        import subprocess
+
+        commit = args.commit
+        if not commit:
+            try:
+                commit = (
+                    subprocess.check_output(
+                        ["git", "rev-parse", "--short", "HEAD"],
+                        cwd=str(ROOT),
+                        text=True,
+                    )
+                    .strip()
+                )
+            except Exception:
+                commit = None
+        meta = reset_soak(
+            commit=commit,
+            reason=args.reason,
+            clear_baseline_events=not args.keep_baseline_events,
+        )
+        print(json.dumps(meta, indent=2))
         return 0
 
     if args.cmd == "scoreboard":

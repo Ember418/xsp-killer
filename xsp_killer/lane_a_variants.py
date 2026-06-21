@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import shutil
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
@@ -282,6 +283,88 @@ def run_all_variant_monitors(
     return results
 
 
+
+
+def _soak_reset_at(root: dict[str, Any]) -> str | None:
+    raw = root.get("soak_reset_at")
+    return str(raw) if raw else None
+
+
+def _events_in_soak_epoch(state: dict[str, Any], soak_reset_at: str | None) -> list[dict[str, Any]]:
+    events = [e for e in (state.get("paper_events") or []) if isinstance(e, dict)]
+    if not soak_reset_at:
+        return events
+    return [e for e in events if str(e.get("evaluated_at") or "") >= soak_reset_at]
+
+
+def reset_soak(
+    *,
+    commit: str | None = None,
+    reason: str = "post-patch scoreboard epoch",
+    state_path: Path | None = None,
+    baseline_state_path: Path | None = None,
+    scoreboard_path: Path | None = None,
+    archive_dir: Path | None = None,
+    clear_baseline_events: bool = True,
+) -> dict[str, Any]:
+    """Archive pre-reset soak data and start a fresh scoreboard epoch."""
+    reset_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    sp = state_path or DEFAULT_VARIANTS_STATE
+    bp = baseline_state_path or (ROOT / "briefs" / "xsp-lane-a-state.json")
+    sb = scoreboard_path or DEFAULT_SCOREBOARD
+    ad = archive_dir or (ROOT / "briefs" / "archive")
+    ad.mkdir(parents=True, exist_ok=True)
+    stamp = reset_at.replace(":", "").replace("-", "")[:15]
+
+    archived: list[str] = []
+    for src in (sp, sb, bp):
+        if src.is_file():
+            dest = ad / f"{src.stem}-pre-reset-{stamp}{src.suffix}"
+            shutil.copy2(src, dest)
+            archived.append(str(dest))
+
+    root = load_variants_state(sp)
+    for slice_state in (root.get("variants") or {}).values():
+        if isinstance(slice_state, dict):
+            slice_state["paper_events"] = []
+            slice_state["entry_log"] = []
+
+    root["soak_reset_at"] = reset_at
+    if commit:
+        root["soak_reset_commit"] = commit
+    root["soak_reset_reason"] = reason
+    root["soak_reset_archives"] = archived
+
+    lock = _variants_state_lock(sp)
+    try:
+        sp.parent.mkdir(parents=True, exist_ok=True)
+        sp.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
+    finally:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        lock.close()
+
+    if clear_baseline_events and bp.is_file():
+        try:
+            baseline = json.loads(bp.read_text(encoding="utf-8"))
+            baseline["paper_events"] = []
+            baseline["soak_reset_at"] = reset_at
+            if commit:
+                baseline["soak_reset_commit"] = commit
+            bp.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("baseline soak reset failed: %s", exc)
+
+    out = build_scoreboard(state_path=sp, baseline_state_path=bp, out_path=sb)
+    meta = {
+        "soak_reset_at": reset_at,
+        "soak_reset_commit": commit,
+        "soak_reset_reason": reason,
+        "archived": archived,
+        "scoreboard": str(out),
+    }
+    logger.info("variant soak reset: %s", meta)
+    return meta
+
 def build_scoreboard(
     *,
     config_path: Path | None = None,
@@ -294,8 +377,10 @@ def build_scoreboard(
     root = load_variants_state(state_path)
     rows: list[dict[str, Any]] = []
 
+    soak_reset_at = _soak_reset_at(root)
+
     def _summarize(variant_id: str, state: dict[str, Any], description: str) -> None:
-        events = list(state.get("paper_events") or [])
+        events = _events_in_soak_epoch(state, soak_reset_at)
         open_pos = [
             p
             for p in (state.get("paper_positions") or {}).values()
@@ -341,7 +426,13 @@ def build_scoreboard(
     payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "variants": rows,
-        "note": "Shadow variants run in parallel; compare realized_pnl_usd after 20+ sessions.",
+        "soak_reset_at": soak_reset_at,
+        "soak_reset_commit": root.get("soak_reset_commit"),
+        "note": (
+            "Shadow variants run in parallel; compare realized_pnl_usd after 20+ post-reset sessions."
+            if soak_reset_at
+            else "Shadow variants run in parallel; compare realized_pnl_usd after 20+ sessions."
+        ),
     }
     out = out_path or DEFAULT_SCOREBOARD
     out.parent.mkdir(parents=True, exist_ok=True)

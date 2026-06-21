@@ -141,7 +141,7 @@ def already_entered_today(state: dict[str, Any], today: date) -> bool:
 
 
 def fetch_spy_ohlcv() -> tuple[float | None, float | None, float | None]:
-    """Return (prior_close, prior_open, prior_return_pct) for last completed session."""
+    """Return (prior_close, prior_open, prior_close_to_close_return_pct)."""
     try:
         import yfinance as yf
 
@@ -151,7 +151,24 @@ def fetch_spy_ohlcv() -> tuple[float | None, float | None, float | None]:
         prev = hist.iloc[-2]
         o = float(prev["Open"])
         c = float(prev["Close"])
-        ret = ((c - o) / o * 100.0) if o else None
+        ret: float | None = None
+        if len(hist) >= 3:
+            prev_prev_close = float(hist.iloc[-3]["Close"])
+            if prev_prev_close:
+                ret = (c - prev_prev_close) / prev_prev_close * 100.0
+        elif o:
+            ret = (c - o) / o * 100.0
+        try:
+            session_date = prev.name.date() if hasattr(prev.name, "date") else str(prev.name)[:10]
+        except Exception:
+            session_date = "unknown"
+        logger.debug(
+            "prior_day_spy session=%s close=%.4f open=%.4f return_cc=%s",
+            session_date,
+            c,
+            o,
+            f"{ret:.4f}" if ret is not None else "n/a",
+        )
         return c, o, ret
     except Exception as exc:
         logger.warning("SPY OHLCV fetch failed: %s", exc)
@@ -279,6 +296,25 @@ def pick_strike(
     )
 
 
+
+
+def _select_spy_call_row(calls: Any, strike_spy: float) -> Any:
+    """Nearest SPY chain row for XSP/10 proxy; tie-break toward higher strike at .5 halves."""
+    strikes = calls["strike"].astype(float)
+    abs_diff = (strikes - strike_spy).abs()
+    min_diff = float(abs_diff.min())
+    candidates = calls.loc[abs_diff <= min_diff + 1e-9]
+    if len(candidates) > 1:
+        idx = candidates["strike"].astype(float).idxmax()
+        return calls.loc[idx]
+    return calls.loc[abs_diff.idxmin()]
+
+
+def xsp_strike_to_spy_chain_strike(xsp_strike: float) -> float:
+    """Map XSP strike (e.g. 7505) to SPY chain lookup key (750.5)."""
+    return xsp_strike / 10.0
+
+
 def fetch_spy_call_quote(strike_spy: float, expiration: date) -> tuple[float | None, float | None]:
     """Mid premium and delta proxy from SPY chain (XSP price proxy)."""
     try:
@@ -291,8 +327,7 @@ def fetch_spy_call_quote(strike_spy: float, expiration: date) -> tuple[float | N
         calls = chain.calls
         if calls is None or calls.empty:
             return None, None
-        target = round(strike_spy)
-        row = calls.loc[(calls["strike"] - target).abs().idxmin()]
+        row = _select_spy_call_row(calls, strike_spy)
 
         def _pos_float(val: Any) -> float | None:
             if val is None or (isinstance(val, float) and pd.isna(val)):
@@ -329,14 +364,17 @@ def estimate_fallback_premium(
     *,
     xsp_strike: float | None = None,
     spx_level: float | None = None,
+    scale_to_xsp: bool = True,
 ) -> float:
-    """Strike-aware paper premium when live quote unavailable."""
+    """Strike-aware paper premium when live quote unavailable (XSP notional by default)."""
     base = max(0.35, spy_price * 0.012)
     scale = max(0.6, min(1.4, (dte / 30.0) ** 0.5))
     prem = base * scale
     if xsp_strike is not None and spx_level is not None and spx_level > 0:
         otm_steps = max(0.0, (xsp_strike - spx_level) / 5.0)
         prem *= max(0.55, 1.0 - 0.08 * otm_steps)
+    if scale_to_xsp:
+        prem *= SPY_TO_XSP_PREMIUM_SCALE
     return round(prem, 4)
 
 
@@ -581,7 +619,6 @@ def run_paper_entry(
             xsp_strike=strike,
             spx_level=spx,
         )
-        entry_mid *= SPY_TO_XSP_PREMIUM_SCALE
         quote_source = "fallback_estimate_strike_aware"
         decision.errors.append("quote_fallback_used")
     else:
