@@ -17,6 +17,11 @@ from zoneinfo import ZoneInfo
 import yaml
 
 from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
+from xsp_killer.spy_quote import (
+    fetch_spy_call_quote_legacy as fetch_spy_call_quote,
+    fetch_spy_call_quote as fetch_spy_call_mark,
+    xsp_strike_to_spy_chain_strike,
+)
 from xsp_killer.conductor_shadow import shadow_review_entry
 from xsp_killer.risk_gates import entry_allowed_by_risk
 from xsp_killer.lane_a_monitor import (
@@ -297,67 +302,6 @@ def pick_strike(
 
 
 
-
-def _select_spy_call_row(calls: Any, strike_spy: float) -> Any:
-    """Nearest SPY chain row for XSP/10 proxy; tie-break toward higher strike at .5 halves."""
-    strikes = calls["strike"].astype(float)
-    abs_diff = (strikes - strike_spy).abs()
-    min_diff = float(abs_diff.min())
-    candidates = calls.loc[abs_diff <= min_diff + 1e-9]
-    if len(candidates) > 1:
-        idx = candidates["strike"].astype(float).idxmax()
-        return calls.loc[idx]
-    return calls.loc[abs_diff.idxmin()]
-
-
-def xsp_strike_to_spy_chain_strike(xsp_strike: float) -> float:
-    """Map XSP strike (e.g. 7505) to SPY chain lookup key (750.5)."""
-    return xsp_strike / 10.0
-
-
-def fetch_spy_call_quote(strike_spy: float, expiration: date) -> tuple[float | None, float | None]:
-    """Mid premium and delta proxy from SPY chain (XSP price proxy)."""
-    try:
-        import pandas as pd
-        import yfinance as yf
-
-        from xsp_killer.chain_cache import get_spy_option_chain
-
-        chain = get_spy_option_chain(expiration)
-        calls = chain.calls
-        if calls is None or calls.empty:
-            return None, None
-        row = _select_spy_call_row(calls, strike_spy)
-
-        def _pos_float(val: Any) -> float | None:
-            if val is None or (isinstance(val, float) and pd.isna(val)):
-                return None
-            try:
-                v = float(val)
-            except (TypeError, ValueError):
-                return None
-            return v if v > 0 else None
-
-        bid = _pos_float(row.get("bid"))
-        ask = _pos_float(row.get("ask"))
-        last = _pos_float(row.get("lastPrice"))
-        mid = None
-        if bid is not None and ask is not None:
-            mid = (bid + ask) / 2.0
-        elif last is not None:
-            mid = last
-        elif ask is not None:
-            mid = ask
-        elif bid is not None:
-            mid = bid
-
-        delta = _pos_float(row.get("delta"))
-        return mid, delta
-    except Exception as exc:
-        logger.warning("SPY call quote failed: %s", exc)
-        return None, None
-
-
 def estimate_fallback_premium(
     spy_price: float,
     dte: int,
@@ -417,8 +361,15 @@ def build_paper_position(
     }
 
 
-def stamp_quote_source(position: dict[str, Any], source: str) -> dict[str, Any]:
+def stamp_quote_source(
+    position: dict[str, Any],
+    source: str,
+    *,
+    spy_row_strike: float | None = None,
+) -> dict[str, Any]:
     position["quote_source"] = source
+    if spy_row_strike is not None:
+        position["spy_row_strike"] = spy_row_strike
     return position
 
 
@@ -637,7 +588,13 @@ def run_paper_entry(
         spy_return_pct=spy_ret,
         regime=regime,
     )
-    stamp_quote_source(position, quote_source)
+    spy_row = None
+    try:
+        q = fetch_spy_call_mark(xsp_strike_to_spy_chain_strike(strike), expiration)
+        spy_row = q.spy_row_strike
+    except Exception:
+        spy_row = None
+    stamp_quote_source(position, quote_source, spy_row_strike=spy_row)
     position["dte_actual"] = compute_dte(expiration, today=now.date())
     position["dte_pick"] = entry_rules.dte_pick
     position["dte_target"] = entry_rules.dte_target

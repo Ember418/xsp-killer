@@ -6,11 +6,10 @@ from datetime import date
 
 import pandas as pd
 
-from xsp_killer.lane_a_entry import (
+from xsp_killer.lane_a_entry import estimate_fallback_premium, fetch_spy_ohlcv
+from xsp_killer.spy_quote import (
     _select_spy_call_row,
-    estimate_fallback_premium,
-    fetch_spy_ohlcv,
-    fetch_spy_call_quote,
+    fetch_spy_call_quote_legacy as fetch_spy_call_quote,
     xsp_strike_to_spy_chain_strike,
 )
 from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE

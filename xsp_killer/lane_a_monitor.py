@@ -541,15 +541,12 @@ def paper_positions_to_lane(
 def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Update mark_price on open paper positions via per-strike SPY chain proxy."""
     try:
-        from xsp_killer.lane_a_entry import (
-            estimate_fallback_premium,
-            fetch_spy_call_quote,
-            fetch_spx_proxy,
-        )
+        from xsp_killer.lane_a_entry import estimate_fallback_premium, fetch_spx_proxy
+        from xsp_killer.spy_quote import fetch_spy_call_quote, xsp_strike_to_spy_chain_strike
     except ImportError:
         return positions
-    from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
 
+    now_iso = datetime.now(timezone.utc).isoformat()
     spx = fetch_spx_proxy()
     updated: list[dict[str, Any]] = []
     for raw in positions:
@@ -560,17 +557,33 @@ def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]
             updated.append(pos)
             continue
         dte = compute_dte(exp)
-        mid, _ = fetch_spy_call_quote(strike / 10.0, exp)
-        if mid is not None:
-            pos["mark_price"] = round(mid * SPY_TO_XSP_PREMIUM_SCALE, 4)
-            pos["mark_quote_stale"] = False
+        entry_mid_raw = pos.get("entry_mid_premium")
+        entry_mid = float(entry_mid_raw) if entry_mid_raw is not None else None
+        last_raw = pos.get("last_mark_price")
+        last_mark = float(last_raw) if last_raw is not None else None
+        quote = fetch_spy_call_quote(
+            xsp_strike_to_spy_chain_strike(strike),
+            exp,
+            entry_mid_xsp=entry_mid,
+            last_mark_xsp=last_mark,
+        )
+        if quote.exit_mark_xsp is not None:
+            pos["mark_mid_xsp"] = quote.mark_xsp
+            pos["mark_price"] = quote.exit_mark_xsp
+            pos["mark_quote_stale"] = quote.stale
+            pos["mark_stale_reason"] = quote.stale_reason
+            pos["spy_row_strike"] = quote.spy_row_strike
+            pos["last_mark_price"] = quote.exit_mark_xsp
+            pos["last_mark_at"] = now_iso
         elif spx is not None:
             spy_px = spx / 10.0
             fb = estimate_fallback_premium(spy_px, dte, xsp_strike=strike, spx_level=spx)
             pos["mark_price"] = round(fb, 4)
             pos["mark_quote_stale"] = True
+            pos["mark_stale_reason"] = "fallback_estimate"
         else:
             pos["mark_quote_stale"] = True
+            pos["mark_stale_reason"] = "no_quote"
         updated.append(pos)
     return updated
 
@@ -864,6 +877,34 @@ def run_monitor(
             }
             for c in closed_paper
         ]
+        if all_alerts:
+            try:
+                from xsp_killer.exit_shadow import (
+                    append_shadow_exit_log,
+                    build_shadow_exit_record,
+                )
+
+                now_local = now_et or datetime.now(ET)
+                for alert in all_alerts:
+                    pos_obj = next(
+                        (p for p in classified if p.position_id == alert.position_id),
+                        None,
+                    )
+                    if pos_obj is None:
+                        continue
+                    shadow_rec = build_shadow_exit_record(
+                        pos_obj,
+                        rules,
+                        now_et=now_local,
+                        ta_signal=ta_signal,
+                        suppress_morning_cut_dte=suppress_dte,
+                        actual_alert=alert,
+                        evaluated_at=report.evaluated_at,
+                        evaluate_fn=evaluate_exit_alerts,
+                    )
+                    append_shadow_exit_log(shadow_rec, state=state)
+            except Exception as exc:
+                report.errors.append(f"shadow exit log failed: {exc}")
     else:
         report.paper_hypothetical_exits = record_paper_exit_signals(
             state,
