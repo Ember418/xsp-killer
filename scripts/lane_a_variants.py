@@ -17,6 +17,7 @@ if str(ROOT) not in sys.path:
 
 from xsp_killer.lane_a_variants import (  # noqa: E402
     build_scoreboard,
+    clear_pnl_epoch,
     reset_soak,
     run_all_variant_entries,
     run_all_variant_monitors,
@@ -61,6 +62,16 @@ def main() -> int:
     )
     p_reset.add_argument("--commit", help="Git commit hash for reset metadata")
     p_reset.add_argument("--reason", default="post-patch scoreboard epoch")
+    p_clear = sub.add_parser(
+        "clear-pnl",
+        help="Clear unreliable paper_events; restart per-variant PnL epoch",
+    )
+    p_clear.add_argument("--commit", help="Git commit hash for epoch metadata")
+    p_clear.add_argument(
+        "--reason",
+        default="unreliable PnL cleared — per-variant epoch restart",
+    )
+
     p_reset.add_argument(
         "--keep-baseline-events",
         action="store_true",
@@ -111,6 +122,26 @@ def main() -> int:
             reason=args.reason,
             clear_baseline_events=not args.keep_baseline_events,
         )
+        print(json.dumps(meta, indent=2))
+        return 0
+
+    if args.cmd == "clear-pnl":
+        import subprocess
+
+        commit = args.commit
+        if not commit:
+            try:
+                commit = (
+                    subprocess.check_output(
+                        ["git", "rev-parse", "--short", "HEAD"],
+                        cwd=str(ROOT),
+                        text=True,
+                    )
+                    .strip()
+                )
+            except Exception:
+                commit = None
+        meta = clear_pnl_epoch(commit=commit, reason=args.reason)
         print(json.dumps(meta, indent=2))
         return 0
 

@@ -749,15 +749,26 @@ def write_paper_pnl_brief(
     report: MonitorReport | None = None,
     out_path: Path | None = None,
 ) -> Path:
-    """Roll up hypothetical paper exits + latest MTM into brief JSON."""
-    events = list(state.get("paper_events") or [])
+    """Baseline production lane only — variant PnL lives in variants scoreboard."""
+    epoch_at = state.get("pnl_epoch_at") or state.get("soak_reset_at")
+    events = [
+        e
+        for e in (state.get("paper_events") or [])
+        if isinstance(e, dict)
+        and (not epoch_at or str(e.get("evaluated_at") or "") >= str(epoch_at))
+    ]
     resolved_pnl = sum(float(e.get("paper_pnl_usd") or 0) for e in events)
     path = out_path or DEFAULT_PAPER_BRIEF
     payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
+        "scope": "baseline_prod_only",
         "logic_version": (report.logic_version if report else None) or "xsp_lane_a_v1",
         "paper_mode": "hypothetical",
-        "note": "Paper lane — BB/VWAP mentor playbook + morning risk cuts; no RH orders",
+        "note": (
+            "Production baseline lane only. Shadow variant comparison: "
+            "briefs/xsp-lane-a-variants-scoreboard.json (per-variant, not summed)."
+        ),
+        "pnl_epoch_at": epoch_at,
         "open_positions_mtm_usd": report.paper_mtm_usd if report else None,
         "hypothetical_exits_n": len(events),
         "hypothetical_realized_pnl_usd": round(resolved_pnl, 2),

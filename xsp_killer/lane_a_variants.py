@@ -365,6 +365,73 @@ def reset_soak(
     logger.info("variant soak reset: %s", meta)
     return meta
 
+
+def clear_pnl_epoch(
+    *,
+    commit: str | None = None,
+    reason: str = "unreliable PnL cleared — per-variant epoch restart",
+    state_path: Path | None = None,
+    baseline_state_path: Path | None = None,
+    scoreboard_path: Path | None = None,
+    archive_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Clear paper_events only; keep entry history. Restart per-variant PnL tracking."""
+    epoch_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    sp = state_path or DEFAULT_VARIANTS_STATE
+    bp = baseline_state_path or (ROOT / "briefs" / "xsp-lane-a-state.json")
+    sb = scoreboard_path or DEFAULT_SCOREBOARD
+    ad = archive_dir or (ROOT / "briefs" / "archive")
+    ad.mkdir(parents=True, exist_ok=True)
+    stamp = epoch_at.replace(":", "").replace("-", "")[:15]
+
+    archived: list[str] = []
+    for src in (sp, sb, bp):
+        if src.is_file():
+            dest = ad / f"{src.stem}-pre-pnl-clear-{stamp}{src.suffix}"
+            shutil.copy2(src, dest)
+            archived.append(str(dest))
+
+    root = load_variants_state(sp)
+    for slice_state in (root.get("variants") or {}).values():
+        if isinstance(slice_state, dict):
+            slice_state["paper_events"] = []
+
+    root["soak_reset_at"] = epoch_at
+    root["pnl_epoch_at"] = epoch_at
+    if commit:
+        root["pnl_epoch_commit"] = commit
+    root["pnl_clear_reason"] = reason
+    root["pnl_clear_archives"] = archived
+
+    lock = _variants_state_lock(sp)
+    try:
+        sp.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
+    finally:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        lock.close()
+
+    if bp.is_file():
+        try:
+            baseline = json.loads(bp.read_text(encoding="utf-8"))
+            baseline["paper_events"] = []
+            baseline["soak_reset_at"] = epoch_at
+            baseline["pnl_epoch_at"] = epoch_at
+            if commit:
+                baseline["pnl_epoch_commit"] = commit
+            bp.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("baseline pnl clear failed: %s", exc)
+
+    out = build_scoreboard(state_path=sp, baseline_state_path=bp, out_path=sb)
+    return {
+        "pnl_epoch_at": epoch_at,
+        "pnl_epoch_commit": commit,
+        "pnl_clear_reason": reason,
+        "archived": archived,
+        "scoreboard": str(out),
+    }
+
+
 def build_scoreboard(
     *,
     config_path: Path | None = None,
@@ -389,14 +456,19 @@ def build_scoreboard(
         realized = round(sum(float(e.get("paper_pnl_usd") or 0) for e in events), 2)
         wins = sum(1 for e in events if float(e.get("paper_pnl_usd") or 0) > 0)
         losses = sum(1 for e in events if float(e.get("paper_pnl_usd") or 0) < 0)
+        trades = len(events)
+        win_rate = round(wins / trades * 100.0, 1) if trades else None
+        avg_pnl = round(realized / trades, 2) if trades else None
         rows.append(
             {
                 "variant_id": variant_id,
                 "description": description,
-                "trades_closed": len(events),
+                "trades_closed": trades,
                 "wins": wins,
                 "losses": losses,
+                "win_rate_pct": win_rate,
                 "realized_pnl_usd": realized,
+                "avg_pnl_per_trade_usd": avg_pnl,
                 "open_positions": len(open_pos),
                 "last_exit": events[-1] if events else None,
             }
@@ -422,16 +494,40 @@ def build_scoreboard(
         except (json.JSONDecodeError, OSError):
             pass
 
-    rows.sort(key=lambda r: r.get("realized_pnl_usd", 0), reverse=True)
+    baseline_row = next((r for r in rows if r["variant_id"] == "v2_baseline_prod"), None)
+    shadow_rows = [r for r in rows if r["variant_id"] != "v2_baseline_prod"]
+    baseline_avg = (baseline_row or {}).get("avg_pnl_per_trade_usd")
+    for row in shadow_rows:
+        avg = row.get("avg_pnl_per_trade_usd")
+        if baseline_avg is not None and avg is not None:
+            row["vs_baseline_avg_per_trade_usd"] = round(avg - baseline_avg, 2)
+        else:
+            row["vs_baseline_avg_per_trade_usd"] = None
+
+    shadow_rows.sort(
+        key=lambda r: (
+            r.get("avg_pnl_per_trade_usd") is not None,
+            r.get("avg_pnl_per_trade_usd") or -1e18,
+        ),
+        reverse=True,
+    )
+    ordered = shadow_rows + ([baseline_row] if baseline_row else [])
     payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "variants": rows,
         "soak_reset_at": soak_reset_at,
+        "pnl_epoch_at": root.get("pnl_epoch_at") or soak_reset_at,
         "soak_reset_commit": root.get("soak_reset_commit"),
+        "pnl_epoch_commit": root.get("pnl_epoch_commit"),
+        "comparison_guidance": (
+            "Rank shadow variants by avg_pnl_per_trade_usd vs v2_baseline_prod. "
+            "Do NOT sum PnL across variants — configs are independent experiments."
+        ),
+        "ranked_by": "avg_pnl_per_trade_usd",
+        "baseline_prod": baseline_row,
+        "shadow_variants": shadow_rows,
+        "variants": ordered,
         "note": (
-            "Shadow variants run in parallel; compare realized_pnl_usd after 20+ post-reset sessions."
-            if soak_reset_at
-            else "Shadow variants run in parallel; compare realized_pnl_usd after 20+ sessions."
+            "Per-variant comparison only. Need ≥20 post-epoch sessions per variant before promotion."
         ),
     }
     out = out_path or DEFAULT_SCOREBOARD

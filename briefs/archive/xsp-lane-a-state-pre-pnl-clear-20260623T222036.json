@@ -1,0 +1,354 @@
+{
+  "positions": {
+    "paper:XSP:2026-06-30:7520": {
+      "lane": "A",
+      "last_seen": "2026-06-17T12:34:35.093990+00:00",
+      "dte": 13,
+      "strike": 7520.0,
+      "chain_symbol": "XSP"
+    },
+    "paper:XSP:2026-07-02:7500": {
+      "lane": "A",
+      "last_seen": "2026-06-18T19:45:30.050482+00:00",
+      "dte": 14,
+      "strike": 7500.0,
+      "chain_symbol": "XSP"
+    },
+    "paper:XSP:2026-07-10:7500": {
+      "lane": "A",
+      "last_seen": "2026-06-20T14:00:19.423021+00:00",
+      "dte": 20,
+      "strike": 7500.0,
+      "chain_symbol": "XSP"
+    },
+    "paper:XSP:2026-07-10:7465": {
+      "lane": "A",
+      "last_seen": "2026-06-23T14:00:15.666781+00:00",
+      "dte": 17,
+      "strike": 7465.0,
+      "chain_symbol": "XSP"
+    }
+  },
+  "paper_positions": {
+    "paper:XSP:2026-06-30:7520": {
+      "position_id": "paper:XSP:2026-06-30:7520",
+      "lane": "A",
+      "chain_symbol": "XSP",
+      "option_type": "call",
+      "strike": 7520.0,
+      "expiration_date": "2026-06-30",
+      "quantity": 1.0,
+      "average_price": 66.3875,
+      "mark_price": 61.8,
+      "entry_mid_premium": 65.4,
+      "delta_at_entry": null,
+      "entry_ts": "2026-06-16T19:45:12.537523+00:00",
+      "dte": 14,
+      "status": "closed",
+      "paper_mode": "automated_log_only",
+      "entry_reason": "bb_bounce_long_call",
+      "logic_version": "xsp_lane_a_v2",
+      "regime_at_entry": "GREEN",
+      "prior_day_spy_return_pct": 0.39636118915662943,
+      "quote_source": "SPY_chain_proxy_cheapest_atm",
+      "entry_ta_detail": "primary: no upper BB touch; confirm: no upper BB touch",
+      "exit_ts": "2026-06-17T12:34:35.093990+00:00",
+      "exit_reason": "time_stop",
+      "exit_pnl_usd": -552.1,
+      "exit_pnl_per_contract": -552.1
+    },
+    "paper:XSP:2026-07-02:7500": {
+      "position_id": "paper:XSP:2026-07-02:7500",
+      "lane": "A",
+      "chain_symbol": "XSP",
+      "option_type": "call",
+      "strike": 7500.0,
+      "expiration_date": "2026-07-02",
+      "quantity": 1.0,
+      "average_price": 61.3633,
+      "mark_price": 60.25,
+      "entry_mid_premium": 60.45,
+      "delta_at_entry": null,
+      "entry_ts": "2026-06-18T19:45:07.732351+00:00",
+      "dte": 14,
+      "status": "closed",
+      "paper_mode": "automated_log_only",
+      "entry_reason": "bb_bounce_long_call",
+      "logic_version": "xsp_lane_a_v2",
+      "regime_at_entry": "GREEN",
+      "prior_day_spy_return_pct": -1.374962578605239,
+      "quote_source": "SPY_chain_proxy_cheapest_atm",
+      "entry_ta_detail": "primary: no upper BB touch; confirm: upper BB rejection (high 747.25, close 747.25, upper 748.00)",
+      "exit_ts": "2026-06-18T19:45:30.050482+00:00",
+      "exit_reason": "time_stop",
+      "exit_pnl_usd": -202.36,
+      "exit_pnl_per_contract": -202.36
+    },
+    "paper:XSP:2026-07-10:7500": {
+      "position_id": "paper:XSP:2026-07-10:7500",
+      "lane": "A",
+      "chain_symbol": "XSP",
+      "option_type": "call",
+      "strike": 7500.0,
+      "expiration_date": "2026-07-10",
+      "quantity": 1.0,
+      "average_price": 97.1928,
+      "mark_price": 95.75,
+      "entry_mid_premium": 95.75,
+      "delta_at_entry": null,
+      "entry_ts": "2026-06-19T19:45:12.535001+00:00",
+      "dte": 21,
+      "status": "closed",
+      "paper_mode": "automated_log_only",
+      "entry_reason": "bb_bounce_long_call",
+      "logic_version": "xsp_lane_a_v2",
+      "regime_at_entry": "GREEN",
+      "prior_day_spy_return_pct": -1.374962578605248,
+      "quote_source": "SPY_chain_proxy_cheapest_near_atm",
+      "entry_ta_detail": "primary: no upper BB touch; confirm: upper BB rejection (high 748.23, close 746.59, upper 747.93)",
+      "exit_ts": "2026-06-20T14:00:19.423021+00:00",
+      "exit_reason": "time_stop",
+      "exit_pnl_usd": -288.56,
+      "exit_pnl_per_contract": -288.56
+    },
+    "paper:XSP:2026-07-10:7465": {
+      "position_id": "paper:XSP:2026-07-10:7465",
+      "lane": "A",
+      "chain_symbol": "XSP",
+      "option_type": "call",
+      "strike": 7465.0,
+      "expiration_date": "2026-07-10",
+      "quantity": 1.0,
+      "average_price": 87.9942,
+      "mark_price": 91.3,
+      "entry_mid_premium": 87.55,
+      "delta_at_entry": null,
+      "entry_ts": "2026-06-22T19:45:11.323621+00:00",
+      "dte": 18,
+      "dte_actual": 18,
+      "status": "closed",
+      "paper_mode": "automated_log_only",
+      "entry_reason": "bb_bounce_long_call",
+      "logic_version": "xsp_lane_a_v2",
+      "regime_at_entry": "GREEN",
+      "prior_day_spy_return_pct": 1.0396992441959472,
+      "quote_source": "SPY_chain_proxy_cheapest_near_atm",
+      "dte_pick": "min",
+      "dte_target": null,
+      "entry_ta_detail": "primary: no upper BB touch; confirm: no upper BB touch",
+      "mark_quote_stale": false,
+      "exit_ts": "2026-06-23T14:00:15.666781+00:00",
+      "exit_reason": "time_stop",
+      "exit_pnl_usd": 284.28,
+      "exit_pnl_per_contract": 284.28
+    }
+  },
+  "entry_log": [
+    {
+      "evaluated_at": "2026-06-16T19:45:12.537523+00:00",
+      "entered": true,
+      "skip_reason": null,
+      "position_id": "paper:XSP:2026-06-30:7520",
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": 0.39636118915662943
+    },
+    {
+      "evaluated_at": "2026-06-16T19:50:03.164244+00:00",
+      "entered": false,
+      "skip_reason": "max open paper positions (1)",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-16T19:55:07.683712+00:00",
+      "entered": false,
+      "skip_reason": "max open paper positions (1)",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-17T19:45:16.531096+00:00",
+      "entered": false,
+      "skip_reason": "regime YELLOW blocks new risk",
+      "position_id": null,
+      "regime": "YELLOW",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-17T19:50:10.614977+00:00",
+      "entered": false,
+      "skip_reason": "regime YELLOW blocks new risk",
+      "position_id": null,
+      "regime": "YELLOW",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-17T19:55:07.248550+00:00",
+      "entered": false,
+      "skip_reason": "regime YELLOW blocks new risk",
+      "position_id": null,
+      "regime": "YELLOW",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-18T19:45:07.732351+00:00",
+      "entered": true,
+      "skip_reason": null,
+      "position_id": "paper:XSP:2026-07-02:7500",
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": -1.374962578605239
+    },
+    {
+      "evaluated_at": "2026-06-18T19:50:13.912760+00:00",
+      "entered": false,
+      "skip_reason": "already entered or attempted today",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-18T19:55:13.030255+00:00",
+      "entered": false,
+      "skip_reason": "already entered or attempted today",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-19T19:45:12.535001+00:00",
+      "entered": true,
+      "skip_reason": null,
+      "position_id": "paper:XSP:2026-07-10:7500",
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": -1.374962578605248
+    },
+    {
+      "evaluated_at": "2026-06-19T19:50:03.204420+00:00",
+      "entered": false,
+      "skip_reason": "max open paper positions (1)",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-19T19:55:06.125793+00:00",
+      "entered": false,
+      "skip_reason": "max open paper positions (1)",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-20T19:45:08.278240+00:00",
+      "entered": false,
+      "skip_reason": "outside RTH and close window",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-20T19:50:16.532284+00:00",
+      "entered": false,
+      "skip_reason": "outside RTH and close window",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-20T19:55:07.346514+00:00",
+      "entered": false,
+      "skip_reason": "outside RTH and close window",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-21T19:45:03.405471+00:00",
+      "entered": false,
+      "skip_reason": "outside RTH and close window",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-21T19:50:05.055980+00:00",
+      "entered": false,
+      "skip_reason": "outside RTH and close window",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-21T19:55:13.815717+00:00",
+      "entered": false,
+      "skip_reason": "outside RTH and close window",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-22T19:45:11.323621+00:00",
+      "entered": true,
+      "skip_reason": null,
+      "position_id": "paper:XSP:2026-07-10:7465",
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": 1.0396992441959472
+    },
+    {
+      "evaluated_at": "2026-06-22T19:50:12.195143+00:00",
+      "entered": false,
+      "skip_reason": "max open paper positions (1)",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-22T19:55:11.863826+00:00",
+      "entered": false,
+      "skip_reason": "max open paper positions (1)",
+      "position_id": null,
+      "regime": "GREEN",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-23T19:45:13.702645+00:00",
+      "entered": false,
+      "skip_reason": "regime YELLOW blocks new risk",
+      "position_id": null,
+      "regime": "YELLOW",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-23T19:50:06.431986+00:00",
+      "entered": false,
+      "skip_reason": "regime YELLOW blocks new risk",
+      "position_id": null,
+      "regime": "YELLOW",
+      "prior_day_spy_return_pct": null
+    },
+    {
+      "evaluated_at": "2026-06-23T19:55:04.686857+00:00",
+      "entered": false,
+      "skip_reason": "regime YELLOW blocks new risk",
+      "position_id": null,
+      "regime": "YELLOW",
+      "prior_day_spy_return_pct": null
+    }
+  ],
+  "paper_events": [
+    {
+      "evaluated_at": "2026-06-23T14:00:15.666781+00:00",
+      "position_id": "paper:XSP:2026-07-10:7465",
+      "exit_reason": "time_stop",
+      "paper_pnl_usd": 284.28,
+      "paper_pnl_per_contract": 284.28,
+      "logic_version": "xsp_lane_a_v2",
+      "paper_mode": "automated_paper_close",
+      "entry_ts": "2026-06-22T19:45:11.323621+00:00"
+    }
+  ],
+  "soak_reset_at": "2026-06-21T15:49:15+00:00",
+  "soak_reset_commit": "798d986"
+}
