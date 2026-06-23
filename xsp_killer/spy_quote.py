@@ -84,7 +84,6 @@ def fetch_spy_call_quote(
 ) -> SpyCallQuote:
     """Fetch SPY chain quote with conservative exit mark and sanity guards."""
     try:
-        import pandas as pd
 
         from xsp_killer.chain_cache import get_spy_option_chain
 

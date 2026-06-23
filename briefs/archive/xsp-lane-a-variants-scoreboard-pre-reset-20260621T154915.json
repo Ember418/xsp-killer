@@ -1,0 +1,254 @@
+{
+  "updated_at": "2026-06-21T14:30:20.280515+00:00",
+  "variants": [
+    {
+      "variant_id": "v2_14dte_green_day",
+      "description": "Min DTE, prior-day SPY green required",
+      "trades_closed": 0,
+      "wins": 0,
+      "losses": 0,
+      "realized_pnl_usd": 0,
+      "open_positions": 0,
+      "last_exit": null
+    },
+    {
+      "variant_id": "v2_28dte_green_day",
+      "description": "28 DTE ATM, prior-day SPY green required",
+      "trades_closed": 0,
+      "wins": 0,
+      "losses": 0,
+      "realized_pnl_usd": 0,
+      "open_positions": 0,
+      "last_exit": null
+    },
+    {
+      "variant_id": "v2_14dte_atm",
+      "description": "Min DTE (~14), ATM \u2014 isolate short-dated gamma",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -453.16,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:27.054102+00:00",
+        "position_id": "paper:XSP:2026-07-10:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -288.56,
+        "paper_pnl_per_contract": -288.56,
+        "logic_version": "xsp_lane_a_v2_14dte_atm",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:18.854424+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_21dte_atm",
+      "description": "21 DTE target, ATM \u2014 between min and 28",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -577.12,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:27.371178+00:00",
+        "position_id": "paper:XSP:2026-07-10:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -288.56,
+        "paper_pnl_per_contract": -288.56,
+        "logic_version": "xsp_lane_a_v2_21dte_atm",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:32.079715+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_28dte_otm",
+      "description": "28 DTE, 1-step OTM \u2014 cheaper premium vs ATM",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -624.0,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:28.449794+00:00",
+        "position_id": "paper:XSP:2026-07-17:7505",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -352.6,
+        "paper_pnl_per_contract": -352.6,
+        "logic_version": "xsp_lane_a_v2_28dte_otm",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:33.531284+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_28dte_cheapest",
+      "description": "28 DTE, cheapest near ATM \u2014 mentor-style scan",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -624.0,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:28.602515+00:00",
+        "position_id": "paper:XSP:2026-07-17:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -352.6,
+        "paper_pnl_per_contract": -352.6,
+        "logic_version": "xsp_lane_a_v2_28dte_cheapest",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:33.730902+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_28dte_wide_sl",
+      "description": "28 DTE ATM, 30% SL / 15% TP \u2014 room for overnight noise",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -624.0,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:28.750416+00:00",
+        "position_id": "paper:XSP:2026-07-17:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -352.6,
+        "paper_pnl_per_contract": -352.6,
+        "logic_version": "xsp_lane_a_v2_28dte_wide_sl",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:33.970731+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_28dte_easy_tp",
+      "description": "28 DTE ATM, 10% TP no BB \u2014 easier profit take",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -624.0,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:28.899985+00:00",
+        "position_id": "paper:XSP:2026-07-17:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -352.6,
+        "paper_pnl_per_contract": -352.6,
+        "logic_version": "xsp_lane_a_v2_28dte_easy_tp",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:34.234966+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_28dte_atm",
+      "description": "28 DTE target, ATM \u2014 less gamma than min-DTE baseline",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -654.45,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:27.516852+00:00",
+        "position_id": "paper:XSP:2026-07-17:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -352.6,
+        "paper_pnl_per_contract": -352.6,
+        "logic_version": "xsp_lane_a_v2_28dte_atm",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:32.471799+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_35dte_atm",
+      "description": "35 DTE target, ATM \u2014 mid-range theta",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -723.93,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:27.790263+00:00",
+        "position_id": "paper:XSP:2026-07-24:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -407.64,
+        "paper_pnl_per_contract": -407.64,
+        "logic_version": "xsp_lane_a_v2_35dte_atm",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:32.733265+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_45dte_otm",
+      "description": "45 DTE OTM, 25% SL / 15% TP \u2014 cheap convexity bet",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -916.19,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:29.344625+00:00",
+        "position_id": "paper:XSP:2026-07-31:7505",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -468.25,
+        "paper_pnl_per_contract": -468.25,
+        "logic_version": "xsp_lane_a_v2_45dte_otm",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:34.712427+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_60dte_atm",
+      "description": "Max DTE (60), ATM \u2014 slowest theta",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -916.19,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:28.293113+00:00",
+        "position_id": "paper:XSP:2026-07-31:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -468.25,
+        "paper_pnl_per_contract": -468.25,
+        "logic_version": "xsp_lane_a_v2_60dte_atm",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:33.353905+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_45dte_atm",
+      "description": "45 DTE target, ATM \u2014 compare vs OTM at same DTE",
+      "trades_closed": 2,
+      "wins": 0,
+      "losses": 2,
+      "realized_pnl_usd": -921.27,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:28.033334+00:00",
+        "position_id": "paper:XSP:2026-07-31:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -468.25,
+        "paper_pnl_per_contract": -468.25,
+        "logic_version": "xsp_lane_a_v2_45dte_atm",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:32.996947+00:00"
+      }
+    },
+    {
+      "variant_id": "v2_baseline_prod",
+      "description": "Production lane_a_rules.yaml (systemd cron)",
+      "trades_closed": 3,
+      "wins": 0,
+      "losses": 3,
+      "realized_pnl_usd": -1043.02,
+      "open_positions": 0,
+      "last_exit": {
+        "evaluated_at": "2026-06-20T14:00:19.423021+00:00",
+        "position_id": "paper:XSP:2026-07-10:7500",
+        "exit_reason": "time_stop",
+        "paper_pnl_usd": -288.56,
+        "paper_pnl_per_contract": -288.56,
+        "logic_version": "xsp_lane_a_v2",
+        "paper_mode": "automated_paper_close",
+        "entry_ts": "2026-06-19T19:45:12.535001+00:00"
+      }
+    }
+  ],
+  "note": "Shadow variants run in parallel; compare realized_pnl_usd after 20+ sessions."
+}

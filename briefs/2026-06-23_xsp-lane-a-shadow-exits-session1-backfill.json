@@ -1,0 +1,1346 @@
+{
+  "backfilled_at": "2026-06-23T14:21:21.170846+00:00",
+  "positions_n": 13,
+  "log_path": "/opt/xsp-killer/logs/xsp_lane_a_shadow_exits.jsonl",
+  "records": [
+    {
+      "evaluated_at": "2026-06-23T14:00:27.135985+00:00",
+      "position_id": "paper:XSP:2026-07-17:7460",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 281.2,
+      "entry_mid_premium": 115.5,
+      "mark_at_exit": 119.5,
+      "mark_quote_stale": false,
+      "dte": 25,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 33.46,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:29.859235+00:00",
+      "position_id": "paper:XSP:2026-07-31:7465",
+      "actual_exit_reason": "stop_loss",
+      "actual_pnl_usd": -4507.9,
+      "entry_mid_premium": 148.5,
+      "mark_at_exit": 104.7,
+      "mark_quote_stale": false,
+      "dte": 39,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -29.49,
+          "pnl_usd": -4507.9,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: stop_loss"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -29.49,
+          "pnl_usd": -4507.9,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 0.51,
+            "need_premium_recovery_to_breakeven_pct": 41.83
+          },
+          "notes": "Would survive today's cut if stop were 30% instead of 20%"
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -29.49,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 41.83,
+            "need_premium_recovery_to_tp_20pct": 70.2
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": false,
+          "exit_reason": "stop_loss",
+          "ret_pct": -29.49,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 41.83,
+            "need_premium_recovery_to_tp_20pct": 70.2,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -29.49,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 41.83,
+            "need_premium_recovery_to_tp_20pct": 70.2,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -29.49,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 41.83,
+            "need_premium_recovery_to_tp_20pct": 70.2,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:29.460773+00:00",
+      "position_id": "paper:XSP:2026-07-10:7460",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 367.72,
+      "entry_mid_premium": 93.65,
+      "mark_at_exit": 98.3,
+      "mark_quote_stale": false,
+      "dte": 18,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": 367.72,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": 367.72,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 34.97,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:26.558170+00:00",
+      "position_id": "paper:XSP:2026-07-10:7460",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 367.72,
+      "entry_mid_premium": 93.65,
+      "mark_at_exit": 98.3,
+      "mark_quote_stale": false,
+      "dte": 18,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": 367.72,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": 367.72,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 34.97,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:26.954555+00:00",
+      "position_id": "paper:XSP:2026-07-10:7460",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 367.72,
+      "entry_mid_premium": 93.65,
+      "mark_at_exit": 98.3,
+      "mark_quote_stale": false,
+      "dte": 18,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": 367.72,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": 367.72,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 34.97,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.97,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 14.32,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:27.436186+00:00",
+      "position_id": "paper:XSP:2026-07-24:7460",
+      "actual_exit_reason": "stop_loss",
+      "actual_pnl_usd": -4239.78,
+      "entry_mid_premium": 134.1,
+      "mark_at_exit": 92.85,
+      "mark_quote_stale": false,
+      "dte": 32,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -30.76,
+          "pnl_usd": -4239.78,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: stop_loss"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -30.76,
+          "pnl_usd": -4239.78,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": null,
+            "need_premium_recovery_to_breakeven_pct": 44.43
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -30.76,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 44.43,
+            "need_premium_recovery_to_tp_20pct": 73.31
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": false,
+          "exit_reason": "stop_loss",
+          "ret_pct": -30.76,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 44.43,
+            "need_premium_recovery_to_tp_20pct": 73.31,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -30.76,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 44.43,
+            "need_premium_recovery_to_tp_20pct": 73.31,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -30.76,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 44.43,
+            "need_premium_recovery_to_tp_20pct": 73.31,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:27.707407+00:00",
+      "position_id": "paper:XSP:2026-07-31:7460",
+      "actual_exit_reason": "stop_loss",
+      "actual_pnl_usd": -4473.85,
+      "entry_mid_premium": 154.25,
+      "mark_at_exit": 110.85,
+      "mark_quote_stale": false,
+      "dte": 39,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -28.14,
+          "pnl_usd": -4473.85,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: stop_loss"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -28.14,
+          "pnl_usd": -4473.85,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 1.86,
+            "need_premium_recovery_to_breakeven_pct": 39.15
+          },
+          "notes": "Would survive today's cut if stop were 30% instead of 20%"
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -28.14,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 39.15,
+            "need_premium_recovery_to_tp_20pct": 66.98
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": false,
+          "exit_reason": "stop_loss",
+          "ret_pct": -28.14,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 39.15,
+            "need_premium_recovery_to_tp_20pct": 66.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -28.14,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 39.15,
+            "need_premium_recovery_to_tp_20pct": 66.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -28.14,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 39.15,
+            "need_premium_recovery_to_tp_20pct": 66.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:28.515173+00:00",
+      "position_id": "paper:XSP:2026-07-17:7465",
+      "actual_exit_reason": "stop_loss",
+      "actual_pnl_usd": -3991.2,
+      "entry_mid_premium": 109.4,
+      "mark_at_exit": 70.4,
+      "mark_quote_stale": false,
+      "dte": 25,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -35.65,
+          "pnl_usd": -3991.2,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: stop_loss"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -35.65,
+          "pnl_usd": -3991.2,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": null,
+            "need_premium_recovery_to_breakeven_pct": 55.4
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": true,
+          "exit_reason": "stop_loss",
+          "ret_pct": -35.65,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 55.4,
+            "need_premium_recovery_to_tp_20pct": 86.48
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": false,
+          "exit_reason": "stop_loss",
+          "ret_pct": -35.65,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 55.4,
+            "need_premium_recovery_to_tp_20pct": 86.48,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -35.65,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 55.4,
+            "need_premium_recovery_to_tp_20pct": 86.48,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": -35.65,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 55.4,
+            "need_premium_recovery_to_tp_20pct": 86.48,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:28.762291+00:00",
+      "position_id": "paper:XSP:2026-07-17:7460",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 281.2,
+      "entry_mid_premium": 115.5,
+      "mark_at_exit": 119.5,
+      "mark_quote_stale": false,
+      "dte": 25,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 33.46,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:28.933171+00:00",
+      "position_id": "paper:XSP:2026-07-17:7460",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 281.2,
+      "entry_mid_premium": 115.5,
+      "mark_at_exit": 119.5,
+      "mark_quote_stale": false,
+      "dte": 25,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 33.46,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:29.278657+00:00",
+      "position_id": "paper:XSP:2026-07-17:7460",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 281.2,
+      "entry_mid_premium": 115.5,
+      "mark_at_exit": 119.5,
+      "mark_quote_stale": false,
+      "dte": 25,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 33.46,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:29.651583+00:00",
+      "position_id": "paper:XSP:2026-07-17:7460",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 281.2,
+      "entry_mid_premium": 115.5,
+      "mark_at_exit": 119.5,
+      "mark_quote_stale": false,
+      "dte": 25,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": 281.2,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 33.46,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 3.46,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.98,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    },
+    {
+      "evaluated_at": "2026-06-23T14:00:15.666781+00:00",
+      "position_id": "paper:XSP:2026-07-10:7465",
+      "actual_exit_reason": "time_stop",
+      "actual_pnl_usd": 284.28,
+      "entry_mid_premium": 87.55,
+      "mark_at_exit": 91.3,
+      "mark_quote_stale": false,
+      "dte": 18,
+      "sessions_held": 1,
+      "brackets": [
+        {
+          "bracket_id": "prod",
+          "label": "Production rules (active)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.28,
+          "pnl_usd": 284.28,
+          "thresholds_to_continue": {},
+          "notes": "Actual fired: time_stop"
+        },
+        {
+          "bracket_id": "wide_sl_30",
+          "label": "Wide stop 30% (variant-style)",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.28,
+          "pnl_usd": 284.28,
+          "thresholds_to_continue": {
+            "stop_loss_pct_remaining": 34.28,
+            "need_premium_recovery_to_breakeven_pct": 0.0
+          },
+          "notes": ""
+        },
+        {
+          "bracket_id": "no_morning_cut_14dte",
+          "label": "Suppress 10:00 time_stop for DTE\u226514",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.28,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "would_skip_time_stop": true,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.07
+          },
+          "notes": "Hold through morning cut; exit only on SL/TP/BB"
+        },
+        {
+          "bracket_id": "defer_morning_cut_1d",
+          "label": "Defer time_stop until entry+1 sessions",
+          "would_exit": true,
+          "exit_reason": "time_stop",
+          "ret_pct": 4.28,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 0,
+            "calendar_days_until_cut": 0,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.07,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would time-stop after 1d hold window"
+        },
+        {
+          "bracket_id": "defer_morning_cut_3d",
+          "label": "Defer time_stop until entry+3 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.28,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 2,
+            "calendar_days_until_cut": 2,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.07,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        },
+        {
+          "bracket_id": "defer_morning_cut_5d",
+          "label": "Defer time_stop until entry+5 sessions",
+          "would_exit": false,
+          "exit_reason": null,
+          "ret_pct": 4.28,
+          "pnl_usd": null,
+          "thresholds_to_continue": {
+            "sessions_held": 1,
+            "sessions_remaining": 4,
+            "calendar_days_until_cut": 4,
+            "need_premium_recovery_to_breakeven_pct": 0.0,
+            "need_premium_recovery_to_tp_20pct": 15.07,
+            "need_spy_overnight_bounce_note": "Red day cut may be premature; bracket keeps position open to test recovery"
+          },
+          "notes": "Would NOT time-stop yet under deferred hold"
+        }
+      ],
+      "backfill": true,
+      "session_note": "post-reset session 1 (2026-06-23 morning cut)"
+    }
+  ]
+}

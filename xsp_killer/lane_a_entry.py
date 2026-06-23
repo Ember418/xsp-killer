@@ -202,7 +202,6 @@ def pick_expiration(
     dte_target: int | None = None,
 ) -> date | None:
     try:
-        import yfinance as yf
 
         from xsp_killer.chain_cache import get_spy_expirations
 

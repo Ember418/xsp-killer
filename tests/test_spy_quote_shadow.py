@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from xsp_killer.exit_shadow import evaluate_shadow_brackets
 from xsp_killer.lane_a_monitor import ExitAlert, LaneAPosition, LaneRules, evaluate_exit_alerts
-from xsp_killer.spy_quote import SpyCallQuote, _conservative_exit_mark_spy, fetch_spy_call_quote
+from xsp_killer.spy_quote import _conservative_exit_mark_spy, fetch_spy_call_quote
 
 ET = ZoneInfo("America/New_York")
 
