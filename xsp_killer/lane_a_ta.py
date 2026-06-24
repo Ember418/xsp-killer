@@ -135,7 +135,10 @@ def compute_vwap(df: pd.DataFrame) -> pd.Series:
         sub_vol = vol.loc[mask]
         cum_vol = sub_vol.cumsum()
         cum_pv = (sub_typ * sub_vol).cumsum()
-        out.loc[mask] = (cum_pv / cum_vol.replace(0, pd.NA)).values
+        session_vwap = cum_pv / cum_vol.replace(0, float("nan"))
+        # First bar(s) of a session can have zero cumulative volume → NaN; use typical price.
+        session_vwap = session_vwap.fillna(sub_typ).ffill().fillna(sub_typ)
+        out.loc[mask] = session_vwap.values
     return out
 
 
@@ -149,24 +152,33 @@ def enrich_bars(df: pd.DataFrame, *, period: int, std: float) -> pd.DataFrame:
     return out.dropna(subset=["bb_mid", "bb_upper", "bb_lower"])
 
 
+def _series_float(row: pd.Series, col: str, *, fallback: str | None = None) -> float:
+    val = row[col]
+    if pd.isna(val) and fallback is not None:
+        val = row[fallback]
+    if pd.isna(val):
+        raise ValueError(f"missing numeric value for {col}")
+    return float(val)
+
+
 def _bar_snapshot(row: pd.Series, timeframe: str) -> BarSnapshot:
     ts = row.name
     if hasattr(ts, "isoformat"):
         ts_s = ts.isoformat()
     else:
         ts_s = str(ts)
-    open_px = float(row["open"]) if "open" in row.index else float(row["close"])
+    open_px = _series_float(row, "open") if "open" in row.index else _series_float(row, "close")
     return BarSnapshot(
         timeframe=timeframe,
         ts=ts_s,
         open=open_px,
-        close=float(row["close"]),
-        high=float(row["high"]),
-        low=float(row["low"]),
-        vwap=float(row["vwap"]),
-        bb_lower=float(row["bb_lower"]),
-        bb_mid=float(row["bb_mid"]),
-        bb_upper=float(row["bb_upper"]),
+        close=_series_float(row, "close"),
+        high=_series_float(row, "high"),
+        low=_series_float(row, "low"),
+        vwap=_series_float(row, "vwap", fallback="close"),
+        bb_lower=_series_float(row, "bb_lower"),
+        bb_mid=_series_float(row, "bb_mid"),
+        bb_upper=_series_float(row, "bb_upper"),
     )
 
 

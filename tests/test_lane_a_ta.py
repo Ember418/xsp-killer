@@ -5,14 +5,17 @@ from __future__ import annotations
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pytest
 
 from xsp_killer.lane_a_ta import (
     TaRules,
     BarSnapshot,
+    compute_vwap,
     detect_bb_bounce_entry,
     detect_upper_bb_exit,
     enrich_bars,
     evaluate_ta_signals,
+    evaluate_timeframe,
     morning_cut_suppressed,
 )
 
@@ -97,3 +100,41 @@ def test_upper_bb_rejection_uses_close_not_missing_open():
     curr = _snap(close=102, low=101, high=105, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=104)
     ok, _ = detect_upper_bb_exit(prev, curr, tolerance_pct=0.002)
     assert ok is True
+
+
+def test_compute_vwap_zero_volume_session_start():
+    idx = pd.date_range("2026-06-23 09:30", periods=3, freq="15min", tz=ET)
+    df = pd.DataFrame(
+        {
+            "open": [100.0, 101.0, 102.0],
+            "high": [101.0, 102.0, 103.0],
+            "low": [99.0, 100.0, 101.0],
+            "close": [100.5, 101.5, 102.5],
+            "volume": [0, 0, 1_000_000],
+        },
+        index=idx,
+    )
+    vwap = compute_vwap(df)
+    assert not vwap.isna().any()
+    assert vwap.iloc[0] == pytest.approx((99.0 + 101.0 + 100.5) / 3.0)
+
+
+def test_evaluate_timeframe_with_zero_volume_session_start():
+    n = 30
+    closes = [100.0 + (i * 0.1) for i in range(n)]
+    idx = pd.date_range("2026-06-23 09:30", periods=n, freq="15min", tz=ET)
+    vol = [0, 0] + [1_000_000] * (n - 2)
+    df = pd.DataFrame(
+        {
+            "open": closes,
+            "high": [c + 0.5 for c in closes],
+            "low": [c - 0.5 for c in closes],
+            "close": closes,
+            "volume": vol,
+        },
+        index=idx,
+    )
+    prev, curr = evaluate_timeframe(df, "15m", RULES)
+    assert prev is not None
+    assert curr is not None
+    assert curr.vwap > 0
