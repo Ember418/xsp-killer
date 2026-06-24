@@ -93,6 +93,7 @@ class EntryDecision:
     regime_ok: bool
     prior_day_spy_return_pct: float | None
     prior_day_ok: bool
+    prior_day_spy_session: str | None = None
     skip_reason: str | None = None
     position: dict[str, Any] | None = None
     errors: list[str] = field(default_factory=list)
@@ -145,14 +146,14 @@ def already_entered_today(state: dict[str, Any], today: date) -> bool:
     return False
 
 
-def fetch_spy_ohlcv() -> tuple[float | None, float | None, float | None]:
-    """Return (prior_close, prior_open, prior_close_to_close_return_pct)."""
+def fetch_spy_ohlcv() -> tuple[float | None, float | None, float | None, str | None]:
+    """Return (prior_close, prior_open, prior_close_to_close_return_pct, session_date)."""
     try:
         import yfinance as yf
 
         hist = yf.Ticker("SPY").history(period="5d", interval="1d", timeout=10)
         if hist is None or len(hist) < 2:
-            return None, None, None
+            return None, None, None, None
         prev = hist.iloc[-2]
         o = float(prev["Open"])
         c = float(prev["Close"])
@@ -174,10 +175,10 @@ def fetch_spy_ohlcv() -> tuple[float | None, float | None, float | None]:
             o,
             f"{ret:.4f}" if ret is not None else "n/a",
         )
-        return c, o, ret
+        return c, o, ret, str(session_date)
     except Exception as exc:
         logger.warning("SPY OHLCV fetch failed: %s", exc)
-        return None, None, None
+        return None, None, None, None
 
 
 def fetch_spx_proxy() -> float | None:
@@ -474,6 +475,7 @@ def run_paper_entry(
         regime_ok=regime_ok,
         prior_day_spy_return_pct=None,
         prior_day_ok=True,
+        prior_day_spy_session=None,
         ta_snapshot=ta_signal.to_dict(),
         bb_entry_ok=ta_signal.entry_ok,
     )
@@ -517,8 +519,9 @@ def run_paper_entry(
         _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
         return decision
 
-    _, _, spy_ret = fetch_spy_ohlcv()
+    _, _, spy_ret, spy_session = fetch_spy_ohlcv()
     decision.prior_day_spy_return_pct = spy_ret
+    decision.prior_day_spy_session = spy_session
     if entry_rules.prior_day_spy_positive:
         decision.prior_day_ok = spy_ret is not None and spy_ret > 0
         if not decision.prior_day_ok:
@@ -706,6 +709,7 @@ def _finalize_entry(
             "position_id": (decision.position or {}).get("position_id"),
             "regime": decision.regime,
             "prior_day_spy_return_pct": decision.prior_day_spy_return_pct,
+            "prior_day_spy_session": decision.prior_day_spy_session,
         }
     )
     state["entry_log"] = log[-200:]

@@ -76,8 +76,9 @@ def test_fetch_spy_ohlcv_close_to_close(monkeypatch):
             return hist
 
     monkeypatch.setattr("yfinance.Ticker", lambda _sym: Ticker())
-    _close, _open, ret = fetch_spy_ohlcv()
+    _close, _open, ret, session = fetch_spy_ohlcv()
     assert _close == 594.0
     assert ret is not None
+    assert session == "2026-06-17"
     # close-to-close: (594 - 591) / 591 * 100
     assert abs(ret - ((594.0 - 591.0) / 591.0 * 100.0)) < 0.01

@@ -7,6 +7,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,11 +36,18 @@ def _read_json_pretty(path: Path) -> str:
         return _read_tail(path, 8000)
 
 
-def _run_cmd(cmd: list[str], *, cwd: Path | None = None, timeout: int = 120) -> str:
+def _run_cmd(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+    timeout: int = 120,
+) -> str:
     try:
         return subprocess.check_output(
             cmd,
             cwd=cwd or XSP_ROOT,
+            env=env,
             text=True,
             stderr=subprocess.STDOUT,
             timeout=timeout,
@@ -87,6 +95,7 @@ def main() -> int:
     pytest_out = _run_cmd(
         ["python3", "-m", "pytest", "tests/", "-q", "--tb=no"],
         cwd=XSP_ROOT,
+        env={**dict(os.environ), "XSP_KILLER_TEST_ISOLATION": "1"},
         timeout=120,
     )
 
