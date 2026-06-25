@@ -482,12 +482,26 @@ def run_paper_entry(
 
     if not paper_entry_enabled():
         decision.skip_reason = "XSP_LANE_A_PAPER_ENTRY disabled"
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     if not entry_rules.enabled:
         decision.skip_reason = "paper_entry.disabled in rules"
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     gates_ok, gate_reason = entry_gates_ok(
@@ -500,23 +514,51 @@ def run_paper_entry(
     )
     if not gates_ok:
         decision.skip_reason = gate_reason
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     open_pos = open_paper_positions(state)
     if len(open_pos) >= entry_rules.max_open_positions:
         decision.skip_reason = f"max open paper positions ({entry_rules.max_open_positions})"
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     if not force and already_entered_today(state, now.date()):
         decision.skip_reason = "already entered or attempted today"
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     if lane_rules.regime_gate == "GREEN" and not regime_ok:
         decision.skip_reason = f"regime {regime} blocks new risk"
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     _, _, spy_ret, spy_session = fetch_spy_ohlcv()
@@ -526,7 +568,14 @@ def run_paper_entry(
         decision.prior_day_ok = spy_ret is not None and spy_ret > 0
         if not decision.prior_day_ok:
             decision.skip_reason = "prior-day SPY not positive"
-            _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+            _finalize_entry(
+                state,
+                state_path,
+                decision,
+                publish_intel,
+                log_path=log_path,
+                brief_path=brief_path,
+            )
             return decision
 
     ok_risk, risk_reason = entry_allowed_by_risk(state)
@@ -539,7 +588,14 @@ def run_paper_entry(
     if spx is None:
         decision.skip_reason = "SPX proxy unavailable"
         decision.errors.append("spx_proxy_failed")
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     expiration = pick_expiration(
@@ -550,7 +606,14 @@ def run_paper_entry(
     )
     if expiration is None:
         decision.skip_reason = "no eligible expiration in DTE window"
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     strike, premium, delta = pick_strike(

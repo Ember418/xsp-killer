@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
+
+import xsp_killer.lane_a_entry as lane_a_entry
 
 from xsp_killer.lane_a_variants import (
+    VariantSpec,
     build_scoreboard,
     clear_pnl_epoch,
     load_variant_specs,
     merged_rules_path,
     reset_soak,
+    run_variant_entry,
 )
+from xsp_killer.lane_a_ta import TaSignal
 
 
 def test_load_variant_specs():
@@ -41,10 +47,18 @@ def test_build_scoreboard(tmp_path, monkeypatch):
                 "variants": {
                     "v2_28dte_atm": {
                         "paper_events": [
-                            {"paper_pnl_usd": 10.0},
-                            {"paper_pnl_usd": -5.0},
+                            {"paper_pnl_usd": 10.0, "position_id": "paper:XSP:2026-07-18:6010"},
+                            {"paper_pnl_usd": -5.0, "position_id": "paper:XSP:2026-07-18:6010"},
                         ],
-                        "paper_positions": {},
+                        "paper_positions": {
+                            "paper:XSP:2026-07-18:6010": {
+                                "position_id": "paper:XSP:2026-07-18:6010",
+                                "status": "closed",
+                                "dte_actual": 23,
+                                "expiration_date": "2026-07-18",
+                            }
+                        },
+                        "entry_log": [{"evaluated_at": "2026-06-21T19:45:00+00:00", "entered": False}],
                     }
                 }
             }
@@ -61,8 +75,13 @@ def test_build_scoreboard(tmp_path, monkeypatch):
     assert row["realized_pnl_usd"] == 5.0
     assert row["trades_closed"] == 2
     assert row["avg_pnl_per_trade_usd"] == 2.5
+    assert row["sessions_evaluated"] == 1
+    assert row["sessions_to_gate"] == 19
+    assert row["last_exit"]["dte_actual"] == 23
+    assert row["last_exit"]["expiration"] == "2026-07-18"
     assert payload["baseline_prod"] is None
     assert len(payload["shadow_variants"]) == 1
+    assert payload["last_entry_eval_at"] == "2026-06-21T19:45:00+00:00"
     assert "Do NOT sum PnL" in payload["comparison_guidance"]
 
 
@@ -79,6 +98,11 @@ def test_build_scoreboard_respects_soak_reset(tmp_path):
                             {"paper_pnl_usd": -10.0, "evaluated_at": "2026-06-20T14:00:00+00:00"},
                             {"paper_pnl_usd": 7.0, "evaluated_at": "2026-06-21T14:00:00+00:00"},
                         ],
+                        "entry_log": [
+                            {"evaluated_at": "2026-06-20T19:45:00+00:00", "entered": False},
+                            {"evaluated_at": "2026-06-21T19:45:00+00:00", "entered": False},
+                            {"evaluated_at": "2026-06-22T19:45:00+00:00", "entered": True},
+                        ],
                         "paper_positions": {},
                     }
                 },
@@ -91,7 +115,123 @@ def test_build_scoreboard_respects_soak_reset(tmp_path):
     row = next(r for r in payload["variants"] if r["variant_id"] == "v2_28dte_atm")
     assert row["realized_pnl_usd"] == 7.0
     assert row["trades_closed"] == 1
+    assert row["sessions_evaluated"] == 2
+    assert row["sessions_to_gate"] == 18
     assert payload["soak_reset_at"] == reset_at
+
+
+def test_run_variant_entry_regime_skip_does_not_write_default_entry_brief(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
+    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime", lambda: ("RED", False))
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.evaluate_ta_signals",
+        lambda rules, now_et=None: TaSignal(
+            signal="bb_bounce",
+            primary=None,
+            confirm=None,
+            entry_ok=True,
+            exit_ok=False,
+            upper_bb_touched=False,
+            detail="forced test signal",
+        ),
+    )
+    lane_a_entry.DEFAULT_OUT.unlink(missing_ok=True)
+
+    decision = run_variant_entry(
+        VariantSpec(
+            variant_id="brief_regression",
+            description="brief path regression",
+            active=True,
+            overrides={},
+        ),
+        root_state={"variants": {}},
+        state_path=tmp_path / "variants-state.json",
+        now_et=datetime(2026, 6, 16, 19, 47, tzinfo=timezone.utc),
+        force=True,
+    )
+
+    assert decision.entered is False
+    assert decision.skip_reason == "regime RED blocks new risk"
+    assert lane_a_entry.DEFAULT_OUT.exists() is False
+
+
+def test_build_scoreboard_sets_liveness_from_latest_entry_eval(tmp_path):
+    recent_variant_eval = (datetime.now(timezone.utc) - timedelta(hours=4)).replace(microsecond=0).isoformat()
+    recent_baseline_eval = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(microsecond=0).isoformat()
+    backdated_eval = (datetime.now(timezone.utc) - timedelta(hours=40)).replace(microsecond=0).isoformat()
+
+    state = tmp_path / "variants-state.json"
+    baseline = tmp_path / "baseline-state.json"
+
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_28dte_atm": {
+                        "entry_log": [{"evaluated_at": recent_variant_eval, "entered": False}],
+                        "paper_events": [],
+                        "paper_positions": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline.write_text(
+        json.dumps(
+            {
+                "entry_log": [{"evaluated_at": recent_baseline_eval, "entered": True}],
+                "paper_events": [],
+                "paper_positions": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = json.loads(
+        build_scoreboard(
+            state_path=state,
+            baseline_state_path=baseline,
+            out_path=tmp_path / "scoreboard-recent.json",
+        ).read_text(encoding="utf-8")
+    )
+    assert payload["last_entry_eval_at"] == recent_baseline_eval
+    assert payload["stale"] is False
+
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_28dte_atm": {
+                        "entry_log": [{"evaluated_at": backdated_eval, "entered": False}],
+                        "paper_events": [],
+                        "paper_positions": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline.write_text(
+        json.dumps(
+            {
+                "entry_log": [{"evaluated_at": backdated_eval, "entered": False}],
+                "paper_events": [],
+                "paper_positions": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    stale_payload = json.loads(
+        build_scoreboard(
+            state_path=state,
+            baseline_state_path=baseline,
+            out_path=tmp_path / "scoreboard-stale.json",
+        ).read_text(encoding="utf-8")
+    )
+    assert stale_payload["last_entry_eval_at"] == backdated_eval
+    assert stale_payload["stale"] is True
 
 
 def test_reset_soak_archives_and_clears(tmp_path, monkeypatch):

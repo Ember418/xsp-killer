@@ -8,7 +8,7 @@ import shutil
 import logging
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -297,6 +297,49 @@ def _events_in_soak_epoch(state: dict[str, Any], soak_reset_at: str | None) -> l
     return [e for e in events if str(e.get("evaluated_at") or "") >= soak_reset_at]
 
 
+def _entry_logs_in_soak_epoch(state: dict[str, Any], soak_reset_at: str | None) -> list[dict[str, Any]]:
+    logs = [e for e in (state.get("entry_log") or []) if isinstance(e, dict)]
+    if not soak_reset_at:
+        return logs
+    return [e for e in logs if str(e.get("evaluated_at") or "") >= soak_reset_at]
+
+
+def _parse_timestamp(raw: Any) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _last_exit_with_contract_meta(
+    state: dict[str, Any], events: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    if not events:
+        return None
+    last_exit = dict(events[-1])
+    paper_positions = state.get("paper_positions") or {}
+    position = paper_positions.get(last_exit.get("position_id")) if isinstance(paper_positions, dict) else None
+    if not isinstance(position, dict):
+        position = {}
+
+    dte_actual = last_exit.get("dte_actual", position.get("dte_actual"))
+    if dte_actual is not None:
+        last_exit["dte_actual"] = dte_actual
+
+    expiration = (
+        last_exit.get("expiration")
+        or last_exit.get("expiration_date")
+        or position.get("expiration")
+        or position.get("expiration_date")
+    )
+    if expiration is not None:
+        last_exit["expiration"] = expiration
+
+    return last_exit
+
+
 def reset_soak(
     *,
     commit: str | None = None,
@@ -443,20 +486,30 @@ def build_scoreboard(
     specs = {s.variant_id: s for s in load_variant_specs(config_path)}
     root = load_variants_state(state_path)
     rows: list[dict[str, Any]] = []
+    latest_entry_eval: datetime | None = None
 
     soak_reset_at = _soak_reset_at(root)
 
     def _summarize(variant_id: str, state: dict[str, Any], description: str) -> None:
         events = _events_in_soak_epoch(state, soak_reset_at)
+        entry_logs = _entry_logs_in_soak_epoch(state, soak_reset_at)
         open_pos = [
             p
             for p in (state.get("paper_positions") or {}).values()
             if isinstance(p, dict) and p.get("status", "open") == "open"
         ]
+        nonlocal latest_entry_eval
+        for row in entry_logs:
+            evaluated_at = _parse_timestamp(row.get("evaluated_at"))
+            if evaluated_at is None:
+                continue
+            if latest_entry_eval is None or evaluated_at > latest_entry_eval:
+                latest_entry_eval = evaluated_at
         realized = round(sum(float(e.get("paper_pnl_usd") or 0) for e in events), 2)
         wins = sum(1 for e in events if float(e.get("paper_pnl_usd") or 0) > 0)
         losses = sum(1 for e in events if float(e.get("paper_pnl_usd") or 0) < 0)
         trades = len(events)
+        sessions_evaluated = len(entry_logs)
         win_rate = round(wins / trades * 100.0, 1) if trades else None
         avg_pnl = round(realized / trades, 2) if trades else None
         rows.append(
@@ -469,8 +522,10 @@ def build_scoreboard(
                 "win_rate_pct": win_rate,
                 "realized_pnl_usd": realized,
                 "avg_pnl_per_trade_usd": avg_pnl,
+                "sessions_evaluated": sessions_evaluated,
+                "sessions_to_gate": max(0, 20 - sessions_evaluated),
                 "open_positions": len(open_pos),
-                "last_exit": events[-1] if events else None,
+                "last_exit": _last_exit_with_contract_meta(state, events),
             }
         )
 
@@ -512,12 +567,18 @@ def build_scoreboard(
         reverse=True,
     )
     ordered = shadow_rows + ([baseline_row] if baseline_row else [])
+    updated_at_dt = datetime.now(timezone.utc)
+    updated_at = updated_at_dt.isoformat()
+    last_entry_eval_at = latest_entry_eval.isoformat() if latest_entry_eval else None
+    stale = latest_entry_eval is None or (updated_at_dt - latest_entry_eval) > timedelta(hours=36)
     payload = {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": updated_at,
         "soak_reset_at": soak_reset_at,
         "pnl_epoch_at": root.get("pnl_epoch_at") or soak_reset_at,
         "soak_reset_commit": root.get("soak_reset_commit"),
         "pnl_epoch_commit": root.get("pnl_epoch_commit"),
+        "last_entry_eval_at": last_entry_eval_at,
+        "stale": stale,
         "comparison_guidance": (
             "Rank shadow variants by avg_pnl_per_trade_usd vs v2_baseline_prod. "
             "Do NOT sum PnL across variants — configs are independent experiments."
