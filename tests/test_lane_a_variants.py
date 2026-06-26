@@ -25,6 +25,7 @@ def test_load_variant_specs():
     ids = {s.variant_id for s in specs}
     assert "v2_28dte_atm" in ids
     assert "v2_21dte_atm" in ids
+    assert "v2_yellow_top_quartile_bounce" in ids
 
 
 def test_merged_rules_dte_target(tmp_path):
@@ -37,6 +38,18 @@ def test_merged_rules_dte_target(tmp_path):
     assert data["entry"]["dte_pick"] == "target"
     assert data["entry"]["dte_target"] == 28
     assert data["entry"]["strike_pick"] == "atm_only"
+
+
+def test_merged_rules_yellow_bounce_variant(tmp_path):
+    specs = load_variant_specs()
+    spec = next(s for s in specs if s.variant_id == "v2_yellow_top_quartile_bounce")
+    path = merged_rules_path(spec, tmp_dir=tmp_path)
+    import yaml
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["entry"]["regime_gate"] == "GREEN_OR_YELLOW_BOUNCE"
+    assert data["entry"]["regime_yellow_frac_min"] == 0.75
+    assert data["ta"]["entry"]["mode"] == "close_window_and_bb"
 
 
 def test_build_scoreboard(tmp_path, monkeypatch):
@@ -122,7 +135,7 @@ def test_build_scoreboard_respects_soak_reset(tmp_path):
 
 def test_run_variant_entry_regime_skip_does_not_write_default_entry_brief(tmp_path, monkeypatch):
     monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
-    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime", lambda: ("RED", False))
+    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime_detail", lambda: ("RED", False, None, None))
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.evaluate_ta_signals",
         lambda rules, now_et=None: TaSignal(

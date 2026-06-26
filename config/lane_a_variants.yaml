@@ -185,3 +185,22 @@ variants:
         stop_loss_pct: 0.25
         take_profit_pct: 0.15
         require_upper_bb_for_take_profit: false
+
+  v2_yellow_top_quartile_bounce:
+    active: true
+    description: "28 DTE ATM — YELLOW top-quartile + BB bounce at close (shadow)"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_yellow_top_quartile_bounce
+      entry:
+        regime_gate: GREEN_OR_YELLOW_BOUNCE
+        regime_yellow_frac_min: 0.75
+        dte_pick: target
+        dte_target: 28
+        strike_pick: atm_only
+      ta:
+        entry:
+          mode: close_window_and_bb
+      exit:
+        require_upper_bb_for_take_profit: false
+

@@ -32,7 +32,8 @@ from xsp_killer.lane_a_monitor import (
     compute_dte,
     is_lane_a_contract,
     load_state,
-    read_regime,
+    read_regime_detail,
+    regime_gate_allows,
     save_state,
 )
 from xsp_killer.lane_a_ta import TaRules, TaSignal, evaluate_ta_signals, in_rth
@@ -93,6 +94,8 @@ class EntryDecision:
     regime_ok: bool
     prior_day_spy_return_pct: float | None
     prior_day_ok: bool
+    regime_frac: float | None = None
+    regime_gate: str | None = None
     prior_day_spy_session: str | None = None
     skip_reason: str | None = None
     position: dict[str, Any] | None = None
@@ -388,6 +391,8 @@ def append_entry_log(
         "entered": decision.entered,
         "skip_reason": decision.skip_reason,
         "regime": decision.regime,
+        "regime_frac": decision.regime_frac,
+        "regime_gate": decision.regime_gate,
         "prior_day_spy_return_pct": decision.prior_day_spy_return_pct,
         "ta_snapshot": decision.ta_snapshot,
         "bb_entry_ok": decision.bb_entry_ok,
@@ -465,7 +470,7 @@ def run_paper_entry(
     if ta_signal is None:
         ta_signal = evaluate_ta_signals(ta_rules, now_et=now)
 
-    regime, regime_ok = read_regime()
+    regime, regime_ok, yellow_frac, _ = read_regime_detail()
     decision = EntryDecision(
         entered=False,
         evaluated_at=evaluated_at,
@@ -473,6 +478,8 @@ def run_paper_entry(
         in_window=in_entry_window(now, entry_rules),
         regime=regime,
         regime_ok=regime_ok,
+        regime_frac=yellow_frac,
+        regime_gate=lane_rules.regime_gate,
         prior_day_spy_return_pct=None,
         prior_day_ok=True,
         prior_day_spy_session=None,
@@ -549,8 +556,16 @@ def run_paper_entry(
         )
         return decision
 
-    if lane_rules.regime_gate == "GREEN" and not regime_ok:
-        decision.skip_reason = f"regime {regime} blocks new risk"
+    regime_gate_ok, regime_gate_reason = regime_gate_allows(
+        regime_gate=lane_rules.regime_gate,
+        regime=regime,
+        regime_ok=regime_ok,
+        yellow_frac=yellow_frac,
+        ta_entry_ok=ta_signal.entry_ok,
+        yellow_frac_min=lane_rules.regime_yellow_frac_min,
+    )
+    if not regime_gate_ok:
+        decision.skip_reason = regime_gate_reason
         _finalize_entry(
             state,
             state_path,
@@ -771,6 +786,8 @@ def _finalize_entry(
             "skip_reason": decision.skip_reason,
             "position_id": (decision.position or {}).get("position_id"),
             "regime": decision.regime,
+            "regime_frac": decision.regime_frac,
+            "regime_gate": decision.regime_gate,
             "prior_day_spy_return_pct": decision.prior_day_spy_return_pct,
             "prior_day_spy_session": decision.prior_day_spy_session,
         }

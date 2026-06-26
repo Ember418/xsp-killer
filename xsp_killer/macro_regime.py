@@ -24,6 +24,7 @@ class RegimeState:
     spy_price: float
     ema21: float
     sma50: float
+    yellow_frac: float | None
     jnk_tlt_flag: bool
     confidence: float
     timestamp: float
@@ -67,6 +68,16 @@ def _jnk_tlt_divergence(jnk: pd.Series, tlt: pd.Series, lookback: int = 5) -> bo
     return jnk_ret < tlt_ret
 
 
+def yellow_band_frac(spy_price: float, ema21: float, sma50: float) -> float | None:
+    """Return normalized position inside the YELLOW band, else None."""
+    if not (sma50 < spy_price <= ema21):
+        return None
+    span = ema21 - sma50
+    if span <= 0:
+        return 0.5
+    return max(0.0, min(1.0, (spy_price - sma50) / span))
+
+
 def _classify_with_distance(
     spy_price: float, ema21_val: float, sma50_val: float, ema21_up: bool
 ) -> tuple[str, float, str]:
@@ -77,8 +88,9 @@ def _classify_with_distance(
         reason = f"SPY {spy_price:.2f} > EMA21 {ema21_val:.2f} (rising)"
     elif spy_price > sma50_val:
         regime = "YELLOW"
-        span = ema21_val - sma50_val
-        frac = (spy_price - sma50_val) / span if span > 0 else 0.5
+        frac = yellow_band_frac(spy_price, ema21_val, sma50_val)
+        if frac is None:
+            frac = 0.5
         confidence = round(0.55 + 0.20 * max(0.0, min(1.0, frac)), 4)
         reason = f"SPY {spy_price:.2f} < EMA21 {ema21_val:.2f} but > SMA50 {sma50_val:.2f}"
     else:
@@ -101,6 +113,7 @@ def classify_regime() -> RegimeState:
             spy_price=0.0,
             ema21=0.0,
             sma50=0.0,
+            yellow_frac=None,
             jnk_tlt_flag=False,
             confidence=0.1,
             timestamp=time.time(),
@@ -123,11 +136,14 @@ def classify_regime() -> RegimeState:
         confidence = round(max(0.45, confidence - 0.15), 4)
         reason += " | WARN: JNK underperforming TLT — failed breakout risk"
 
+    yellow_frac = yellow_band_frac(spy_price, ema21_val, sma50_val)
+
     return RegimeState(
         regime=regime,
         spy_price=round(spy_price, 4),
         ema21=round(ema21_val, 4),
         sma50=round(sma50_val, 4),
+        yellow_frac=(round(yellow_frac, 4) if yellow_frac is not None else None),
         jnk_tlt_flag=jnk_tlt_flag,
         confidence=confidence,
         timestamp=time.time(),

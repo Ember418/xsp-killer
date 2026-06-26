@@ -53,6 +53,7 @@ class LaneRules:
     require_upper_bb_for_take_profit: bool
     logic_version: str
     regime_gate: str = "GREEN"
+    regime_yellow_frac_min: float = 0.75
 
     @classmethod
     def from_yaml(cls, path: Path) -> LaneRules:
@@ -82,6 +83,7 @@ class LaneRules:
             ),
             logic_version=str(logging_cfg.get("logic_version", "xsp_lane_a_v2")),
             regime_gate=str(entry.get("regime_gate", "GREEN")),
+            regime_yellow_frac_min=float(entry.get("regime_yellow_frac_min", 0.75)),
         )
 
 
@@ -281,15 +283,24 @@ def classify_position(
     return pos
 
 
-def read_regime() -> tuple[str | None, bool]:
-    """Read regime from intel bus, else local macro_regime fallback."""
+def read_regime_detail() -> tuple[str | None, bool, float | None, str | None]:
+    """Read regime, legacy risk gate, yellow-band fraction, and reason."""
     regime: str | None = None
+    yellow_frac: float | None = None
+    reason: str | None = None
     try:
         from xsp_killer.intel import IntelReader
 
         snap = IntelReader.read("intel:playbook_snapshot")
         if isinstance(snap, dict):
             regime = str(snap.get("regime") or snap.get("status") or "").upper() or None
+            raw_frac = snap.get("yellow_frac")
+            if raw_frac is not None:
+                try:
+                    yellow_frac = float(raw_frac)
+                except (TypeError, ValueError):
+                    yellow_frac = None
+            reason = str(snap.get("reason") or snap.get("detail") or "").strip() or None
         elif isinstance(snap, str):
             regime = snap.upper()
     except Exception as exc:
@@ -301,16 +312,61 @@ def read_regime() -> tuple[str | None, bool]:
 
             state = classify_regime()
             regime = state.regime
+            yellow_frac = state.yellow_frac
+            reason = state.reason
             logger.info("macro_regime fallback: %s (%s)", regime, state.reason)
         except Exception as exc:
             logger.warning("macro_regime fallback failed: %s", exc)
-            return "UNKNOWN", False
+            return "UNKNOWN", False, None, None
 
     if regime in ("YELLOW", "RED"):
-        return regime, False
+        return regime, False, yellow_frac, reason
     if regime == "GREEN":
-        return regime, True
-    return regime, False
+        return regime, True, yellow_frac, reason
+    return regime, False, yellow_frac, reason
+
+
+def read_regime() -> tuple[str | None, bool]:
+    """Backwards-compatible regime reader."""
+    regime, ok, _, _ = read_regime_detail()
+    return regime, ok
+
+
+def regime_gate_allows(
+    *,
+    regime_gate: str,
+    regime: str | None,
+    regime_ok: bool,
+    yellow_frac: float | None,
+    ta_entry_ok: bool,
+    yellow_frac_min: float = 0.75,
+) -> tuple[bool, str | None]:
+    gate = (regime_gate or "GREEN").strip().upper()
+    if gate == "GREEN":
+        if regime_ok:
+            return True, None
+        return False, f"regime {regime} blocks new risk"
+
+    if gate == "GREEN_OR_YELLOW_BOUNCE":
+        if regime_ok:
+            return True, None
+        if regime == "YELLOW":
+            if yellow_frac is None:
+                return False, "regime YELLOW blocks new risk: missing yellow_frac"
+            if yellow_frac < yellow_frac_min:
+                return (
+                    False,
+                    f"regime YELLOW blocks new risk: yellow_frac {yellow_frac:.2f} < {yellow_frac_min:.2f}",
+                )
+            if not ta_entry_ok:
+                return False, "regime YELLOW blocks new risk: BB bounce not confirmed"
+            return True, None
+        return False, f"regime {regime} blocks new risk"
+
+    logger.warning("unknown regime gate %s; defaulting to GREEN behavior", regime_gate)
+    if regime_ok:
+        return True, None
+    return False, f"regime {regime} blocks new risk"
 
 
 def in_no_sell_window(now: datetime, rules: LaneRules) -> bool:
@@ -795,7 +851,7 @@ def run_monitor(
 ) -> MonitorReport:
     rules = LaneRules.from_yaml(rules_path or DEFAULT_RULES)
     state = load_state(state_path or DEFAULT_STATE)
-    regime, regime_ok = read_regime()
+    regime, regime_ok, _, _ = read_regime_detail()
 
     suppress_dte: int | None = None
     if fetch_ta or ta_signal is not None:

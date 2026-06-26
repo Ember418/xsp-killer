@@ -121,9 +121,9 @@ def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
     _mock_ta_entry_ok(monkeypatch)
 
     def _regime():
-        return "GREEN", True
+        return "GREEN", True, None, None
 
-    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime", _regime)
+    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime_detail", _regime)
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spy_ohlcv", lambda: (600.0, 595.0, 0.5, "2026-06-17"))
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6010.0)
     monkeypatch.setattr(
@@ -178,7 +178,7 @@ def test_already_entered_skips_failed_attempt():
 def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
     monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
     _mock_ta_entry_ok(monkeypatch)
-    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime", lambda: ("GREEN", True))
+    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime_detail", lambda: ("GREEN", True, None, None))
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spy_ohlcv", lambda: (600.0, 595.0, 0.5, "2026-06-17"))
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6010.0)
     monkeypatch.setattr(
