@@ -39,11 +39,15 @@ logger = logging.getLogger("xsp_killer.lane_a_entry")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="XSP Lane A paper entry (15:45–16:00 ET)")
+    parser = argparse.ArgumentParser(
+        description="XSP Lane A paper entry (15:45–16:00 ET)"
+    )
     parser.add_argument("--rules", type=Path, default=DEFAULT_RULES)
     parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    parser.add_argument("--force", action="store_true", help="Bypass window/time gates (tests)")
+    parser.add_argument(
+        "--force", action="store_true", help="Bypass window/time gates (tests)"
+    )
     parser.add_argument("--no-publish", action="store_true")
     parser.add_argument("--at-et", help="Override ET time (ISO or HH:MM)")
     parser.add_argument(
@@ -83,7 +87,9 @@ def main() -> int:
         else:
             h, m = raw.split(":")
             today = datetime.now(ET).date()
-            now_et = datetime.combine(today, datetime.strptime(raw, "%H:%M").time(), tzinfo=ET)
+            now_et = datetime.combine(
+                today, datetime.strptime(raw, "%H:%M").time(), tzinfo=ET
+            )
 
     decision = run_paper_entry(
         rules_path=args.rules,
@@ -109,7 +115,9 @@ def main() -> int:
             decision.position.get("average_price"),
         )
     if args.out != DEFAULT_OUT:
-        args.out.write_text(json.dumps(decision.to_dict(), indent=2) + "\n", encoding="utf-8")
+        args.out.write_text(
+            json.dumps(decision.to_dict(), indent=2) + "\n", encoding="utf-8"
+        )
 
     return 0
 

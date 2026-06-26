@@ -84,13 +84,14 @@ def fetch_spy_call_quote(
 ) -> SpyCallQuote:
     """Fetch SPY chain quote with conservative exit mark and sanity guards."""
     try:
-
         from xsp_killer.chain_cache import get_spy_option_chain
 
         chain = get_spy_option_chain(expiration)
         calls = chain.calls
         if calls is None or calls.empty:
-            return SpyCallQuote(None, None, None, None, None, None, None, None, True, "empty_chain")
+            return SpyCallQuote(
+                None, None, None, None, None, None, None, None, True, "empty_chain"
+            )
 
         row = _select_spy_call_row(calls, strike_spy)
         spy_row = float(row["strike"])
@@ -110,7 +111,9 @@ def fetch_spy_call_quote(
         exit_spy = _conservative_exit_mark_spy(bid=bid, ask=ask, last=last, mid=mid)
         mark_xsp = round(mid * SPY_TO_XSP_PREMIUM_SCALE, 4) if mid is not None else None
         exit_xsp = (
-            round(exit_spy * SPY_TO_XSP_PREMIUM_SCALE, 4) if exit_spy is not None else None
+            round(exit_spy * SPY_TO_XSP_PREMIUM_SCALE, 4)
+            if exit_spy is not None
+            else None
         )
 
         stale = False
@@ -151,10 +154,14 @@ def fetch_spy_call_quote(
             stale_reason=reason,
         )
     except Exception as exc:
-        return SpyCallQuote(None, None, None, None, None, None, None, None, True, str(exc))
+        return SpyCallQuote(
+            None, None, None, None, None, None, None, None, True, str(exc)
+        )
 
 
-def fetch_spy_call_quote_legacy(strike_spy: float, expiration: date) -> tuple[float | None, float | None]:
+def fetch_spy_call_quote_legacy(
+    strike_spy: float, expiration: date
+) -> tuple[float | None, float | None]:
     """Backward-compatible (mid, delta) for entry paths."""
     q = fetch_spy_call_quote(strike_spy, expiration)
     return q.mid_spy, None

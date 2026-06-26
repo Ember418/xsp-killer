@@ -40,7 +40,11 @@ def realized_pnl_today(state: dict[str, Any], *, day: date | None = None) -> flo
 
 
 def entry_allowed_by_risk(state: dict[str, Any]) -> tuple[bool, str | None]:
-    if os.getenv("XSP_LANE_A_RISK_GATE", "true").strip().lower() in ("0", "false", "no"):
+    if os.getenv("XSP_LANE_A_RISK_GATE", "true").strip().lower() in (
+        "0",
+        "false",
+        "no",
+    ):
         return True, None
     cap = _daily_loss_cap_usd()
     pnl = realized_pnl_today(state)

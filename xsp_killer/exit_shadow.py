@@ -47,7 +47,9 @@ def _sessions_since_entry(entry_day: date | None, today: date) -> int:
     return max(0, (today - entry_day).days)
 
 
-def _recovery_pct_to_target(entry: float, mark: float | None, target_mult: float) -> float | None:
+def _recovery_pct_to_target(
+    entry: float, mark: float | None, target_mult: float
+) -> float | None:
     if mark is None or entry <= 0 or mark <= 0:
         return None
     target = entry * target_mult
@@ -67,9 +69,17 @@ def evaluate_shadow_brackets(
     evaluate_fn: Any,
 ) -> list[ShadowBracket]:
     """Compare prod exit to alternate rule brackets at the same mark snapshot."""
-    from xsp_killer.lane_a_monitor import LaneRules, _entry_date_et, _position_return_pct
+    from xsp_killer.lane_a_monitor import (
+        LaneRules,
+        _entry_date_et,
+        _position_return_pct,
+    )
 
-    entry = pos.entry_mid_premium if pos.entry_mid_premium is not None else pos.average_price
+    entry = (
+        pos.entry_mid_premium
+        if pos.entry_mid_premium is not None
+        else pos.average_price
+    )
     mark = pos.mark_price
     ret = _position_return_pct(pos)
     entry_day = _entry_date_et(pos.entry_ts)
@@ -85,7 +95,9 @@ def evaluate_shadow_brackets(
             r,
             now_et=now_et,
             ta_signal=ta_signal,
-            suppress_morning_cut_dte=kwargs.pop("suppress_morning_cut_dte", suppress_morning_cut_dte),
+            suppress_morning_cut_dte=kwargs.pop(
+                "suppress_morning_cut_dte", suppress_morning_cut_dte
+            ),
             **kwargs,
         )
 
@@ -120,7 +132,11 @@ def evaluate_shadow_brackets(
         regime_gate=rules.regime_gate,
     )
     wide_alerts = evaluate_fn(
-        pos, wide_rules, now_et=now_et, ta_signal=ta_signal, suppress_morning_cut_dte=suppress_morning_cut_dte
+        pos,
+        wide_rules,
+        now_et=now_et,
+        ta_signal=ta_signal,
+        suppress_morning_cut_dte=suppress_morning_cut_dte,
     )
     sl_remaining = None
     if ret is not None and ret > -0.30:
@@ -135,9 +151,13 @@ def evaluate_shadow_brackets(
             pnl_usd=pos.pnl_usd if not wide_alerts else wide_alerts[0].pnl_usd,
             thresholds_to_continue={
                 "stop_loss_pct_remaining": sl_remaining,
-                "need_premium_recovery_to_breakeven_pct": _recovery_pct_to_target(entry, mark, 1.0),
+                "need_premium_recovery_to_breakeven_pct": _recovery_pct_to_target(
+                    entry, mark, 1.0
+                ),
             },
-            notes="Would survive today's cut if stop were 30% instead of 20%" if not wide_alerts else "",
+            notes="Would survive today's cut if stop were 30% instead of 20%"
+            if not wide_alerts
+            else "",
         )
     )
 
@@ -157,10 +177,16 @@ def evaluate_shadow_brackets(
             ret_pct=round(ret * 100, 2) if ret is not None else None,
             thresholds_to_continue={
                 "would_skip_time_stop": pos.dte is not None and pos.dte >= 14,
-                "need_premium_recovery_to_breakeven_pct": _recovery_pct_to_target(entry, mark, 1.0),
-                "need_premium_recovery_to_tp_20pct": _recovery_pct_to_target(entry, mark, 1.20),
+                "need_premium_recovery_to_breakeven_pct": _recovery_pct_to_target(
+                    entry, mark, 1.0
+                ),
+                "need_premium_recovery_to_tp_20pct": _recovery_pct_to_target(
+                    entry, mark, 1.20
+                ),
             },
-            notes="Hold through morning cut; exit only on SL/TP/BB" if not no_cut_alerts else "",
+            notes="Hold through morning cut; exit only on SL/TP/BB"
+            if not no_cut_alerts
+            else "",
         )
     )
 
@@ -176,15 +202,20 @@ def evaluate_shadow_brackets(
             ShadowBracket(
                 bracket_id=f"defer_morning_cut_{defer_days}d",
                 label=f"Defer time_stop until entry+{defer_days} sessions",
-                would_exit=not still_inside_hold and actual_alert.exit_reason == "time_stop",
+                would_exit=not still_inside_hold
+                and actual_alert.exit_reason == "time_stop",
                 exit_reason=None if still_inside_hold else actual_alert.exit_reason,
                 ret_pct=round(ret * 100, 2) if ret is not None else None,
                 thresholds_to_continue={
                     "sessions_held": sessions,
                     "sessions_remaining": max(0, defer_days - sessions),
                     "calendar_days_until_cut": max(0, (defer_until - today).days),
-                    "need_premium_recovery_to_breakeven_pct": _recovery_pct_to_target(entry, mark, 1.0),
-                    "need_premium_recovery_to_tp_20pct": _recovery_pct_to_target(entry, mark, 1.20),
+                    "need_premium_recovery_to_breakeven_pct": _recovery_pct_to_target(
+                        entry, mark, 1.0
+                    ),
+                    "need_premium_recovery_to_tp_20pct": _recovery_pct_to_target(
+                        entry, mark, 1.20
+                    ),
                     "need_spy_overnight_bounce_note": (
                         "Red day cut may be premature; bracket keeps position open to test recovery"
                     ),
@@ -253,7 +284,12 @@ def append_shadow_exit_log(
     events.append(payload)
     state["paper_shadow_events"] = events[-300:]
 
-    path = log_path or Path(__file__).resolve().parents[1] / "logs" / "xsp_lane_a_shadow_exits.jsonl"
+    path = (
+        log_path
+        or Path(__file__).resolve().parents[1]
+        / "logs"
+        / "xsp_lane_a_shadow_exits.jsonl"
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(payload) + "\n")

@@ -67,8 +67,13 @@ def test_hedge_missing_alert():
     assert call is not None
     call.lane = "B"
     alerts = evaluate_lane_b_alerts(
-        [call], [], RULES, {},
-        regime=None, drawdown_pct=None, portfolio_notional_usd=0,
+        [call],
+        [],
+        RULES,
+        {},
+        regime=None,
+        drawdown_pct=None,
+        portfolio_notional_usd=0,
     )
     assert any(a.alert_code == "B_HEDGE_MISSING" for a in alerts)
 
@@ -84,8 +89,13 @@ def test_hedge_dte_low_alert():
     if put.dte >= 45:
         put.dte = 30
     alerts = evaluate_lane_b_alerts(
-        [call], [put], RULES, {},
-        regime=None, drawdown_pct=None, portfolio_notional_usd=0,
+        [call],
+        [put],
+        RULES,
+        {},
+        regime=None,
+        drawdown_pct=None,
+        portfolio_notional_usd=0,
     )
     assert any(a.alert_code == "B_HEDGE_DTE_LOW" for a in alerts)
 

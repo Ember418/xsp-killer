@@ -83,7 +83,11 @@ def test_open_paper_positions_filters_closed():
 def test_already_entered_today():
     state = {
         "entry_log": [
-            {"entered": True, "evaluated_at": "2026-06-16T19:45:00+00:00", "position_id": "paper:XSP:2026-07-18:6010"},
+            {
+                "entered": True,
+                "evaluated_at": "2026-06-16T19:45:00+00:00",
+                "position_id": "paper:XSP:2026-07-18:6010",
+            },
         ]
     }
     assert already_entered_today(state, date(2026, 6, 16)) is True
@@ -100,7 +104,9 @@ def _mock_ta_entry_ok(monkeypatch):
         upper_bb_touched=False,
         detail="not used in close_window_only",
     )
-    monkeypatch.setattr("xsp_killer.lane_a_entry.evaluate_ta_signals", lambda rules, now_et=None: fake)
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.evaluate_ta_signals", lambda rules, now_et=None: fake
+    )
 
 
 def test_run_paper_entry_outside_window(tmp_path, monkeypatch):
@@ -124,7 +130,10 @@ def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
         return "GREEN", True, None, None
 
     monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime_detail", _regime)
-    monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spy_ohlcv", lambda: (600.0, 595.0, 0.5, "2026-06-17"))
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.fetch_spy_ohlcv",
+        lambda: (600.0, 595.0, 0.5, "2026-06-17"),
+    )
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6010.0)
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_expiration",
@@ -132,7 +141,11 @@ def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_strike",
-        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (6010.0, 2.45, 0.52),
+        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (
+            6010.0,
+            2.45,
+            0.52,
+        ),
     )
 
     decision = run_paper_entry(
@@ -165,10 +178,15 @@ def test_run_paper_entry_blocks_when_open_position(tmp_path, monkeypatch):
     assert decision.entered is False
     assert "max open" in (decision.skip_reason or "").lower()
 
+
 def test_already_entered_skips_failed_attempt():
     state = {
         "entry_log": [
-            {"entered": False, "evaluated_at": "2026-06-16T19:45:00+00:00", "skip_reason": "regime"},
+            {
+                "entered": False,
+                "evaluated_at": "2026-06-16T19:45:00+00:00",
+                "skip_reason": "regime",
+            },
             {"entered": True, "evaluated_at": "2026-06-16T19:45:00+00:00"},
         ]
     }
@@ -178,8 +196,14 @@ def test_already_entered_skips_failed_attempt():
 def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
     monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
     _mock_ta_entry_ok(monkeypatch)
-    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime_detail", lambda: ("GREEN", True, None, None))
-    monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spy_ohlcv", lambda: (600.0, 595.0, 0.5, "2026-06-17"))
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.read_regime_detail",
+        lambda: ("GREEN", True, None, None),
+    )
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.fetch_spy_ohlcv",
+        lambda: (600.0, 595.0, 0.5, "2026-06-17"),
+    )
     monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6010.0)
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_expiration",
@@ -187,7 +211,11 @@ def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_strike",
-        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (6010.0, 24.5, 0.52),
+        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (
+            6010.0,
+            24.5,
+            0.52,
+        ),
     )
     decision = run_paper_entry(
         state_path=tmp_path / "state.json",
@@ -199,4 +227,3 @@ def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
     pos = decision.position
     assert pos["entry_mid_premium"] == 24.5
     assert pos["average_price"] > pos["entry_mid_premium"]
-

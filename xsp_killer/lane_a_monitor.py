@@ -70,13 +70,23 @@ class LaneRules:
             lane=str(data.get("lane", "A")),
             dte_min=int(entry.get("dte_min", 14)),
             dte_max=int(entry.get("dte_max", 60)),
-            exclude_expiry_month=tuple(str(x) for x in entry.get("exclude_expiry_month") or []),
-            chain_symbols=tuple(str(x).upper() for x in entry.get("chain_symbols") or ["SPX", "XSP"]),
+            exclude_expiry_month=tuple(
+                str(x) for x in entry.get("exclude_expiry_month") or []
+            ),
+            chain_symbols=tuple(
+                str(x).upper() for x in entry.get("chain_symbols") or ["SPX", "XSP"]
+            ),
             stop_loss_pct=float(exit_cfg.get("stop_loss_pct", 0.20)),
             take_profit_pct=float(exit_cfg.get("take_profit_pct", 0.20)),
-            sell_eval_start_et=_parse_time(str(exit_cfg.get("sell_eval_start_et", "09:30"))),
-            sell_deadline_et=_parse_time(str(exit_cfg.get("sell_deadline_et", "10:00"))),
-            no_sell_start_et=_parse_time(str(exit_cfg.get("no_sell_start_et", "08:30"))),
+            sell_eval_start_et=_parse_time(
+                str(exit_cfg.get("sell_eval_start_et", "09:30"))
+            ),
+            sell_deadline_et=_parse_time(
+                str(exit_cfg.get("sell_deadline_et", "10:00"))
+            ),
+            no_sell_start_et=_parse_time(
+                str(exit_cfg.get("no_sell_start_et", "08:30"))
+            ),
             no_sell_end_et=_parse_time(str(exit_cfg.get("no_sell_end_et", "09:30"))),
             require_upper_bb_for_take_profit=bool(
                 exit_cfg.get("require_upper_bb_for_take_profit", True)
@@ -242,16 +252,26 @@ def classify_position(
 ) -> LaneAPosition | None:
     chain = str(raw.get("chain_symbol") or raw.get("symbol") or "").upper()
     opt_type = str(raw.get("type") or raw.get("option_type") or "").lower()
-    exp = parse_expiration(str(raw.get("expiration_date") or raw.get("expiration") or ""))
+    exp = parse_expiration(
+        str(raw.get("expiration_date") or raw.get("expiration") or "")
+    )
     if exp is None:
         return None
     eligible = (
         is_lane_a_monitor_contract(
-            chain_symbol=chain, option_type=opt_type, expiration=exp, rules=rules, today=today
+            chain_symbol=chain,
+            option_type=opt_type,
+            expiration=exp,
+            rules=rules,
+            today=today,
         )
         if for_monitor
         else is_lane_a_contract(
-            chain_symbol=chain, option_type=opt_type, expiration=exp, rules=rules, today=today
+            chain_symbol=chain,
+            option_type=opt_type,
+            expiration=exp,
+            rules=rules,
+            today=today,
         )
     )
     if not eligible:
@@ -260,9 +280,16 @@ def classify_position(
     if qty <= 0:
         return None
     avg = float(raw.get("average_price") or raw.get("avg_price") or 0)
-    mark_raw = raw.get("mark_price") or raw.get("mark") or raw.get("adjusted_mark_price")
+    mark_raw = (
+        raw.get("mark_price") or raw.get("mark") or raw.get("adjusted_mark_price")
+    )
     mark = float(mark_raw) if mark_raw is not None else None
-    pos_id = str(raw.get("id") or raw.get("option_id") or raw.get("url") or f"{chain}:{exp}:{raw.get('strike_price')}")
+    pos_id = str(
+        raw.get("id")
+        or raw.get("option_id")
+        or raw.get("url")
+        or f"{chain}:{exp}:{raw.get('strike_price')}"
+    )
     strike = float(raw.get("strike_price") or raw.get("strike") or 0)
     entry_mid = raw.get("entry_mid_premium")
     pos = LaneAPosition(
@@ -275,7 +302,9 @@ def classify_position(
         average_price=avg,
         mark_price=mark,
         dte=compute_dte(exp),
-        entry_mid_premium=float(entry_mid) if entry_mid is not None else (avg if avg > 0 else None),
+        entry_mid_premium=float(entry_mid)
+        if entry_mid is not None
+        else (avg if avg > 0 else None),
         pnl_usd=None,
         pnl_per_contract=None,
     )
@@ -380,17 +409,27 @@ def in_sell_window(now: datetime, rules: LaneRules) -> bool:
 
 
 def _position_return_pct(pos: LaneAPosition) -> float | None:
-    entry = pos.entry_mid_premium if pos.entry_mid_premium is not None else pos.average_price
+    entry = (
+        pos.entry_mid_premium
+        if pos.entry_mid_premium is not None
+        else pos.average_price
+    )
     if entry <= 0 or pos.mark_price is None:
         return None
     return (pos.mark_price - entry) / entry
 
 
-def _attach_economics_pnl(pos: LaneAPosition, *, rules_path: Path | None = None) -> None:
+def _attach_economics_pnl(
+    pos: LaneAPosition, *, rules_path: Path | None = None
+) -> None:
     if pos.mark_price is None or pos.average_price <= 0:
         return
     try:
-        from xsp_killer.paper_economics import PaperEconomics, pnl_from_entry_fill, pnl_per_contract
+        from xsp_killer.paper_economics import (
+            PaperEconomics,
+            pnl_from_entry_fill,
+            pnl_per_contract,
+        )
 
         econ = PaperEconomics.from_yaml(rules_path or DEFAULT_RULES)
         entry_mid = pos.entry_mid_premium
@@ -415,8 +454,6 @@ def _attach_economics_pnl(pos: LaneAPosition, *, rules_path: Path | None = None)
         pos.pnl_usd = pos.pnl_per_contract * pos.quantity
     except Exception as exc:
         logger.warning("economics pnl failed: %s", exc)
-
-
 
 
 def _entry_date_et(entry_ts: str | None) -> date | None:
@@ -568,27 +605,31 @@ def paper_positions_to_lane(
         mark_raw = raw.get("mark_price") or raw.get("mark")
         mark = float(mark_raw) if mark_raw is not None else None
         entry_mid_raw = raw.get("entry_mid_premium")
-        entry_mid = float(entry_mid_raw) if entry_mid_raw is not None else (avg if avg > 0 else None)
+        entry_mid = (
+            float(entry_mid_raw)
+            if entry_mid_raw is not None
+            else (avg if avg > 0 else None)
+        )
         pos_id = str(raw.get("position_id") or "")
         strike = float(raw.get("strike") or 0)
         lane_pos = LaneAPosition(
-                position_id=pos_id,
-                chain_symbol=chain,
-                option_type=opt_type,
-                strike=strike,
-                expiration_date=exp,
-                quantity=qty,
-                average_price=avg,
-                mark_price=mark,
-                dte=compute_dte(exp, today=today),
-                lane=str(raw.get("lane") or "A"),
-                entry_ts=raw.get("entry_ts"),
-                delta_at_entry=raw.get("delta_at_entry"),
-                entry_mid_premium=entry_mid,
-                mark_quote_stale=bool(raw.get("mark_quote_stale")),
-                pnl_usd=None,
-                pnl_per_contract=None,
-            )
+            position_id=pos_id,
+            chain_symbol=chain,
+            option_type=opt_type,
+            strike=strike,
+            expiration_date=exp,
+            quantity=qty,
+            average_price=avg,
+            mark_price=mark,
+            dte=compute_dte(exp, today=today),
+            lane=str(raw.get("lane") or "A"),
+            entry_ts=raw.get("entry_ts"),
+            delta_at_entry=raw.get("delta_at_entry"),
+            entry_mid_premium=entry_mid,
+            mark_quote_stale=bool(raw.get("mark_quote_stale")),
+            pnl_usd=None,
+            pnl_per_contract=None,
+        )
         _attach_economics_pnl(lane_pos)
         out.append(lane_pos)
     return out
@@ -598,7 +639,10 @@ def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]
     """Update mark_price on open paper positions via per-strike SPY chain proxy."""
     try:
         from xsp_killer.lane_a_entry import estimate_fallback_premium, fetch_spx_proxy
-        from xsp_killer.spy_quote import fetch_spy_call_quote, xsp_strike_to_spy_chain_strike
+        from xsp_killer.spy_quote import (
+            fetch_spy_call_quote,
+            xsp_strike_to_spy_chain_strike,
+        )
     except ImportError:
         return positions
 
@@ -633,7 +677,9 @@ def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]
             pos["last_mark_at"] = now_iso
         elif spx is not None:
             spy_px = spx / 10.0
-            fb = estimate_fallback_premium(spy_px, dte, xsp_strike=strike, spx_level=spx)
+            fb = estimate_fallback_premium(
+                spy_px, dte, xsp_strike=strike, spx_level=spx
+            )
             pos["mark_price"] = round(fb, 4)
             pos["mark_quote_stale"] = True
             pos["mark_stale_reason"] = "fallback_estimate"
@@ -674,7 +720,11 @@ def close_paper_positions_on_exit(
         events = list(state.get("paper_events") or [])
         day_key = evaluated_at[:10]
         seen = {
-            (e.get("position_id"), e.get("exit_reason"), (e.get("evaluated_at") or "")[:10])
+            (
+                e.get("position_id"),
+                e.get("exit_reason"),
+                (e.get("evaluated_at") or "")[:10],
+            )
             for e in events
         }
         evt_key = (pos_id, raw["exit_reason"], day_key)
@@ -700,13 +750,21 @@ def load_open_paper_positions(state: dict[str, Any]) -> list[dict[str, Any]]:
     raw = state.get("paper_positions") or {}
     if not isinstance(raw, dict):
         return []
-    open_rows = [p for p in raw.values() if isinstance(p, dict) and p.get("status", "open") == "open"]
+    open_rows = [
+        p
+        for p in raw.values()
+        if isinstance(p, dict) and p.get("status", "open") == "open"
+    ]
     return refresh_paper_marks(open_rows)
 
 
 def rh_poll_enabled() -> bool:
     """Poll Robinhood only when explicitly enabled (no positions → skip auth)."""
-    return os.getenv("XSP_LANE_A_RH_POLL", "false").strip().lower() in ("1", "true", "yes")
+    return os.getenv("XSP_LANE_A_RH_POLL", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def fetch_robinhood_option_positions() -> tuple[list[dict[str, Any]], str | None]:
@@ -715,8 +773,16 @@ def fetch_robinhood_option_positions() -> tuple[list[dict[str, Any]], str | None
         return [], None
     import asyncio
 
-    user = os.getenv("RH_USERNAME") or os.getenv("ROBINHOOD_USERNAME") or os.getenv("ROBINHOOD_USER")
-    pw = os.getenv("RH_PASSWORD") or os.getenv("ROBINHOOD_PASSWORD") or os.getenv("ROBINHOOD_PASS")
+    user = (
+        os.getenv("RH_USERNAME")
+        or os.getenv("ROBINHOOD_USERNAME")
+        or os.getenv("ROBINHOOD_USER")
+    )
+    pw = (
+        os.getenv("RH_PASSWORD")
+        or os.getenv("ROBINHOOD_PASSWORD")
+        or os.getenv("ROBINHOOD_PASS")
+    )
     if not user or not pw:
         return [], "missing RH_USERNAME/RH_PASSWORD"
     try:
@@ -729,7 +795,9 @@ def fetch_robinhood_option_positions() -> tuple[list[dict[str, Any]], str | None
         from xsp_killer.robinhood import RobinhoodAdapter
 
         adapter = RobinhoodAdapter(user, pw)
-        rows = asyncio.run(adapter.get_open_option_positions(chain_symbols=("SPX", "XSP")))
+        rows = asyncio.run(
+            adapter.get_open_option_positions(chain_symbols=("SPX", "XSP"))
+        )
         return rows, None
     except Exception as exc:
         return [], str(exc)
@@ -861,7 +929,9 @@ def run_monitor(
             ta_rules = TaRules.from_yaml(rules_path or DEFAULT_RULES)
             suppress_dte = ta_rules.suppress_morning_cut_dte_gte
             if ta_signal is None and fetch_ta:
-                ta_signal = evaluate_ta_signals(ta_rules, now_et=now_et or datetime.now(ET))
+                ta_signal = evaluate_ta_signals(
+                    ta_rules, now_et=now_et or datetime.now(ET)
+                )
         except Exception as exc:
             ta_signal = None
             logger.warning("TA evaluation skipped: %s", exc)
@@ -906,7 +976,9 @@ def run_monitor(
             classified.append(pos)
 
     if not classified and report.rh_poll_skipped and not positions_override:
-        classified = paper_positions_to_lane(load_open_paper_positions(state), rules, today=today)
+        classified = paper_positions_to_lane(
+            load_open_paper_positions(state), rules, today=today
+        )
 
     merge_state_tags(classified, state)
     report.positions = [p.to_dict() for p in classified]
@@ -925,7 +997,9 @@ def run_monitor(
 
     report.alerts = [a.to_dict() for a in all_alerts]
 
-    paper_positions_active = bool(state.get("paper_positions")) and report.rh_poll_skipped
+    paper_positions_active = (
+        bool(state.get("paper_positions")) and report.rh_poll_skipped
+    )
     if paper_positions_active and not positions_override:
         closed_paper = close_paper_positions_on_exit(
             state,
@@ -979,7 +1053,9 @@ def run_monitor(
             evaluated_at=report.evaluated_at,
             logic_version=rules.logic_version,
         )
-    append_paper_pnl_log(report=report, classified=classified, alerts=all_alerts, log_path=log_path)
+    append_paper_pnl_log(
+        report=report, classified=classified, alerts=all_alerts, log_path=log_path
+    )
     if write_paper_brief:
         write_paper_pnl_brief(state, report=report, out_path=paper_brief_path)
 

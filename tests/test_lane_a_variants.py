@@ -60,8 +60,14 @@ def test_build_scoreboard(tmp_path, monkeypatch):
                 "variants": {
                     "v2_28dte_atm": {
                         "paper_events": [
-                            {"paper_pnl_usd": 10.0, "position_id": "paper:XSP:2026-07-18:6010"},
-                            {"paper_pnl_usd": -5.0, "position_id": "paper:XSP:2026-07-18:6010"},
+                            {
+                                "paper_pnl_usd": 10.0,
+                                "position_id": "paper:XSP:2026-07-18:6010",
+                            },
+                            {
+                                "paper_pnl_usd": -5.0,
+                                "position_id": "paper:XSP:2026-07-18:6010",
+                            },
                         ],
                         "paper_positions": {
                             "paper:XSP:2026-07-18:6010": {
@@ -71,7 +77,12 @@ def test_build_scoreboard(tmp_path, monkeypatch):
                                 "expiration_date": "2026-07-18",
                             }
                         },
-                        "entry_log": [{"evaluated_at": "2026-06-21T19:45:00+00:00", "entered": False}],
+                        "entry_log": [
+                            {
+                                "evaluated_at": "2026-06-21T19:45:00+00:00",
+                                "entered": False,
+                            }
+                        ],
                     }
                 }
             }
@@ -108,13 +119,28 @@ def test_build_scoreboard_respects_soak_reset(tmp_path):
                 "variants": {
                     "v2_28dte_atm": {
                         "paper_events": [
-                            {"paper_pnl_usd": -10.0, "evaluated_at": "2026-06-20T14:00:00+00:00"},
-                            {"paper_pnl_usd": 7.0, "evaluated_at": "2026-06-21T14:00:00+00:00"},
+                            {
+                                "paper_pnl_usd": -10.0,
+                                "evaluated_at": "2026-06-20T14:00:00+00:00",
+                            },
+                            {
+                                "paper_pnl_usd": 7.0,
+                                "evaluated_at": "2026-06-21T14:00:00+00:00",
+                            },
                         ],
                         "entry_log": [
-                            {"evaluated_at": "2026-06-20T19:45:00+00:00", "entered": False},
-                            {"evaluated_at": "2026-06-21T19:45:00+00:00", "entered": False},
-                            {"evaluated_at": "2026-06-22T19:45:00+00:00", "entered": True},
+                            {
+                                "evaluated_at": "2026-06-20T19:45:00+00:00",
+                                "entered": False,
+                            },
+                            {
+                                "evaluated_at": "2026-06-21T19:45:00+00:00",
+                                "entered": False,
+                            },
+                            {
+                                "evaluated_at": "2026-06-22T19:45:00+00:00",
+                                "entered": True,
+                            },
                         ],
                         "paper_positions": {},
                     }
@@ -133,9 +159,13 @@ def test_build_scoreboard_respects_soak_reset(tmp_path):
     assert payload["soak_reset_at"] == reset_at
 
 
-def test_run_variant_entry_regime_skip_does_not_write_default_entry_brief(tmp_path, monkeypatch):
+def test_run_variant_entry_regime_skip_does_not_write_default_entry_brief(
+    tmp_path, monkeypatch
+):
     monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
-    monkeypatch.setattr("xsp_killer.lane_a_entry.read_regime_detail", lambda: ("RED", False, None, None))
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.read_regime_detail", lambda: ("RED", False, None, None)
+    )
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.evaluate_ta_signals",
         lambda rules, now_et=None: TaSignal(
@@ -169,9 +199,21 @@ def test_run_variant_entry_regime_skip_does_not_write_default_entry_brief(tmp_pa
 
 
 def test_build_scoreboard_sets_liveness_from_latest_entry_eval(tmp_path):
-    recent_variant_eval = (datetime.now(timezone.utc) - timedelta(hours=4)).replace(microsecond=0).isoformat()
-    recent_baseline_eval = (datetime.now(timezone.utc) - timedelta(hours=2)).replace(microsecond=0).isoformat()
-    backdated_eval = (datetime.now(timezone.utc) - timedelta(hours=40)).replace(microsecond=0).isoformat()
+    recent_variant_eval = (
+        (datetime.now(timezone.utc) - timedelta(hours=4))
+        .replace(microsecond=0)
+        .isoformat()
+    )
+    recent_baseline_eval = (
+        (datetime.now(timezone.utc) - timedelta(hours=2))
+        .replace(microsecond=0)
+        .isoformat()
+    )
+    backdated_eval = (
+        (datetime.now(timezone.utc) - timedelta(hours=40))
+        .replace(microsecond=0)
+        .isoformat()
+    )
 
     state = tmp_path / "variants-state.json"
     baseline = tmp_path / "baseline-state.json"
@@ -181,7 +223,9 @@ def test_build_scoreboard_sets_liveness_from_latest_entry_eval(tmp_path):
             {
                 "variants": {
                     "v2_28dte_atm": {
-                        "entry_log": [{"evaluated_at": recent_variant_eval, "entered": False}],
+                        "entry_log": [
+                            {"evaluated_at": recent_variant_eval, "entered": False}
+                        ],
                         "paper_events": [],
                         "paper_positions": {},
                     }
@@ -216,7 +260,9 @@ def test_build_scoreboard_sets_liveness_from_latest_entry_eval(tmp_path):
             {
                 "variants": {
                     "v2_28dte_atm": {
-                        "entry_log": [{"evaluated_at": backdated_eval, "entered": False}],
+                        "entry_log": [
+                            {"evaluated_at": backdated_eval, "entered": False}
+                        ],
                         "paper_events": [],
                         "paper_positions": {},
                     }
@@ -257,7 +303,12 @@ def test_reset_soak_archives_and_clears(tmp_path, monkeypatch):
             {
                 "variants": {
                     "v2_28dte_atm": {
-                        "paper_events": [{"paper_pnl_usd": -1.0, "evaluated_at": "2026-06-20T14:00:00+00:00"}],
+                        "paper_events": [
+                            {
+                                "paper_pnl_usd": -1.0,
+                                "evaluated_at": "2026-06-20T14:00:00+00:00",
+                            }
+                        ],
                         "entry_log": [{"entered": True}],
                         "paper_positions": {},
                     }
@@ -303,7 +354,12 @@ def test_clear_pnl_keeps_entry_log(tmp_path, monkeypatch):
             {
                 "variants": {
                     "v2_28dte_atm": {
-                        "paper_events": [{"paper_pnl_usd": -100.0, "evaluated_at": "2026-06-23T14:00:00+00:00"}],
+                        "paper_events": [
+                            {
+                                "paper_pnl_usd": -100.0,
+                                "evaluated_at": "2026-06-23T14:00:00+00:00",
+                            }
+                        ],
                         "entry_log": [{"entered": True}],
                         "paper_positions": {},
                     }
@@ -317,7 +373,9 @@ def test_clear_pnl_keeps_entry_log(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     scoreboard.write_text('{"variants": []}\n', encoding="utf-8")
-    monkeypatch.setattr("xsp_killer.lane_a_variants.load_variant_specs", lambda _path=None: [])
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_variants.load_variant_specs", lambda _path=None: []
+    )
 
     meta = clear_pnl_epoch(
         commit="abc",

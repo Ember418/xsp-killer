@@ -17,7 +17,11 @@ def shadow_review_entry(
     position: dict[str, Any] | None,
 ) -> tuple[bool, str | None]:
     """Fail-open shadow reviewer — logs WARN blocks only on explicit RED + bad tape."""
-    if os.getenv("XSP_LANE_A_CONDUCTOR_SHADOW", "true").strip().lower() in ("0", "false", "no"):
+    if os.getenv("XSP_LANE_A_CONDUCTOR_SHADOW", "true").strip().lower() in (
+        "0",
+        "false",
+        "no",
+    ):
         return True, None
 
     if regime == "RED":

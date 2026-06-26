@@ -24,11 +24,17 @@ from xsp_killer.lane_a_monitor import (  # noqa: E402
     evaluate_exit_alerts,
     parse_expiration,
 )
-from xsp_killer.lane_a_variants import DEFAULT_VARIANTS_STATE, load_variant_specs, merged_rules_path  # noqa: E402
+from xsp_killer.lane_a_variants import (
+    DEFAULT_VARIANTS_STATE,
+    load_variant_specs,
+    merged_rules_path,
+)  # noqa: E402
 
 ET = ZoneInfo("America/New_York")
 DEFAULT_LOG = ROOT / "logs" / "xsp_lane_a_shadow_exits.jsonl"
-DEFAULT_OUT = ROOT / "briefs" / "2026-06-23_xsp-lane-a-shadow-exits-session1-backfill.json"
+DEFAULT_OUT = (
+    ROOT / "briefs" / "2026-06-23_xsp-lane-a-shadow-exits-session1-backfill.json"
+)
 
 
 def _parse_ts(raw: str | None) -> datetime | None:
@@ -71,7 +77,9 @@ def _lane_position(raw: dict) -> tuple[object, LaneRules]:
     rules_path = DEFAULT_RULES
     variant_id = raw.get("variant_id")
     if variant_id:
-        spec = next((s for s in load_variant_specs() if s.variant_id == variant_id), None)
+        spec = next(
+            (s for s in load_variant_specs() if s.variant_id == variant_id), None
+        )
         if spec is not None:
             rules_path = merged_rules_path(spec)
     rules = LaneRules.from_yaml(rules_path)
@@ -179,7 +187,9 @@ def main() -> int:
     p.add_argument("--baseline-state", type=Path, default=DEFAULT_STATE)
     p.add_argument("--log", type=Path, default=DEFAULT_LOG)
     p.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    p.add_argument("--since", help="Only exits after this ISO timestamp (default: soak_reset_at)")
+    p.add_argument(
+        "--since", help="Only exits after this ISO timestamp (default: soak_reset_at)"
+    )
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
     summary = backfill(

@@ -38,7 +38,9 @@ logger = logging.getLogger("xsp_killer.lane_a_monitor")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="XSP Lane A overnight swing monitor (Phase 0)")
+    parser = argparse.ArgumentParser(
+        description="XSP Lane A overnight swing monitor (Phase 0)"
+    )
     parser.add_argument("--rules", type=Path, default=DEFAULT_RULES)
     parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -47,7 +49,9 @@ def main() -> int:
         type=Path,
         help="JSON file with RH-like open option positions (skips live RH poll)",
     )
-    parser.add_argument("--no-publish", action="store_true", help="Skip intel:xsp_lane_a_alert publish")
+    parser.add_argument(
+        "--no-publish", action="store_true", help="Skip intel:xsp_lane_a_alert publish"
+    )
     parser.add_argument(
         "--at-et",
         help="Override evaluation time (ISO or HH:MM) for replay/tests",
@@ -68,7 +72,9 @@ def main() -> int:
         else:
             h, m = raw.split(":")
             today = datetime.now(ET).date()
-            now_et = datetime.combine(today, datetime.strptime(raw, "%H:%M").time(), tzinfo=ET)
+            now_et = datetime.combine(
+                today, datetime.strptime(raw, "%H:%M").time(), tzinfo=ET
+            )
 
     report = run_monitor(
         rules_path=args.rules,
@@ -94,7 +100,9 @@ def main() -> int:
             logger.warning("error: %s", err)
     if report.alerts:
         for alert in report.alerts:
-            logger.warning("ALERT %s: %s", alert.get("exit_reason"), alert.get("message"))
+            logger.warning(
+                "ALERT %s: %s", alert.get("exit_reason"), alert.get("message")
+            )
 
     return 0
 

@@ -11,9 +11,15 @@ logger = logging.getLogger("xsp_killer.robinhood")
 
 
 class RobinhoodAdapter:
-    def __init__(self, username: str | None = None, password: str | None = None) -> None:
-        self.username = username or os.getenv("RH_USERNAME") or os.getenv("ROBINHOOD_USERNAME")
-        self.password = password or os.getenv("RH_PASSWORD") or os.getenv("ROBINHOOD_PASSWORD")
+    def __init__(
+        self, username: str | None = None, password: str | None = None
+    ) -> None:
+        self.username = (
+            username or os.getenv("RH_USERNAME") or os.getenv("ROBINHOOD_USERNAME")
+        )
+        self.password = (
+            password or os.getenv("RH_PASSWORD") or os.getenv("ROBINHOOD_PASSWORD")
+        )
 
     async def get_open_option_positions(
         self,
@@ -37,7 +43,9 @@ class RobinhoodAdapter:
                 oid = row.get("option_id") or row.get("id")
                 if oid:
                     try:
-                        md = await asyncio.to_thread(r.options.get_option_market_data_by_id, oid)
+                        md = await asyncio.to_thread(
+                            r.options.get_option_market_data_by_id, oid
+                        )
                         if isinstance(md, list) and md:
                             md = md[0]
                         if isinstance(md, dict):

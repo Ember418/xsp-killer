@@ -79,8 +79,12 @@ class EntryRules:
             chain_symbol=str(data.get("instrument", "XSP")).upper(),
             strike_max_steps_from_atm=int(entry.get("strike_max_steps_from_atm", 1)),
             dte_pick=str(entry.get("dte_pick", "min")).strip().lower(),
-            dte_target=int(entry["dte_target"]) if entry.get("dte_target") is not None else None,
-            strike_pick=str(entry.get("strike_pick", "cheapest_near_atm")).strip().lower(),
+            dte_target=int(entry["dte_target"])
+            if entry.get("dte_target") is not None
+            else None,
+            strike_pick=str(entry.get("strike_pick", "cheapest_near_atm"))
+            .strip()
+            .lower(),
         )
 
 
@@ -108,7 +112,11 @@ class EntryDecision:
 
 
 def paper_entry_enabled() -> bool:
-    return os.getenv("XSP_LANE_A_PAPER_ENTRY", "true").strip().lower() in ("1", "true", "yes")
+    return os.getenv("XSP_LANE_A_PAPER_ENTRY", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def in_entry_window(now_et: datetime, rules: EntryRules) -> bool:
@@ -168,7 +176,9 @@ def fetch_spy_ohlcv() -> tuple[float | None, float | None, float | None, str | N
         elif o:
             ret = (c - o) / o * 100.0
         try:
-            session_date = prev.name.date() if hasattr(prev.name, "date") else str(prev.name)[:10]
+            session_date = (
+                prev.name.date() if hasattr(prev.name, "date") else str(prev.name)[:10]
+            )
         except Exception:
             session_date = "unknown"
         logger.debug(
@@ -206,7 +216,6 @@ def pick_expiration(
     dte_target: int | None = None,
 ) -> date | None:
     try:
-
         from xsp_killer.chain_cache import get_spy_expirations
 
         expirations = get_spy_expirations()
@@ -253,7 +262,9 @@ def pick_cheapest_atm_strike(
     """Cheapest near-ATM XSP strike (mentor: closest to money, lowest premium)."""
     atm = round_xsp_strike(spx_level)
     step = 5.0
-    candidates = [atm + i * step for i in range(-max_steps_from_atm, max_steps_from_atm + 1)]
+    candidates = [
+        atm + i * step for i in range(-max_steps_from_atm, max_steps_from_atm + 1)
+    ]
     best_strike = atm
     best_premium: float | None = None
     best_delta: float | None = None
@@ -274,8 +285,6 @@ def pick_cheapest_atm_strike(
     if best_premium is None:
         return atm, None, None
     return best_strike, best_premium, best_delta
-
-
 
 
 def pick_strike(
@@ -302,7 +311,6 @@ def pick_strike(
     return pick_cheapest_atm_strike(
         spx_level, expiration, max_steps_from_atm=max_steps_from_atm
     )
-
 
 
 def estimate_fallback_premium(
@@ -533,7 +541,9 @@ def run_paper_entry(
 
     open_pos = open_paper_positions(state)
     if len(open_pos) >= entry_rules.max_open_positions:
-        decision.skip_reason = f"max open paper positions ({entry_rules.max_open_positions})"
+        decision.skip_reason = (
+            f"max open paper positions ({entry_rules.max_open_positions})"
+        )
         _finalize_entry(
             state,
             state_path,
@@ -596,7 +606,14 @@ def run_paper_entry(
     ok_risk, risk_reason = entry_allowed_by_risk(state)
     if not ok_risk:
         decision.skip_reason = risk_reason
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path, brief_path=brief_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     spx = fetch_spx_proxy()
@@ -691,14 +708,28 @@ def run_paper_entry(
     if not ok_shadow:
         paper_positions.pop(position["position_id"], None)
         decision.skip_reason = shadow_reason
-        _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path, brief_path=brief_path)
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
         return decision
 
     decision.entered = True
     decision.position = position
     decision.skip_reason = None
 
-    _finalize_entry(state, state_path, decision, publish_intel, log_path=log_path, brief_path=brief_path)
+    _finalize_entry(
+        state,
+        state_path,
+        decision,
+        publish_intel,
+        log_path=log_path,
+        brief_path=brief_path,
+    )
     return decision
 
 

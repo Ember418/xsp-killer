@@ -168,10 +168,16 @@ def test_paper_exit_dedup(tmp_path):
     state = load_state(tmp_path / "state.json")
     alerts = [ExitAlert("p1", "stop_loss", "red", -50.0, -50.0)]
     new1 = record_paper_exit_signals(
-        state, alerts, evaluated_at="2026-06-14T14:00:00+00:00", logic_version="xsp_lane_a_v2"
+        state,
+        alerts,
+        evaluated_at="2026-06-14T14:00:00+00:00",
+        logic_version="xsp_lane_a_v2",
     )
     new2 = record_paper_exit_signals(
-        state, alerts, evaluated_at="2026-06-14T14:30:00+00:00", logic_version="xsp_lane_a_v2"
+        state,
+        alerts,
+        evaluated_at="2026-06-14T14:30:00+00:00",
+        logic_version="xsp_lane_a_v2",
     )
     assert len(new1) == 1
     assert len(new2) == 0
@@ -211,6 +217,7 @@ def test_is_lane_a_contract_boundary():
         today=date(2026, 6, 14),
     )
 
+
 def test_read_regime_from_intel_dict(monkeypatch):
     from xsp_killer import intel
 
@@ -223,14 +230,24 @@ def test_read_regime_from_intel_dict(monkeypatch):
 
 
 def test_pnl_uses_entry_fill_not_double_count():
-    from xsp_killer.paper_economics import PaperEconomics, entry_fill_premium, pnl_from_entry_fill
+    from xsp_killer.paper_economics import (
+        PaperEconomics,
+        entry_fill_premium,
+        pnl_from_entry_fill,
+    )
 
-    econ = PaperEconomics(commission_usd_per_contract=0.65, slippage_pct_of_premium=0.005, slippage_usd_per_share=0.12, slippage_max_pct_of_premium=0.015)
+    econ = PaperEconomics(
+        commission_usd_per_contract=0.65,
+        slippage_pct_of_premium=0.005,
+        slippage_usd_per_share=0.12,
+        slippage_max_pct_of_premium=0.015,
+    )
     entry_mid = 24.5
     entry_fill = entry_fill_premium(entry_mid, econ)
     pnl = pnl_from_entry_fill(entry_fill=entry_fill, exit_mid=29.4, econ=econ)
     assert pnl < (29.4 - 24.5) * 100.0
     assert pnl > 0
+
 
 def test_open_paper_position_monitored_below_entry_dte_min(tmp_path):
     """Hold entered at dte_min must still get exit monitoring when DTE drops."""
@@ -258,7 +275,6 @@ def test_open_paper_position_monitored_below_entry_dte_min(tmp_path):
     classified = paper_positions_to_lane(rows, RULES, today=today)
     assert len(classified) == 1
     assert classified[0].dte == 13
-
 
 
 def test_stale_mark_skips_exit_alerts():

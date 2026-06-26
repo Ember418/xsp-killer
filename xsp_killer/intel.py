@@ -25,7 +25,9 @@ def _redis():
     try:
         import redis
 
-        _REDIS = redis.Redis(host=host, port=port, decode_responses=True, socket_connect_timeout=2)
+        _REDIS = redis.Redis(
+            host=host, port=port, decode_responses=True, socket_connect_timeout=2
+        )
         _REDIS.ping()
     except Exception as exc:
         logger.debug("Redis intel unavailable: %s", exc)

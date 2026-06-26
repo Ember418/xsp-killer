@@ -6,7 +6,12 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from xsp_killer.exit_shadow import evaluate_shadow_brackets
-from xsp_killer.lane_a_monitor import ExitAlert, LaneAPosition, LaneRules, evaluate_exit_alerts
+from xsp_killer.lane_a_monitor import (
+    ExitAlert,
+    LaneAPosition,
+    LaneRules,
+    evaluate_exit_alerts,
+)
 from xsp_killer.spy_quote import _conservative_exit_mark_spy, fetch_spy_call_quote
 
 ET = ZoneInfo("America/New_York")
@@ -38,7 +43,9 @@ def test_fetch_spy_call_quote_caps_implausible_overnight_gain(monkeypatch):
         strike = 746.0
 
         def get(self, k, default=None):
-            return {"bid": 11.9, "ask": 12.1, "lastPrice": 12.0, "delta": 0.5}.get(k, default)
+            return {"bid": 11.9, "ask": 12.1, "lastPrice": 12.0, "delta": 0.5}.get(
+                k, default
+            )
 
     class Calls:
         def __init__(self):
@@ -48,7 +55,9 @@ def test_fetch_spy_call_quote_caps_implausible_overnight_gain(monkeypatch):
                 {"strike": [746.0], "bid": [11.9], "ask": [12.1], "lastPrice": [12.0]}
             )
 
-    monkeypatch.setattr("xsp_killer.chain_cache.get_spy_option_chain", lambda _e: Calls())
+    monkeypatch.setattr(
+        "xsp_killer.chain_cache.get_spy_option_chain", lambda _e: Calls()
+    )
     q = fetch_spy_call_quote(746.0, date(2026, 7, 17), entry_mid_xsp=87.55)
     assert q.stale is True
     assert q.exit_mark_xsp is not None
@@ -92,4 +101,6 @@ def test_shadow_brackets_show_wide_sl_would_hold():
     assert by_id["prod"].would_exit is True
     assert by_id["prod"].exit_reason == "stop_loss"
     assert by_id["wide_sl_30"].would_exit is False
-    assert by_id["defer_morning_cut_3d"].thresholds_to_continue.get("need_premium_recovery_to_breakeven_pct")
+    assert by_id["defer_morning_cut_3d"].thresholds_to_continue.get(
+        "need_premium_recovery_to_breakeven_pct"
+    )

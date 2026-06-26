@@ -283,21 +283,23 @@ def run_all_variant_monitors(
     return results
 
 
-
-
 def _soak_reset_at(root: dict[str, Any]) -> str | None:
     raw = root.get("soak_reset_at")
     return str(raw) if raw else None
 
 
-def _events_in_soak_epoch(state: dict[str, Any], soak_reset_at: str | None) -> list[dict[str, Any]]:
+def _events_in_soak_epoch(
+    state: dict[str, Any], soak_reset_at: str | None
+) -> list[dict[str, Any]]:
     events = [e for e in (state.get("paper_events") or []) if isinstance(e, dict)]
     if not soak_reset_at:
         return events
     return [e for e in events if str(e.get("evaluated_at") or "") >= soak_reset_at]
 
 
-def _entry_logs_in_soak_epoch(state: dict[str, Any], soak_reset_at: str | None) -> list[dict[str, Any]]:
+def _entry_logs_in_soak_epoch(
+    state: dict[str, Any], soak_reset_at: str | None
+) -> list[dict[str, Any]]:
     logs = [e for e in (state.get("entry_log") or []) if isinstance(e, dict)]
     if not soak_reset_at:
         return logs
@@ -320,7 +322,11 @@ def _last_exit_with_contract_meta(
         return None
     last_exit = dict(events[-1])
     paper_positions = state.get("paper_positions") or {}
-    position = paper_positions.get(last_exit.get("position_id")) if isinstance(paper_positions, dict) else None
+    position = (
+        paper_positions.get(last_exit.get("position_id"))
+        if isinstance(paper_positions, dict)
+        else None
+    )
     if not isinstance(position, dict):
         position = {}
 
@@ -549,7 +555,9 @@ def build_scoreboard(
         except (json.JSONDecodeError, OSError):
             pass
 
-    baseline_row = next((r for r in rows if r["variant_id"] == "v2_baseline_prod"), None)
+    baseline_row = next(
+        (r for r in rows if r["variant_id"] == "v2_baseline_prod"), None
+    )
     shadow_rows = [r for r in rows if r["variant_id"] != "v2_baseline_prod"]
     baseline_avg = (baseline_row or {}).get("avg_pnl_per_trade_usd")
     for row in shadow_rows:
@@ -570,7 +578,9 @@ def build_scoreboard(
     updated_at_dt = datetime.now(timezone.utc)
     updated_at = updated_at_dt.isoformat()
     last_entry_eval_at = latest_entry_eval.isoformat() if latest_entry_eval else None
-    stale = latest_entry_eval is None or (updated_at_dt - latest_entry_eval) > timedelta(hours=36)
+    stale = latest_entry_eval is None or (
+        updated_at_dt - latest_entry_eval
+    ) > timedelta(hours=36)
     payload = {
         "updated_at": updated_at,
         "soak_reset_at": soak_reset_at,

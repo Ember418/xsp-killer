@@ -122,5 +122,7 @@ def run_intraday_cycle(
 
 def _write_intraday_brief(report: IntradayReport) -> Path:
     DEFAULT_INTRADAY_OUT.parent.mkdir(parents=True, exist_ok=True)
-    DEFAULT_INTRADAY_OUT.write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")
+    DEFAULT_INTRADAY_OUT.write_text(
+        json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8"
+    )
     return DEFAULT_INTRADAY_OUT

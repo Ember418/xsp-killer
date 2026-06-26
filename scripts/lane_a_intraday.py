@@ -56,7 +56,9 @@ def main() -> int:
         else:
             h, m = raw.split(":")
             today = datetime.now(ET).date()
-            now_et = datetime.combine(today, datetime.strptime(raw, "%H:%M").time(), tzinfo=ET)
+            now_et = datetime.combine(
+                today, datetime.strptime(raw, "%H:%M").time(), tzinfo=ET
+            )
 
     report = run_intraday_cycle(
         rules_path=args.rules,
@@ -76,7 +78,9 @@ def main() -> int:
     )
 
     if args.out != DEFAULT_INTRADAY_OUT:
-        args.out.write_text(json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8")
+        args.out.write_text(
+            json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8"
+        )
 
     if args.json:
         print(json.dumps(report.to_dict(), indent=2))

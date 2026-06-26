@@ -36,7 +36,17 @@ RULES = TaRules(
 )
 
 
-def _snap(close: float, low: float, high: float, bb_l: float, bb_m: float, bb_u: float, vwap: float, *, open_: float | None = None) -> BarSnapshot:
+def _snap(
+    close: float,
+    low: float,
+    high: float,
+    bb_l: float,
+    bb_m: float,
+    bb_u: float,
+    vwap: float,
+    *,
+    open_: float | None = None,
+) -> BarSnapshot:
     return BarSnapshot(
         timeframe="1h",
         ts="2026-06-16T10:00:00-04:00",
@@ -67,8 +77,12 @@ def test_bb_bounce_rejected_without_vwap_reclaim():
 
 
 def test_upper_bb_rejection():
-    prev = _snap(close=103, low=102, high=104, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=102)
-    curr = _snap(close=102, low=101, high=105, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=104)
+    prev = _snap(
+        close=103, low=102, high=104, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=102
+    )
+    curr = _snap(
+        close=102, low=101, high=105, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=104
+    )
     ok, detail = detect_upper_bb_exit(prev, curr, tolerance_pct=0.002)
     assert ok is True
     assert "rejection" in detail.lower()
@@ -89,15 +103,22 @@ def test_evaluate_ta_signals_synthetic():
     highs = [c + 1 for c in closes]
     highs[-1] = 102.0
     idx = pd.date_range("2026-06-10", periods=n, freq="1h", tz=ET)
-    df = pd.DataFrame({"close": closes, "low": lows, "high": highs, "volume": [1_000_000] * n}, index=idx)
+    df = pd.DataFrame(
+        {"close": closes, "low": lows, "high": highs, "volume": [1_000_000] * n},
+        index=idx,
+    )
     enriched = enrich_bars(df, period=5, std=2.0)
     ta = evaluate_ta_signals(RULES, bars_primary=enriched, bars_confirm=enriched)
     assert ta.primary is not None
 
 
 def test_upper_bb_rejection_uses_close_not_missing_open():
-    prev = _snap(close=103, low=102, high=104, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=103)
-    curr = _snap(close=102, low=101, high=105, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=104)
+    prev = _snap(
+        close=103, low=102, high=104, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=103
+    )
+    curr = _snap(
+        close=102, low=101, high=105, bb_l=96, bb_m=100, bb_u=104, vwap=100, open_=104
+    )
     ok, _ = detect_upper_bb_exit(prev, curr, tolerance_pct=0.002)
     assert ok is True
 

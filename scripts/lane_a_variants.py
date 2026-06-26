@@ -47,11 +47,15 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="XSP Lane A variant soak runner")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_entry = sub.add_parser("entry", help="Run close-window entry for all active variants")
+    p_entry = sub.add_parser(
+        "entry", help="Run close-window entry for all active variants"
+    )
     p_entry.add_argument("--at-et", help="Override evaluation time (HH:MM or ISO)")
     p_entry.add_argument("--force", action="store_true")
 
-    p_mon = sub.add_parser("monitor", help="Run morning monitor for all active variants")
+    p_mon = sub.add_parser(
+        "monitor", help="Run morning monitor for all active variants"
+    )
     p_mon.add_argument("--at-et", help="Override evaluation time (HH:MM or ISO)")
 
     sub.add_parser("scoreboard", help="Rebuild variant comparison scoreboard")
@@ -107,14 +111,11 @@ def main() -> int:
         commit = args.commit
         if not commit:
             try:
-                commit = (
-                    subprocess.check_output(
-                        ["git", "rev-parse", "--short", "HEAD"],
-                        cwd=str(ROOT),
-                        text=True,
-                    )
-                    .strip()
-                )
+                commit = subprocess.check_output(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=str(ROOT),
+                    text=True,
+                ).strip()
             except Exception:
                 commit = None
         meta = reset_soak(
@@ -131,14 +132,11 @@ def main() -> int:
         commit = args.commit
         if not commit:
             try:
-                commit = (
-                    subprocess.check_output(
-                        ["git", "rev-parse", "--short", "HEAD"],
-                        cwd=str(ROOT),
-                        text=True,
-                    )
-                    .strip()
-                )
+                commit = subprocess.check_output(
+                    ["git", "rev-parse", "--short", "HEAD"],
+                    cwd=str(ROOT),
+                    text=True,
+                ).strip()
             except Exception:
                 commit = None
         meta = clear_pnl_epoch(commit=commit, reason=args.reason)

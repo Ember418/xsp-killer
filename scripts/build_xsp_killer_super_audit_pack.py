@@ -4,6 +4,7 @@
 Usage:
   python3 scripts/build_xsp_killer_super_audit_pack.py
 """
+
 from __future__ import annotations
 
 import json
@@ -56,7 +57,9 @@ def _run_cmd(
         return f"(command failed: {exc})"
 
 
-def _copy_tree_excerpt(src_dir: Path, out_dir: Path, pattern: str, max_chars: int = 25000) -> list[str]:
+def _copy_tree_excerpt(
+    src_dir: Path, out_dir: Path, pattern: str, max_chars: int = 25000
+) -> list[str]:
     names: list[str] = []
     if not src_dir.is_dir():
         return names
@@ -107,8 +110,12 @@ def main() -> int:
         if CEMINI.is_dir()
         else "(cemini missing)",
         "pytest_results.txt": pytest_out,
-        "lane_a_rules.yaml": _read_tail(XSP_ROOT / "config" / "lane_a_rules.yaml", 8000),
-        "lane_b_rules.yaml": _read_tail(XSP_ROOT / "config" / "lane_b_rules.yaml", 8000),
+        "lane_a_rules.yaml": _read_tail(
+            XSP_ROOT / "config" / "lane_a_rules.yaml", 8000
+        ),
+        "lane_b_rules.yaml": _read_tail(
+            XSP_ROOT / "config" / "lane_b_rules.yaml", 8000
+        ),
         "lane_a_entry_latest.json": _read_json_pretty(
             XSP_ROOT / "briefs" / "xsp-lane-a-entry-latest.json"
         ),
@@ -118,9 +125,15 @@ def main() -> int:
         "lane_b_scorecard_latest.json": _read_json_pretty(
             XSP_ROOT / "briefs" / "lane-b-scorecard-latest.json"
         ),
-        "paper_log_lane_a.jsonl": _read_tail(XSP_ROOT / "logs" / "xsp_lane_a_paper.jsonl", 15000),
-        "paper_log_lane_b.jsonl": _read_tail(XSP_ROOT / "logs" / "xsp_lane_b_paper.jsonl", 8000),
-        "lane_a_variants.yaml": _read_tail(XSP_ROOT / "config" / "lane_a_variants.yaml", 12000),
+        "paper_log_lane_a.jsonl": _read_tail(
+            XSP_ROOT / "logs" / "xsp_lane_a_paper.jsonl", 15000
+        ),
+        "paper_log_lane_b.jsonl": _read_tail(
+            XSP_ROOT / "logs" / "xsp_lane_b_paper.jsonl", 8000
+        ),
+        "lane_a_variants.yaml": _read_tail(
+            XSP_ROOT / "config" / "lane_a_variants.yaml", 12000
+        ),
         "variants_scoreboard.json": _read_json_pretty(
             XSP_ROOT / "briefs" / "xsp-lane-a-variants-scoreboard.json"
         ),
@@ -131,7 +144,8 @@ def main() -> int:
             XSP_ROOT / "docs" / "lane-a-strategy-diagnosis.md", 8000
         ),
         "prior_audit_synthesis_v2.md": _read_tail(
-            XSP_ROOT / "briefs" / "2026-06-16_xsp-killer-super-audit-synthesis-v2.md", 15000
+            XSP_ROOT / "briefs" / "2026-06-16_xsp-killer-super-audit-synthesis-v2.md",
+            15000,
         ),
         "lane_a_monitor_latest.json": _read_json_pretty(
             XSP_ROOT / "briefs" / "xsp-lane-a-monitor-latest.json"
@@ -145,8 +159,12 @@ def main() -> int:
 
     # --- Cemini steal candidates ---
     cemini_steal: dict[str, str] = {
-        "macro_regime.py": _read_tail(CEMINI / "trading_playbook" / "macro_regime.py", 12000),
-        "vol_monitor.py": _read_tail(CEMINI / "options_greeks" / "vol_monitor.py", 10000),
+        "macro_regime.py": _read_tail(
+            CEMINI / "trading_playbook" / "macro_regime.py", 12000
+        ),
+        "vol_monitor.py": _read_tail(
+            CEMINI / "options_greeks" / "vol_monitor.py", 10000
+        ),
         "robinhood_adapter.py": _read_tail(
             CEMINI / "core" / "ems" / "adapters" / "robinhood.py", 15000
         ),
@@ -181,13 +199,23 @@ def main() -> int:
     brief_dir.mkdir(parents=True, exist_ok=True)
     brief_names: list[str] = []
     brief_candidates = [
-        CEMINI / "briefs" / "archive" / "pivot-2026-06" / "xsp-cemini-superseded"
+        CEMINI
+        / "briefs"
+        / "archive"
+        / "pivot-2026-06"
+        / "xsp-cemini-superseded"
         / "2026-06-14_xsp-lane-a-overnight-swing-monitor-cemini-prod.md",
-        CEMINI / "briefs" / "archive" / "pivot-2026-06" / "xsp-cemini-superseded"
+        CEMINI
+        / "briefs"
+        / "archive"
+        / "pivot-2026-06"
+        / "xsp-cemini-superseded"
         / "2026-06-14_xsp-lane-b-leaps-hedge-monitor-cemini-prod.md",
         CEMINI / "briefs" / "2026-05-29_k79-smb-capital-youtube-synthesis-cemini.md",
         CEMINI / "briefs" / "2026-06-09_cemini-suite-fable-super-audit-synthesis-v2.md",
-        CEMINI / "briefs" / "2026-06-15_k117-regime-vol-gating-equity-signals-cemini-prod.md",
+        CEMINI
+        / "briefs"
+        / "2026-06-15_k117-regime-vol-gating-equity-signals-cemini-prod.md",
     ]
     for src in brief_candidates:
         if src.is_file():

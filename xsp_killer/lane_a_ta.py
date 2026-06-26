@@ -53,8 +53,12 @@ class TaRules:
             bb_period=int(ta.get("bb_period", 20)),
             bb_std=float(ta.get("bb_std", 2.0)),
             require_vwap_reclaim=bool(entry_ta.get("require_vwap_reclaim", True)),
-            upper_bb_touch_tolerance_pct=float(exit_ta.get("upper_bb_touch_tolerance_pct", 0.002)),
-            suppress_morning_cut_dte_gte=int(hold.get("suppress_morning_cut_dte_gte", 30)),
+            upper_bb_touch_tolerance_pct=float(
+                exit_ta.get("upper_bb_touch_tolerance_pct", 0.002)
+            ),
+            suppress_morning_cut_dte_gte=int(
+                hold.get("suppress_morning_cut_dte_gte", 30)
+            ),
             entry_mode=str(entry_ta.get("mode", "close_window_only")),
             intraday_entry_enabled=bool(entry_ta.get("intraday_enabled", False)),
             confirm_optional=bool(ta.get("confirm_optional", True)),
@@ -102,11 +106,15 @@ def _yf_interval(tf: Timeframe) -> str:
     return "15m" if tf == "15m" else "1h"
 
 
-def fetch_intraday_bars(symbol: str, timeframe: Timeframe, *, period: str = "10d") -> pd.DataFrame | None:
+def fetch_intraday_bars(
+    symbol: str, timeframe: Timeframe, *, period: str = "10d"
+) -> pd.DataFrame | None:
     try:
         import yfinance as yf
 
-        df = yf.Ticker(symbol).history(period=period, interval=_yf_interval(timeframe), timeout=15)
+        df = yf.Ticker(symbol).history(
+            period=period, interval=_yf_interval(timeframe), timeout=15
+        )
         if df is None or df.empty:
             return None
         df = df.copy()
@@ -167,7 +175,11 @@ def _bar_snapshot(row: pd.Series, timeframe: str) -> BarSnapshot:
         ts_s = ts.isoformat()
     else:
         ts_s = str(ts)
-    open_px = _series_float(row, "open") if "open" in row.index else _series_float(row, "close")
+    open_px = (
+        _series_float(row, "open")
+        if "open" in row.index
+        else _series_float(row, "close")
+    )
     return BarSnapshot(
         timeframe=timeframe,
         ts=ts_s,
@@ -182,7 +194,9 @@ def _bar_snapshot(row: pd.Series, timeframe: str) -> BarSnapshot:
     )
 
 
-def detect_bb_bounce_entry(prev: BarSnapshot, curr: BarSnapshot, *, require_vwap: bool) -> tuple[bool, str]:
+def detect_bb_bounce_entry(
+    prev: BarSnapshot, curr: BarSnapshot, *, require_vwap: bool
+) -> tuple[bool, str]:
     """Dump touched lower or mid band; current bar bounced."""
     touched_lower = prev.low <= prev.bb_lower * 1.002
     touched_mid = prev.low <= prev.bb_mid * 1.002 and prev.close < prev.bb_mid
@@ -190,7 +204,11 @@ def detect_bb_bounce_entry(prev: BarSnapshot, curr: BarSnapshot, *, require_vwap
     if not dump:
         return False, "no dump touch on prior bar"
 
-    bounced_lower = touched_lower and curr.close > prev.bb_lower and curr.close > curr.bb_mid * 0.998
+    bounced_lower = (
+        touched_lower
+        and curr.close > prev.bb_lower
+        and curr.close > curr.bb_mid * 0.998
+    )
     bounced_mid = touched_mid and curr.close > prev.bb_mid
     bounce = bounced_lower or bounced_mid
     if not bounce:
@@ -200,10 +218,15 @@ def detect_bb_bounce_entry(prev: BarSnapshot, curr: BarSnapshot, *, require_vwap
         return False, "bounce below VWAP"
 
     band = "lower" if touched_lower else "mid"
-    return True, f"bb_bounce off {band} band (close {curr.close:.2f} > mid {curr.bb_mid:.2f})"
+    return (
+        True,
+        f"bb_bounce off {band} band (close {curr.close:.2f} > mid {curr.bb_mid:.2f})",
+    )
 
 
-def detect_upper_bb_touch(prev: BarSnapshot, curr: BarSnapshot, *, tolerance_pct: float) -> bool:
+def detect_upper_bb_touch(
+    prev: BarSnapshot, curr: BarSnapshot, *, tolerance_pct: float
+) -> bool:
     """True when price has reached the upper Bollinger band."""
     upper = curr.bb_upper
     return curr.high >= upper * (1.0 - tolerance_pct) or prev.high >= prev.bb_upper * (
@@ -211,18 +234,24 @@ def detect_upper_bb_touch(prev: BarSnapshot, curr: BarSnapshot, *, tolerance_pct
     )
 
 
-def detect_upper_bb_exit(prev: BarSnapshot, curr: BarSnapshot, *, tolerance_pct: float) -> tuple[bool, str]:
+def detect_upper_bb_exit(
+    prev: BarSnapshot, curr: BarSnapshot, *, tolerance_pct: float
+) -> tuple[bool, str]:
     """Pump reached upper BB then rejected."""
     upper = curr.bb_upper
     if not detect_upper_bb_touch(prev, curr, tolerance_pct=tolerance_pct):
         return False, "no upper BB touch"
 
-    rejected = curr.close < upper and (curr.close < curr.open or curr.close < prev.close)
+    rejected = curr.close < upper and (
+        curr.close < curr.open or curr.close < prev.close
+    )
     if not rejected:
         return False, "upper BB touch without rejection candle"
 
-    return True, f"upper BB rejection (high {curr.high:.2f}, close {curr.close:.2f}, upper {upper:.2f})"
-
+    return (
+        True,
+        f"upper BB rejection (high {curr.high:.2f}, close {curr.close:.2f}, upper {upper:.2f})",
+    )
 
 
 _MAX_BAR_AGE_MINUTES = {"15m": 30, "1h": 120}
@@ -249,7 +278,9 @@ def _bars_fresh(curr: BarSnapshot | None, timeframe: str, now_et: datetime) -> b
     return age <= _MAX_BAR_AGE_MINUTES.get(timeframe, 120)
 
 
-def evaluate_timeframe(df: pd.DataFrame, timeframe: str, rules: TaRules) -> tuple[BarSnapshot | None, BarSnapshot | None]:
+def evaluate_timeframe(
+    df: pd.DataFrame, timeframe: str, rules: TaRules
+) -> tuple[BarSnapshot | None, BarSnapshot | None]:
     if df is None or len(df) < rules.bb_period + 2:
         return None, None
     enriched = enrich_bars(df, period=rules.bb_period, std=rules.bb_std)
@@ -277,36 +308,56 @@ def evaluate_ta_signals(
     if bars_confirm is None:
         bars_confirm = fetch_intraday_bars(sym, rules.confirm_timeframe)
 
-    prev_p, curr_p = evaluate_timeframe(bars_primary, rules.primary_timeframe, rules) if bars_primary is not None else (None, None)
-    prev_c, curr_c = evaluate_timeframe(bars_confirm, rules.confirm_timeframe, rules) if bars_confirm is not None else (None, None)
+    prev_p, curr_p = (
+        evaluate_timeframe(bars_primary, rules.primary_timeframe, rules)
+        if bars_primary is not None
+        else (None, None)
+    )
+    prev_c, curr_c = (
+        evaluate_timeframe(bars_confirm, rules.confirm_timeframe, rules)
+        if bars_confirm is not None
+        else (None, None)
+    )
 
     if curr_p is None:
         errors.append("insufficient primary bars")
-        return TaSignal("none", None, curr_c, False, False, False, "no primary TA data", errors)
+        return TaSignal(
+            "none", None, curr_c, False, False, False, "no primary TA data", errors
+        )
 
     if not _bars_fresh(curr_p, rules.primary_timeframe, now):
         errors.append(f"stale primary bar ({curr_p.ts})")
-        return TaSignal("none", curr_p, curr_c, False, False, False, "stale primary TA data", errors)
+        return TaSignal(
+            "none", curr_p, curr_c, False, False, False, "stale primary TA data", errors
+        )
     if curr_c is not None and not _bars_fresh(curr_c, rules.confirm_timeframe, now):
         errors.append(f"stale confirm bar ({curr_c.ts})")
         curr_c = None
 
-    entry_p, entry_detail_p = detect_bb_bounce_entry(prev_p, curr_p, require_vwap=rules.require_vwap_reclaim)
+    entry_p, entry_detail_p = detect_bb_bounce_entry(
+        prev_p, curr_p, require_vwap=rules.require_vwap_reclaim
+    )
     entry_c = True
     entry_detail_c = "confirm skipped"
     if curr_c is not None and prev_c is not None:
-        entry_c, entry_detail_c = detect_bb_bounce_entry(prev_c, curr_c, require_vwap=rules.require_vwap_reclaim)
+        entry_c, entry_detail_c = detect_bb_bounce_entry(
+            prev_c, curr_c, require_vwap=rules.require_vwap_reclaim
+        )
 
     entry_ok = entry_p and (entry_c or rules.confirm_optional)
     detail_parts = [f"primary: {entry_detail_p}"]
     if curr_c is not None:
         detail_parts.append(f"confirm: {entry_detail_c}")
 
-    exit_p, exit_detail_p = detect_upper_bb_exit(prev_p, curr_p, tolerance_pct=rules.upper_bb_touch_tolerance_pct)
+    exit_p, exit_detail_p = detect_upper_bb_exit(
+        prev_p, curr_p, tolerance_pct=rules.upper_bb_touch_tolerance_pct
+    )
     exit_c = False
     exit_detail_c = "confirm skipped"
     if curr_c is not None and prev_c is not None:
-        exit_c, exit_detail_c = detect_upper_bb_exit(prev_c, curr_c, tolerance_pct=rules.upper_bb_touch_tolerance_pct)
+        exit_c, exit_detail_c = detect_upper_bb_exit(
+            prev_c, curr_c, tolerance_pct=rules.upper_bb_touch_tolerance_pct
+        )
 
     exit_ok = exit_p or exit_c
     exit_detail = f"primary: {exit_detail_p}; confirm: {exit_detail_c}"
@@ -337,7 +388,9 @@ def evaluate_ta_signals(
     )
 
 
-def in_rth(now_et: datetime, *, start: time = time(9, 30), end: time = time(16, 0)) -> bool:
+def in_rth(
+    now_et: datetime, *, start: time = time(9, 30), end: time = time(16, 0)
+) -> bool:
     if now_et.weekday() >= 5:
         return False
     t = now_et.time()

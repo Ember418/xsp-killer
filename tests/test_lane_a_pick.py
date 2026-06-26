@@ -42,10 +42,10 @@ def test_pick_expiration_target(monkeypatch):
 
         return T()
 
-    import yfinance as yf
-
     monkeypatch.setattr("yfinance.Ticker", _fake_ticker)
-    out = pick_expiration(RULES, today=date(2026, 6, 14), dte_pick="target", dte_target=28)
+    out = pick_expiration(
+        RULES, today=date(2026, 6, 14), dte_pick="target", dte_target=28
+    )
     assert out == exp_b
 
 
@@ -54,9 +54,7 @@ def test_pick_strike_atm_only(monkeypatch):
         "xsp_killer.lane_a_entry.fetch_spy_call_quote",
         lambda strike, exp: (2.5, 0.5),
     )
-    strike, prem, delta = pick_strike(
-        6012.0, date(2026, 7, 18), strike_pick="atm_only"
-    )
+    strike, prem, delta = pick_strike(6012.0, date(2026, 7, 18), strike_pick="atm_only")
     assert strike == 6010.0
     assert prem == 25.0
     assert delta == 0.5

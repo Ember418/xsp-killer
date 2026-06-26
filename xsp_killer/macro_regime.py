@@ -63,8 +63,12 @@ def _ema_rising(series: pd.Series, span: int, lookback: int = EMA_RISING_BARS) -
 def _jnk_tlt_divergence(jnk: pd.Series, tlt: pd.Series, lookback: int = 5) -> bool:
     if len(jnk) < lookback + 1 or len(tlt) < lookback + 1:
         return False
-    jnk_ret = (float(jnk.iloc[-1]) - float(jnk.iloc[-lookback])) / float(jnk.iloc[-lookback])
-    tlt_ret = (float(tlt.iloc[-1]) - float(tlt.iloc[-lookback])) / float(tlt.iloc[-lookback])
+    jnk_ret = (float(jnk.iloc[-1]) - float(jnk.iloc[-lookback])) / float(
+        jnk.iloc[-lookback]
+    )
+    tlt_ret = (float(tlt.iloc[-1]) - float(tlt.iloc[-lookback])) / float(
+        tlt.iloc[-lookback]
+    )
     return jnk_ret < tlt_ret
 
 
@@ -92,7 +96,9 @@ def _classify_with_distance(
         if frac is None:
             frac = 0.5
         confidence = round(0.55 + 0.20 * max(0.0, min(1.0, frac)), 4)
-        reason = f"SPY {spy_price:.2f} < EMA21 {ema21_val:.2f} but > SMA50 {sma50_val:.2f}"
+        reason = (
+            f"SPY {spy_price:.2f} < EMA21 {ema21_val:.2f} but > SMA50 {sma50_val:.2f}"
+        )
     else:
         regime = "RED"
         dist = (sma50_val - spy_price) / sma50_val

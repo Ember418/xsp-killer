@@ -58,7 +58,9 @@ class LaneBRules:
         return cls(
             lane=str(data.get("lane", "B")),
             dte_min=int(calls.get("dte_min", 180)),
-            chain_symbols=tuple(str(x).upper() for x in data.get("chain_symbols") or ["SPX", "XSP"]),
+            chain_symbols=tuple(
+                str(x).upper() for x in data.get("chain_symbols") or ["SPX", "XSP"]
+            ),
             call_delta_above=float(triggers.get("call_delta_above", 0.65)),
             portfolio_drawdown_pct=float(triggers.get("portfolio_drawdown_pct", 8)),
             hedge_dte_below=int(triggers.get("hedge_dte_below", 45)),
@@ -143,20 +145,29 @@ def _position_id(raw: dict[str, Any], chain: str, exp: date) -> str:
     )
 
 
-def _notional_and_pnl(qty: float, avg: float, mark: float | None) -> tuple[float | None, float | None]:
+def _notional_and_pnl(
+    qty: float, avg: float, mark: float | None
+) -> tuple[float | None, float | None]:
     if mark is None:
         return None, None
     return mark * qty * 100.0, (mark - avg) * qty * 100.0
 
 
-def classify_lane_b_call(raw: dict[str, Any], rules: LaneBRules) -> LaneBPosition | None:
+def classify_lane_b_call(
+    raw: dict[str, Any], rules: LaneBRules
+) -> LaneBPosition | None:
     chain = str(raw.get("chain_symbol") or raw.get("symbol") or "").upper()
     opt_type = str(raw.get("type") or raw.get("option_type") or "").lower()
-    exp = parse_expiration(str(raw.get("expiration_date") or raw.get("expiration") or ""))
+    exp = parse_expiration(
+        str(raw.get("expiration_date") or raw.get("expiration") or "")
+    )
     if exp is None or chain not in rules.chain_symbols or opt_type != "call":
         return None
     if is_lane_a_contract(
-        chain_symbol=chain, option_type=opt_type, expiration=exp, rules=_lane_a_rules_stub(rules)
+        chain_symbol=chain,
+        option_type=opt_type,
+        expiration=exp,
+        rules=_lane_a_rules_stub(rules),
     ):
         return None
     if compute_dte(exp) <= rules.dte_min:
@@ -192,7 +203,9 @@ def classify_lane_b_call(raw: dict[str, Any], rules: LaneBRules) -> LaneBPositio
 def classify_hedge_put(raw: dict[str, Any], rules: LaneBRules) -> LaneBPosition | None:
     chain = str(raw.get("chain_symbol") or raw.get("symbol") or "").upper()
     opt_type = str(raw.get("type") or raw.get("option_type") or "").lower()
-    exp = parse_expiration(str(raw.get("expiration_date") or raw.get("expiration") or ""))
+    exp = parse_expiration(
+        str(raw.get("expiration_date") or raw.get("expiration") or "")
+    )
     if exp is None or chain not in rules.chain_symbols or opt_type != "put":
         return None
     qty = float(raw.get("quantity") or raw.get("qty") or 0)
@@ -260,7 +273,9 @@ def evaluate_lane_b_alerts(
             puts_by_pair.setdefault(p.hedge_pair_id, []).append(p)
 
     for call in calls:
-        pair_id = call.hedge_pair_id or (links.get(call.position_id) or {}).get("hedge_pair_id")
+        pair_id = call.hedge_pair_id or (links.get(call.position_id) or {}).get(
+            "hedge_pair_id"
+        )
         if call.lane == "B" and not pair_id:
             alerts.append(
                 LaneBAlert(
@@ -328,7 +343,9 @@ def evaluate_lane_b_alerts(
     return alerts
 
 
-def delta_adjusted_return(pnl_usd: float, delta_at_entry: float, exposure_days: float) -> float | None:
+def delta_adjusted_return(
+    pnl_usd: float, delta_at_entry: float, exposure_days: float
+) -> float | None:
     denom = delta_at_entry * exposure_days
     return None if denom <= 0 else pnl_usd / denom
 
@@ -340,7 +357,9 @@ def build_scorecard(state: dict[str, Any], logic_version: str) -> dict[str, Any]
         pnl = float(t.get("pnl_usd") or 0)
         delta = float(t.get("delta_at_entry") or 0)
         days = float(t.get("exposure_days") or 1)
-        rows.append({**t, "delta_adjusted_return": delta_adjusted_return(pnl, delta, days)})
+        rows.append(
+            {**t, "delta_adjusted_return": delta_adjusted_return(pnl, delta, days)}
+        )
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "logic_version": logic_version,
@@ -410,8 +429,13 @@ def run_monitor(
     report.alerts = [
         a.to_dict()
         for a in evaluate_lane_b_alerts(
-            calls, puts, rules, state,
-            regime=regime, drawdown_pct=drawdown_pct, portfolio_notional_usd=portfolio_notional,
+            calls,
+            puts,
+            rules,
+            state,
+            regime=regime,
+            drawdown_pct=drawdown_pct,
+            portfolio_notional_usd=portfolio_notional,
         )
     ]
 
@@ -458,24 +482,31 @@ def append_paper_log(report: LaneBReport, log_path: Path | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(
-            json.dumps({
-                "ts": report.evaluated_at,
-                "event": "lane_b_monitor",
-                "logic_version": report.logic_version,
-                "calls_n": len(report.calls),
-                "puts_n": len(report.hedge_puts),
-                "portfolio_mtm_usd": report.portfolio_mtm_usd,
-                "alerts_n": len(report.alerts),
-                "alerts": report.alerts,
-            })
+            json.dumps(
+                {
+                    "ts": report.evaluated_at,
+                    "event": "lane_b_monitor",
+                    "logic_version": report.logic_version,
+                    "calls_n": len(report.calls),
+                    "puts_n": len(report.hedge_puts),
+                    "portfolio_mtm_usd": report.portfolio_mtm_usd,
+                    "alerts_n": len(report.alerts),
+                    "alerts": report.alerts,
+                }
+            )
             + "\n"
         )
 
 
-def write_scorecard(state: dict[str, Any], logic_version: str, out_path: Path | None = None) -> Path:
+def write_scorecard(
+    state: dict[str, Any], logic_version: str, out_path: Path | None = None
+) -> Path:
     path = out_path or DEFAULT_SCORECARD
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(build_scorecard(state, logic_version), indent=2) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(build_scorecard(state, logic_version), indent=2) + "\n",
+        encoding="utf-8",
+    )
     return path
 
 

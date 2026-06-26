@@ -9,6 +9,7 @@ Usage:
   python3 scripts/run_xsp_killer_super_audit_api.py
   python3 scripts/run_xsp_killer_super_audit_api.py --models glm-5.2-openrouter,grok-4.3-openrouter,openrouter-fusion
 """
+
 from __future__ import annotations
 
 import json
@@ -140,7 +141,11 @@ def _model_registry() -> dict[str, tuple[str, str, str, dict | None]]:
 def _run_one(label: str, base_prompt: str, ts: str) -> tuple[str, Path, str | None]:
     registry = _model_registry()
     if label not in registry:
-        return label, OUT_DIR / f"{label}_{ts}_ERROR.txt", f"Unknown model label: {label}"
+        return (
+            label,
+            OUT_DIR / f"{label}_{ts}_ERROR.txt",
+            f"Unknown model label: {label}",
+        )
 
     base_url, key_name, model_id, extra = registry[label]
     api_key = os.environ.get(key_name, "").strip()
@@ -191,7 +196,10 @@ def main() -> int:
     pack = args.pack.resolve()
     prompt_path = pack / "audit_prompt.md"
     if not prompt_path.is_file():
-        print(f"Missing {prompt_path} — run build_xsp_killer_super_audit_pack.py first", file=sys.stderr)
+        print(
+            f"Missing {prompt_path} — run build_xsp_killer_super_audit_pack.py first",
+            file=sys.stderr,
+        )
         return 1
 
     base_prompt = prompt_path.read_text(encoding="utf-8")
@@ -207,7 +215,9 @@ def main() -> int:
     errors: dict[str, str] = {}
 
     with ThreadPoolExecutor(max_workers=min(args.workers, len(labels))) as pool:
-        futures = {pool.submit(_run_one, label, base_prompt, ts): label for label in labels}
+        futures = {
+            pool.submit(_run_one, label, base_prompt, ts): label for label in labels
+        }
         for fut in as_completed(futures):
             label, path, err = fut.result()
             written[label] = path
@@ -230,7 +240,9 @@ def main() -> int:
         "errors": errors,
         "prompt_chars": len(base_prompt),
     }
-    (OUT_DIR / f"meta_{ts}.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
+    (OUT_DIR / f"meta_{ts}.json").write_text(
+        json.dumps(meta, indent=2) + "\n", encoding="utf-8"
+    )
     print(json.dumps(meta, indent=2))
     ok = sum(1 for p in written.values() if p.suffix == ".md")
     return 0 if ok >= 3 else 1

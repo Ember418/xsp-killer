@@ -28,12 +28,16 @@ from xsp_killer.lane_b_monitor import (  # noqa: E402
     write_report,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 logger = logging.getLogger("xsp_killer.lane_b_monitor")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="XSP Lane B LEAPS hedge monitor (Phase 0)")
+    parser = argparse.ArgumentParser(
+        description="XSP Lane B LEAPS hedge monitor (Phase 0)"
+    )
     parser.add_argument("--rules", type=Path, default=DEFAULT_RULES)
     parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)

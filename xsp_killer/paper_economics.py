@@ -26,10 +26,14 @@ class PaperEconomics:
         data = yaml.safe_load((path or DEFAULT_RULES).read_text(encoding="utf-8")) or {}
         cfg = data.get("paper_economics") or {}
         return cls(
-            commission_usd_per_contract=float(cfg.get("commission_usd_per_contract", 0.65)),
+            commission_usd_per_contract=float(
+                cfg.get("commission_usd_per_contract", 0.65)
+            ),
             slippage_pct_of_premium=float(cfg.get("slippage_pct_of_premium", 0.005)),
             slippage_usd_per_share=float(cfg.get("slippage_usd_per_share", 0.12)),
-            slippage_max_pct_of_premium=float(cfg.get("slippage_max_pct_of_premium", 0.015)),
+            slippage_max_pct_of_premium=float(
+                cfg.get("slippage_max_pct_of_premium", 0.015)
+            ),
         )
 
 
@@ -48,7 +52,9 @@ def entry_fill_premium(mid_premium: float, econ: PaperEconomics) -> float:
 def exit_fill_premium(mid_premium: float, econ: PaperEconomics) -> float:
     """Effective premium received per share (mid - slippage - commission/100)."""
     slip = _slippage_per_share(mid_premium, econ)
-    return round(max(0.0, mid_premium - slip - econ.commission_usd_per_contract / 100.0), 4)
+    return round(
+        max(0.0, mid_premium - slip - econ.commission_usd_per_contract / 100.0), 4
+    )
 
 
 def pnl_per_contract(
