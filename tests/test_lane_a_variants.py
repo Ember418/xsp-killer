@@ -19,6 +19,15 @@ from xsp_killer.lane_a_variants import (
 from xsp_killer.lane_a_ta import TaSignal
 
 
+def _write_variants_config(tmp_path, variants: dict[str, dict]) -> None:
+    import yaml
+
+    (tmp_path / "lane_a_variants.yaml").write_text(
+        yaml.safe_dump({"variants": variants}, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
 def test_load_variant_specs():
     specs = load_variant_specs()
     assert len(specs) >= 10
@@ -52,7 +61,17 @@ def test_merged_rules_yellow_bounce_variant(tmp_path):
     assert data["ta"]["entry"]["mode"] == "close_window_and_bb"
 
 
-def test_build_scoreboard(tmp_path, monkeypatch):
+def test_build_scoreboard(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_28dte_atm": {
+                "active": True,
+                "description": "Test scoreboard variant",
+                "overrides": {},
+            }
+        },
+    )
     state = tmp_path / "variants-state.json"
     state.write_text(
         json.dumps(
@@ -90,6 +109,7 @@ def test_build_scoreboard(tmp_path, monkeypatch):
         encoding="utf-8",
     )
     out = build_scoreboard(
+        config_path=tmp_path / "lane_a_variants.yaml",
         state_path=state,
         baseline_state_path=tmp_path / "missing-baseline.json",
         out_path=tmp_path / "scoreboard.json",
@@ -107,6 +127,76 @@ def test_build_scoreboard(tmp_path, monkeypatch):
     assert len(payload["shadow_variants"]) == 1
     assert payload["last_entry_eval_at"] == "2026-06-21T19:45:00+00:00"
     assert "Do NOT sum PnL" in payload["comparison_guidance"]
+
+
+def test_build_scoreboard_includes_stateless_active_spec(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_test_a": {
+                "active": True,
+                "description": "Active with state",
+                "overrides": {},
+            },
+            "v2_new_variant": {
+                "active": True,
+                "description": "Active without state",
+                "overrides": {},
+            },
+            "v2_test_b": {
+                "active": False,
+                "description": "Inactive with stale state",
+                "overrides": {},
+            },
+        },
+    )
+    state = tmp_path / "variants-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_test_a": {
+                        "entry_log": [
+                            {
+                                "evaluated_at": "2026-06-21T19:45:00+00:00",
+                                "entered": False,
+                            }
+                        ],
+                        "paper_events": [{"paper_pnl_usd": 4.0}],
+                        "paper_positions": {},
+                    },
+                    "v2_test_b": {
+                        "entry_log": [
+                            {
+                                "evaluated_at": "2026-06-21T20:00:00+00:00",
+                                "entered": True,
+                            }
+                        ],
+                        "paper_events": [{"paper_pnl_usd": 9.0}],
+                        "paper_positions": {},
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard.json",
+        ).read_text(encoding="utf-8")
+    )
+
+    variants = {row["variant_id"]: row for row in payload["shadow_variants"]}
+    assert set(variants) == {"v2_test_a", "v2_new_variant"}
+    assert variants["v2_test_a"]["sessions_evaluated"] == 1
+    assert variants["v2_test_a"]["realized_pnl_usd"] == 4.0
+    assert variants["v2_new_variant"]["sessions_evaluated"] == 0
+    assert variants["v2_new_variant"]["trades_closed"] == 0
+    assert variants["v2_new_variant"]["description"] == "Active without state"
 
 
 def test_build_scoreboard_respects_soak_reset(tmp_path):

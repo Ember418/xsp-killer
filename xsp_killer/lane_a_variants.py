@@ -536,10 +536,20 @@ def build_scoreboard(
         )
 
     # Shadow variants
-    for variant_id, slice_state in (root.get("variants") or {}).items():
-        if not isinstance(slice_state, dict):
+    state_variants = root.get("variants") or {}
+    active_specs = [spec for spec in specs.values() if spec.active]
+    variant_ids = list(
+        dict.fromkeys(
+            [spec.variant_id for spec in active_specs] + list(state_variants.keys())
+        )
+    )
+    for variant_id in variant_ids:
+        spec = specs.get(variant_id)
+        if spec is not None and not spec.active:
             continue
-        desc = specs.get(variant_id).description if variant_id in specs else ""
+        raw_slice_state = state_variants.get(variant_id)
+        slice_state = raw_slice_state if isinstance(raw_slice_state, dict) else {}
+        desc = spec.description if spec else ""
         _summarize(variant_id, slice_state, desc)
 
     # Production baseline from main state
