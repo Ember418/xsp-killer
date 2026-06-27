@@ -29,6 +29,13 @@ DEFAULT_VARIANTS_CONFIG = ROOT / "config" / "lane_a_variants.yaml"
 DEFAULT_VARIANTS_STATE = ROOT / "briefs" / "xsp-lane-a-variants-state.json"
 DEFAULT_SCOREBOARD = ROOT / "briefs" / "xsp-lane-a-variants-scoreboard.json"
 
+# Side-by-side regime-gate experiment axis (baseline GREEN vs YELLOW bounce brackets).
+REGIME_GATE_COMPARISON_IDS = (
+    "v2_baseline_prod",
+    "v2_yellow_mid_bounce",
+    "v2_yellow_top_quartile_bounce",
+)
+
 
 @dataclass
 class VariantSpec:
@@ -481,6 +488,101 @@ def clear_pnl_epoch(
     }
 
 
+def _variant_track_meta(
+    variant_id: str,
+    spec: VariantSpec | None,
+) -> dict[str, Any]:
+    """Regime-gate metadata for scoreboard rows and cross-variant comparison."""
+    if spec is not None:
+        entry = spec.overrides.get("entry") or {}
+        logic_version = spec.logic_version
+    elif variant_id == "v2_baseline_prod":
+        base = load_base_rules()
+        entry = base.get("entry") or {}
+        logic_version = str((base.get("logging") or {}).get("logic_version") or "")
+    else:
+        entry = {}
+        logic_version = None
+
+    regime_gate = str(entry.get("regime_gate") or "GREEN")
+    yellow_frac_min = entry.get("regime_yellow_frac_min")
+
+    meta: dict[str, Any] = {
+        "logic_version": logic_version,
+        "regime_gate": regime_gate,
+        "regime_yellow_frac_min": yellow_frac_min,
+    }
+    if regime_gate == "GREEN_OR_YELLOW_BOUNCE":
+        meta["track_family"] = "yellow_bounce_frac_axis"
+    elif regime_gate == "GREEN" and variant_id == "v2_baseline_prod":
+        meta["track_family"] = "baseline_green"
+    return meta
+
+
+def _entry_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, int]:
+    entered_sessions = sum(1 for row in entry_logs if row.get("entered"))
+    regime_gate_skips = sum(
+        1
+        for row in entry_logs
+        if str(row.get("skip_reason") or "").startswith("regime ")
+    )
+    bounce_signal_sessions = sum(1 for row in entry_logs if row.get("bb_entry_ok"))
+    bounce_blocked_by_regime = sum(
+        1
+        for row in entry_logs
+        if row.get("bb_entry_ok")
+        and not row.get("entered")
+        and str(row.get("skip_reason") or "").startswith("regime ")
+    )
+    return {
+        "entered_sessions": entered_sessions,
+        "regime_gate_skip_sessions": regime_gate_skips,
+        "bb_bounce_signal_sessions": bounce_signal_sessions,
+        "bb_bounce_blocked_by_regime_sessions": bounce_blocked_by_regime,
+    }
+
+
+def _build_regime_gate_comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_id = {row["variant_id"]: row for row in rows}
+    comparison_rows: list[dict[str, Any]] = []
+    for variant_id in REGIME_GATE_COMPARISON_IDS:
+        row = by_id.get(variant_id)
+        if row is None:
+            continue
+        comparison_rows.append(
+            {
+                "variant_id": variant_id,
+                "description": row.get("description"),
+                "logic_version": row.get("logic_version"),
+                "regime_gate": row.get("regime_gate"),
+                "regime_yellow_frac_min": row.get("regime_yellow_frac_min"),
+                "track_family": row.get("track_family"),
+                "sessions_evaluated": row.get("sessions_evaluated"),
+                "entered_sessions": row.get("entered_sessions"),
+                "trades_closed": row.get("trades_closed"),
+                "realized_pnl_usd": row.get("realized_pnl_usd"),
+                "avg_pnl_per_trade_usd": row.get("avg_pnl_per_trade_usd"),
+                "bb_bounce_signal_sessions": row.get("bb_bounce_signal_sessions"),
+                "bb_bounce_blocked_by_regime_sessions": row.get(
+                    "bb_bounce_blocked_by_regime_sessions"
+                ),
+                "vs_baseline_avg_per_trade_usd": row.get(
+                    "vs_baseline_avg_per_trade_usd"
+                ),
+            }
+        )
+    return {
+        "description": (
+            "Side-by-side GREEN baseline vs YELLOW bounce brackets (frac≥0.50 vs "
+            "frac≥0.75). Independent shadow books — compare avg_pnl_per_trade_usd "
+            "and how often each gate would have entered."
+        ),
+        "track_family": "yellow_bounce_frac_axis",
+        "baseline_variant_id": "v2_baseline_prod",
+        "variants": comparison_rows,
+    }
+
+
 def build_scoreboard(
     *,
     config_path: Path | None = None,
@@ -496,7 +598,12 @@ def build_scoreboard(
 
     soak_reset_at = _soak_reset_at(root)
 
-    def _summarize(variant_id: str, state: dict[str, Any], description: str) -> None:
+    def _summarize(
+        variant_id: str,
+        state: dict[str, Any],
+        description: str,
+        spec: VariantSpec | None = None,
+    ) -> None:
         events = _events_in_soak_epoch(state, soak_reset_at)
         entry_logs = _entry_logs_in_soak_epoch(state, soak_reset_at)
         open_pos = [
@@ -518,22 +625,23 @@ def build_scoreboard(
         sessions_evaluated = len(entry_logs)
         win_rate = round(wins / trades * 100.0, 1) if trades else None
         avg_pnl = round(realized / trades, 2) if trades else None
-        rows.append(
-            {
-                "variant_id": variant_id,
-                "description": description,
-                "trades_closed": trades,
-                "wins": wins,
-                "losses": losses,
-                "win_rate_pct": win_rate,
-                "realized_pnl_usd": realized,
-                "avg_pnl_per_trade_usd": avg_pnl,
-                "sessions_evaluated": sessions_evaluated,
-                "sessions_to_gate": max(0, 20 - sessions_evaluated),
-                "open_positions": len(open_pos),
-                "last_exit": _last_exit_with_contract_meta(state, events),
-            }
-        )
+        row: dict[str, Any] = {
+            "variant_id": variant_id,
+            "description": description,
+            "trades_closed": trades,
+            "wins": wins,
+            "losses": losses,
+            "win_rate_pct": win_rate,
+            "realized_pnl_usd": realized,
+            "avg_pnl_per_trade_usd": avg_pnl,
+            "sessions_evaluated": sessions_evaluated,
+            "sessions_to_gate": max(0, 20 - sessions_evaluated),
+            "open_positions": len(open_pos),
+            "last_exit": _last_exit_with_contract_meta(state, events),
+        }
+        row.update(_variant_track_meta(variant_id, spec))
+        row.update(_entry_session_stats(entry_logs))
+        rows.append(row)
 
     # Shadow variants
     state_variants = root.get("variants") or {}
@@ -550,7 +658,7 @@ def build_scoreboard(
         raw_slice_state = state_variants.get(variant_id)
         slice_state = raw_slice_state if isinstance(raw_slice_state, dict) else {}
         desc = spec.description if spec else ""
-        _summarize(variant_id, slice_state, desc)
+        _summarize(variant_id, slice_state, desc, spec=spec)
 
     # Production baseline from main state
     baseline_path = baseline_state_path or (ROOT / "briefs" / "xsp-lane-a-state.json")
@@ -561,6 +669,7 @@ def build_scoreboard(
                 "v2_baseline_prod",
                 baseline,
                 "Production lane_a_rules.yaml (systemd cron)",
+                spec=None,
             )
         except (json.JSONDecodeError, OSError):
             pass
@@ -607,6 +716,7 @@ def build_scoreboard(
         "baseline_prod": baseline_row,
         "shadow_variants": shadow_rows,
         "variants": ordered,
+        "regime_gate_comparison": _build_regime_gate_comparison(rows),
         "note": (
             "Per-variant comparison only. Need ≥20 post-epoch sessions per variant before promotion."
         ),

@@ -819,6 +819,7 @@ def _finalize_entry(
             "regime": decision.regime,
             "regime_frac": decision.regime_frac,
             "regime_gate": decision.regime_gate,
+            "bb_entry_ok": decision.bb_entry_ok,
             "prior_day_spy_return_pct": decision.prior_day_spy_return_pct,
             "prior_day_spy_session": decision.prior_day_spy_session,
         }

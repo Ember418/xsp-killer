@@ -35,6 +35,7 @@ def test_load_variant_specs():
     assert "v2_28dte_atm" in ids
     assert "v2_21dte_atm" in ids
     assert "v2_yellow_top_quartile_bounce" in ids
+    assert "v2_yellow_mid_bounce" in ids
 
 
 def test_merged_rules_dte_target(tmp_path):
@@ -58,6 +59,19 @@ def test_merged_rules_yellow_bounce_variant(tmp_path):
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert data["entry"]["regime_gate"] == "GREEN_OR_YELLOW_BOUNCE"
     assert data["entry"]["regime_yellow_frac_min"] == 0.75
+    assert data["ta"]["entry"]["mode"] == "close_window_and_bb"
+
+
+def test_merged_rules_yellow_mid_bounce_variant(tmp_path):
+    specs = load_variant_specs()
+    spec = next(s for s in specs if s.variant_id == "v2_yellow_mid_bounce")
+    path = merged_rules_path(spec, tmp_dir=tmp_path)
+    import yaml
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["entry"]["regime_gate"] == "GREEN_OR_YELLOW_BOUNCE"
+    assert data["entry"]["regime_yellow_frac_min"] == 0.50
+    assert data["logging"]["logic_version"] == "xsp_lane_a_v2_yellow_mid_bounce"
     assert data["ta"]["entry"]["mode"] == "close_window_and_bb"
 
 
@@ -484,3 +498,130 @@ def test_clear_pnl_keeps_entry_log(tmp_path, monkeypatch):
     assert row["trades_closed"] == 0
     assert row["realized_pnl_usd"] == 0.0
     assert sb["baseline_prod"]["trades_closed"] == 0
+
+
+def test_build_scoreboard_regime_gate_comparison(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_yellow_mid_bounce": {
+                "active": True,
+                "description": "Mid bounce test",
+                "overrides": {
+                    "logging": {"logic_version": "xsp_lane_a_v2_yellow_mid_bounce"},
+                    "entry": {
+                        "regime_gate": "GREEN_OR_YELLOW_BOUNCE",
+                        "regime_yellow_frac_min": 0.50,
+                    },
+                },
+            },
+            "v2_yellow_top_quartile_bounce": {
+                "active": True,
+                "description": "Top quartile bounce test",
+                "overrides": {
+                    "logging": {
+                        "logic_version": "xsp_lane_a_v2_yellow_top_quartile_bounce"
+                    },
+                    "entry": {
+                        "regime_gate": "GREEN_OR_YELLOW_BOUNCE",
+                        "regime_yellow_frac_min": 0.75,
+                    },
+                },
+            },
+        },
+    )
+    state = tmp_path / "variants-state.json"
+    baseline = tmp_path / "baseline-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_yellow_mid_bounce": {
+                        "entry_log": [
+                            {
+                                "evaluated_at": "2026-06-26T19:45:00+00:00",
+                                "entered": False,
+                                "skip_reason": "regime YELLOW blocks new risk: yellow_frac 0.40 < 0.50",
+                                "regime": "YELLOW",
+                                "regime_frac": 0.4,
+                                "regime_gate": "GREEN_OR_YELLOW_BOUNCE",
+                                "bb_entry_ok": True,
+                            }
+                        ],
+                        "paper_events": [],
+                        "paper_positions": {},
+                    },
+                    "v2_yellow_top_quartile_bounce": {
+                        "entry_log": [
+                            {
+                                "evaluated_at": "2026-06-26T19:45:00+00:00",
+                                "entered": False,
+                                "skip_reason": "regime YELLOW blocks new risk: yellow_frac 0.40 < 0.75",
+                                "regime": "YELLOW",
+                                "regime_frac": 0.4,
+                                "regime_gate": "GREEN_OR_YELLOW_BOUNCE",
+                                "bb_entry_ok": True,
+                            }
+                        ],
+                        "paper_events": [],
+                        "paper_positions": {},
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline.write_text(
+        json.dumps(
+            {
+                "entry_log": [
+                    {
+                        "evaluated_at": "2026-06-26T19:45:00+00:00",
+                        "entered": False,
+                        "skip_reason": "regime YELLOW blocks new risk",
+                        "regime": "YELLOW",
+                        "regime_gate": "GREEN",
+                        "bb_entry_ok": True,
+                    }
+                ],
+                "paper_events": [],
+                "paper_positions": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=baseline,
+            out_path=tmp_path / "scoreboard.json",
+        ).read_text(encoding="utf-8")
+    )
+
+    mid = next(
+        r for r in payload["shadow_variants"] if r["variant_id"] == "v2_yellow_mid_bounce"
+    )
+    top = next(
+        r
+        for r in payload["shadow_variants"]
+        if r["variant_id"] == "v2_yellow_top_quartile_bounce"
+    )
+    assert mid["track_family"] == "yellow_bounce_frac_axis"
+    assert mid["regime_yellow_frac_min"] == 0.50
+    assert top["regime_yellow_frac_min"] == 0.75
+    assert mid["bb_bounce_signal_sessions"] == 1
+    assert mid["bb_bounce_blocked_by_regime_sessions"] == 1
+    assert payload["baseline_prod"]["track_family"] == "baseline_green"
+    assert payload["baseline_prod"]["regime_gate"] == "GREEN"
+
+    comparison = payload["regime_gate_comparison"]
+    assert comparison["baseline_variant_id"] == "v2_baseline_prod"
+    assert [v["variant_id"] for v in comparison["variants"]] == [
+        "v2_baseline_prod",
+        "v2_yellow_mid_bounce",
+        "v2_yellow_top_quartile_bounce",
+    ]
+    assert comparison["variants"][1]["regime_yellow_frac_min"] == 0.50
+    assert comparison["variants"][2]["regime_yellow_frac_min"] == 0.75
