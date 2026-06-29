@@ -3,6 +3,7 @@ yfinance>=0.2.40
 pandas>=2.0
 python-dotenv>=1.0
 pytest>=8.0
+ruff==0.15.5
 
 # Optional — only when XSP_LANE_A_RH_POLL=true
 # robin-stocks>=3.0

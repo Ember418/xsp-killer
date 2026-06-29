@@ -1,6 +1,15 @@
-# Lane A strategy diagnosis (2026-06-18)
+# Lane A strategy diagnosis (2026-06-29)
 
-## What was going wrong
+## Post-patch fixes
+
+| Issue | Fix | Code location |
+|-------|-----|---------------|
+| same-day `time_stop` | Only fire when `entry_date_et < today` and `now >= sell_deadline_et` | `lane_a_monitor.evaluate_exit_alerts` |
+| half-step OTM strikes | `pick_strike` mode `otm_one` uses `atm + 5.0` (one XSP strike step) | `lane_a_entry.py` |
+| fallback premium scale | `estimate_fallback_premium` scales OTM by `0.55–1.0` based on steps from ATM | `lane_a_entry.py` |
+| prior-day SPY filter | `fetch_spy_ohlcv` returns prior-day close-to-close return; variants can require `prior_day_spy_positive: true` | `lane_a_entry.py` |
+
+## What was going wrong (original issues)
 
 ### P0 — same-day time_stop (fixed)
 `evaluate_exit_alerts` fired `time_stop` whenever `now >= 10:00 ET` with **no check that entry was on a prior day**. A 3:45 PM entry was closed 23s later at −$202 (economics) despite only −0.3% underlying move.
@@ -41,6 +50,31 @@ python3 scripts/lane_a_variants.py scoreboard
 
 Scoreboard: `briefs/xsp-lane-a-variants-scoreboard.json`
 
+## Regime gate experiment (yellow bounce axis)
+
+Side-by-side comparison of baseline GREEN-only vs YELLOW bounce brackets.
+
+| Variant | Regime gate | Yellow frac min | Track family |
+|---------|-------------|-----------------|--------------|
+| `v2_baseline_prod` | `GREEN` | N/A | `baseline_green` |
+| `v2_yellow_mid_bounce` | `GREEN_OR_YELLOW_BOUNCE` | 0.50 | `yellow_bounce_frac_axis` |
+| `v2_yellow_top_quartile_bounce` | `GREEN_OR_YELLOW_BOUNCE` | 0.75 | `yellow_bounce_frac_axis` |
+
+**Metrics tracked per variant:**
+- `regime_gate_comparison` — scoreboard section comparing baseline + both yellow variants
+- `bb_bounce_signal_sessions` — sessions where BB bounce signal was present
+- `bb_bounce_blocked_by_regime_sessions` — sessions where bounce was blocked by regime filter
+
+**Promotion policy:** WAIT until ≥20 post-epoch sessions per variant before considering production promotion.
+
 ## Soak gate
 
 Compare `realized_pnl_usd` and win rate per variant after **≥20 sessions** before changing production baseline.
+
+## Stale TA data behavior
+
+When evaluation runs outside market hours (weekend, holiday) or when data feed is stale:
+- `ta_snapshot.errors` includes `"stale primary bar (timestamp)"`
+- `ta_snapshot.detail` shows `"stale primary TA data"`
+- Entry is blocked by `in_window` / `in_rth` checks before TA freshness is evaluated
+- This is expected behavior — do not enter on stale data

@@ -7,6 +7,7 @@ __pycache__/
 .venv/
 venv/
 logs/*.jsonl
+logs/health_soak_*.md
 briefs/*-latest.json
 briefs/lane-a-state.json
 reports/gap-audit/
@@ -20,3 +21,4 @@ briefs/xsp-lane-a-variants-scoreboard.json
 briefs/variant_rules_cache/
 briefs/.variant-*
 briefs/*.lock
+config/*.lock

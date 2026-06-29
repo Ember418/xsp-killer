@@ -32,5 +32,10 @@ jobs:
               print(f'ok {path}')
           "
 
+      - name: Ruff
+        run: |
+          ruff check xsp_killer/health_soak.py tests/test_health_soak.py
+          ruff format --check xsp_killer/health_soak.py tests/test_health_soak.py
+
       - name: Run tests
         run: pytest -q
