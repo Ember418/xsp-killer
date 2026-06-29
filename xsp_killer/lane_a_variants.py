@@ -551,6 +551,45 @@ def _entry_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _vol_shadow_from_log_row(row: dict[str, Any]) -> dict[str, Any] | None:
+    raw = row.get("vol_shadow")
+    if isinstance(raw, dict):
+        return raw
+    if row.get("spy_rv_annualized") is not None or row.get("vol_shadow_would_block") is not None:
+        return {
+            "spy_rv_annualized": row.get("spy_rv_annualized"),
+            "shadow_would_block": row.get("vol_shadow_would_block"),
+            "reason": row.get("vol_shadow_reason"),
+        }
+    return None
+
+
+def _vol_shadow_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate shadow vol gate observations from epoch entry_log rows."""
+    would_block_sessions = 0
+    rvs: list[float] = []
+    latest: dict[str, Any] | None = None
+    for row in entry_logs:
+        vs = _vol_shadow_from_log_row(row)
+        if vs is None:
+            continue
+        latest = vs
+        if vs.get("shadow_would_block"):
+            would_block_sessions += 1
+        rv = vs.get("spy_rv_annualized")
+        if rv is not None:
+            try:
+                rvs.append(float(rv))
+            except (TypeError, ValueError):
+                pass
+    return {
+        "vol_shadow_would_block_sessions": would_block_sessions,
+        "vol_shadow_latest_spy_rv": (latest or {}).get("spy_rv_annualized"),
+        "vol_shadow_latest_would_block": (latest or {}).get("shadow_would_block"),
+        "vol_shadow_avg_spy_rv": round(sum(rvs) / len(rvs), 4) if rvs else None,
+    }
+
+
 def _build_regime_gate_comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
     by_id = {row["variant_id"]: row for row in rows}
     comparison_rows: list[dict[str, Any]] = []
@@ -575,6 +614,14 @@ def _build_regime_gate_comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "bb_bounce_blocked_by_regime_sessions": row.get(
                     "bb_bounce_blocked_by_regime_sessions"
                 ),
+                "vol_shadow_would_block_sessions": row.get(
+                    "vol_shadow_would_block_sessions"
+                ),
+                "vol_shadow_latest_spy_rv": row.get("vol_shadow_latest_spy_rv"),
+                "vol_shadow_latest_would_block": row.get(
+                    "vol_shadow_latest_would_block"
+                ),
+                "vol_shadow_avg_spy_rv": row.get("vol_shadow_avg_spy_rv"),
                 "vs_baseline_avg_per_trade_usd": row.get(
                     "vs_baseline_avg_per_trade_usd"
                 ),
@@ -688,6 +735,7 @@ def build_scoreboard(
         }
         row.update(_variant_track_meta(variant_id, spec))
         row.update(_entry_session_stats(entry_logs))
+        row.update(_vol_shadow_session_stats(entry_logs))
         row.update(_promotion_meta(sessions_evaluated, trades))
         tel = summarize_entry_telemetry_from_logs(entry_logs)
         if tel.get("sessions_evaluated", 0) > 0:

@@ -925,6 +925,12 @@ def _finalize_entry(
             "regime_frac": decision.regime_frac,
             "regime_gate": decision.regime_gate,
             "bb_entry_ok": decision.bb_entry_ok,
+            "vol_shadow": decision.vol_shadow,
+            "vol_shadow_would_block": (decision.vol_shadow or {}).get(
+                "shadow_would_block"
+            ),
+            "spy_rv_annualized": (decision.vol_shadow or {}).get("spy_rv_annualized"),
+            "vol_shadow_reason": (decision.vol_shadow or {}).get("reason"),
             "prior_day_spy_return_pct": decision.prior_day_spy_return_pct,
             "prior_day_spy_session": decision.prior_day_spy_session,
         }

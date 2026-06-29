@@ -627,6 +627,64 @@ def test_build_scoreboard_regime_gate_comparison(tmp_path):
     assert comparison["variants"][2]["regime_yellow_frac_min"] == 0.75
 
 
+def test_build_scoreboard_vol_shadow_stats(tmp_path):
+    _write_variants_config(tmp_path, {})
+    state = tmp_path / "variants-state.json"
+    baseline = tmp_path / "baseline-state.json"
+    state.write_text(
+        json.dumps({"variants": {}}),
+        encoding="utf-8",
+    )
+    baseline.write_text(
+        json.dumps(
+            {
+                "entry_log": [
+                    {
+                        "evaluated_at": "2026-06-26T19:45:00+00:00",
+                        "entered": False,
+                        "skip_reason": "regime YELLOW blocks new risk",
+                        "vol_shadow": {
+                            "spy_rv_annualized": 0.22,
+                            "shadow_would_block": False,
+                            "reason": "spy_rv_22.00%_below_threshold_28.00%",
+                        },
+                    },
+                    {
+                        "evaluated_at": "2026-06-27T19:45:00+00:00",
+                        "entered": False,
+                        "skip_reason": "regime YELLOW blocks new risk",
+                        "spy_rv_annualized": 0.31,
+                        "vol_shadow_would_block": True,
+                        "vol_shadow_reason": "spy_rv_31.00%_gte_threshold_28.00%",
+                    },
+                ],
+                "paper_events": [],
+                "paper_positions": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=baseline,
+            out_path=tmp_path / "scoreboard.json",
+        ).read_text(encoding="utf-8")
+    )
+
+    baseline_row = payload["baseline_prod"]
+    assert baseline_row["vol_shadow_would_block_sessions"] == 1
+    assert baseline_row["vol_shadow_latest_spy_rv"] == 0.31
+    assert baseline_row["vol_shadow_latest_would_block"] is True
+    assert baseline_row["vol_shadow_avg_spy_rv"] == 0.265
+
+    comparison = payload["regime_gate_comparison"]["variants"][0]
+    assert comparison["vol_shadow_would_block_sessions"] == 1
+    assert comparison["vol_shadow_avg_spy_rv"] == 0.265
+
+
 def test_promotion_meta_collecting():
     from xsp_killer.lane_a_variants import _promotion_meta
 

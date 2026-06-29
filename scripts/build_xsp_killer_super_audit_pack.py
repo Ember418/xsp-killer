@@ -283,6 +283,14 @@ def main() -> int:
         / "sources"
         / "3-19-signal-fusion-engine-research.md",
     }
+    xsp_wiki_root = XSP_ROOT / "research_wiki" / "concepts"
+    if xsp_wiki_root.is_dir():
+        for src in sorted(xsp_wiki_root.glob("xsp-*.md")):
+            wiki_files[src.name] = src
+    cemini_xsp = CEMINI / "research_wiki" / "concepts"
+    if cemini_xsp.is_dir():
+        for src in sorted(cemini_xsp.glob("xsp-*.md")):
+            wiki_files.setdefault(src.name, src)
     wiki_names: list[str] = []
     for name, src in wiki_files.items():
         (wiki_dir / name).write_text(_read_tail(src, 12000), encoding="utf-8")

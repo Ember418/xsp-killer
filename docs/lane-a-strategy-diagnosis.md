@@ -64,6 +64,8 @@ Side-by-side comparison of baseline GREEN-only vs YELLOW bounce brackets.
 - `regime_gate_comparison` — scoreboard section comparing baseline + both yellow variants
 - `bb_bounce_signal_sessions` — sessions where BB bounce signal was present
 - `bb_bounce_blocked_by_regime_sessions` — sessions where bounce was blocked by regime filter
+- `vol_shadow_would_block_sessions` — shadow SPY RV gate would block (log-only, not enforcing)
+- `vol_shadow_latest_spy_rv` / `vol_shadow_avg_spy_rv` — shadow vol telemetry on scoreboard rows
 
 **Promotion policy:** WAIT until ≥20 post-epoch sessions per variant before considering production promotion.
 
