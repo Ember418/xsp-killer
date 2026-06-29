@@ -446,25 +446,70 @@ def _bucket_skip_reason(reason: str | None) -> str:
     return reason.split(":")[0][:48]
 
 
+def _epoch_at(state: dict[str, Any]) -> str | None:
+    raw = state.get("pnl_epoch_at") or state.get("soak_reset_at")
+    return str(raw) if raw else None
+
+
+def entry_logs_for_epoch(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Entry log rows on or after the current soak / PnL epoch boundary."""
+    logs = [row for row in (state.get("entry_log") or []) if isinstance(row, dict)]
+    epoch = _epoch_at(state)
+    if not epoch:
+        return logs
+    return [row for row in logs if str(row.get("evaluated_at") or "") >= epoch]
+
+
+def summarize_entry_telemetry_from_logs(
+    entry_logs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Derive skip/regime tallies from entry_log (matches scoreboard epoch filtering)."""
+    skip_reason_counts: dict[str, int] = {}
+    regime_counts: dict[str, int] = {}
+    last_updated_at: str | None = None
+    entered_sessions = 0
+    for row in entry_logs:
+        evaluated_at = row.get("evaluated_at")
+        if evaluated_at and (
+            last_updated_at is None or str(evaluated_at) > last_updated_at
+        ):
+            last_updated_at = str(evaluated_at)
+        regime = row.get("regime")
+        if regime:
+            regime_counts[str(regime)] = regime_counts.get(str(regime), 0) + 1
+        if row.get("entered"):
+            bucket = "entered"
+            entered_sessions += 1
+        else:
+            bucket = _bucket_skip_reason(row.get("skip_reason"))
+        skip_reason_counts[bucket] = skip_reason_counts.get(bucket, 0) + 1
+    return {
+        "last_updated_at": last_updated_at,
+        "skip_reason_counts": skip_reason_counts,
+        "regime_counts": regime_counts,
+        "sessions_evaluated": len(entry_logs),
+        "entered_sessions": entered_sessions,
+    }
+
+
+def _sync_entry_telemetry(state: dict[str, Any]) -> dict[str, Any]:
+    tel = summarize_entry_telemetry_from_logs(entry_logs_for_epoch(state))
+    state["entry_telemetry"] = tel
+    return tel
+
+
 def _update_entry_telemetry(state: dict[str, Any], decision: EntryDecision) -> None:
-    tel = state.setdefault(
-        "entry_telemetry",
-        {"skip_reason_counts": {}, "regime_counts": {}, "last_updated_at": None},
-    )
-    tel["last_updated_at"] = decision.evaluated_at
-    if decision.regime:
-        rc = tel.setdefault("regime_counts", {})
-        rc[decision.regime] = int(rc.get(decision.regime, 0)) + 1
-    bucket = "entered" if decision.entered else _bucket_skip_reason(decision.skip_reason)
-    sc = tel.setdefault("skip_reason_counts", {})
-    sc[bucket] = int(sc.get(bucket, 0)) + 1
+    _sync_entry_telemetry(state)
 
 
 def _write_entry_telemetry_brief(state: dict[str, Any], out_path: Path | None = None) -> None:
     path = out_path or (ROOT / "briefs" / "xsp-lane-a-entry-telemetry-latest.json")
-    tel = state.get("entry_telemetry") or {}
+    tel = _sync_entry_telemetry(state)
     payload = {
+        "pnl_epoch_at": _epoch_at(state),
         "updated_at": tel.get("last_updated_at"),
+        "sessions_evaluated": tel.get("sessions_evaluated", 0),
+        "entered_sessions": tel.get("entered_sessions", 0),
         "skip_reason_counts": tel.get("skip_reason_counts") or {},
         "regime_counts": tel.get("regime_counts") or {},
     }

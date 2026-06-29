@@ -10,12 +10,15 @@ from xsp_killer.lane_a_entry import (
     EntryRules,
     _bucket_skip_reason,
     _finalize_entry,
+    _write_entry_telemetry_brief,
     already_entered_today,
+    entry_logs_for_epoch,
     in_entry_window,
     open_paper_positions,
     pick_cheapest_atm_strike,
     round_xsp_strike,
     run_paper_entry,
+    summarize_entry_telemetry_from_logs,
 )
 from xsp_killer.lane_a_monitor import LaneRules
 from xsp_killer.lane_a_ta import TaSignal
@@ -260,3 +263,43 @@ def test_entry_telemetry_counts_skips_and_regime(tmp_path):
     tel = state["entry_telemetry"]
     assert tel["regime_counts"]["YELLOW"] == 1
     assert tel["skip_reason_counts"]["regime_gate"] == 1
+    assert tel["sessions_evaluated"] == 1
+    assert tel["entered_sessions"] == 0
+
+
+def test_entry_telemetry_respects_pnl_epoch(tmp_path):
+    epoch = "2026-06-23T22:20:36+00:00"
+    state = {
+        "pnl_epoch_at": epoch,
+        "entry_log": [
+            {
+                "evaluated_at": "2026-06-22T19:45:00+00:00",
+                "entered": True,
+                "regime": "GREEN",
+                "skip_reason": None,
+            },
+            {
+                "evaluated_at": "2026-06-26T19:45:00+00:00",
+                "entered": False,
+                "regime": "YELLOW",
+                "skip_reason": "regime YELLOW blocks new risk",
+            },
+        ],
+    }
+    logs = entry_logs_for_epoch(state)
+    assert len(logs) == 1
+    tel = summarize_entry_telemetry_from_logs(logs)
+    assert tel["entered_sessions"] == 0
+    assert tel["sessions_evaluated"] == 1
+    assert tel["skip_reason_counts"] == {"regime_gate": 1}
+    assert tel["regime_counts"] == {"YELLOW": 1}
+
+    brief_path = tmp_path / "telemetry.json"
+    _write_entry_telemetry_brief(state, out_path=brief_path)
+    import json
+
+    payload = json.loads(brief_path.read_text(encoding="utf-8"))
+    assert payload["pnl_epoch_at"] == epoch
+    assert payload["entered_sessions"] == 0
+    assert payload["sessions_evaluated"] == 1
+    assert "entered" not in payload["skip_reason_counts"]

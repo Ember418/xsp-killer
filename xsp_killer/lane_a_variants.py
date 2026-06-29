@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from xsp_killer.lane_a_entry import run_paper_entry
+from xsp_killer.lane_a_entry import run_paper_entry, summarize_entry_telemetry_from_logs
 from xsp_killer.lane_a_monitor import (
     DEFAULT_RULES,
     load_state,
@@ -408,6 +408,9 @@ def reset_soak(
             baseline["soak_reset_at"] = reset_at
             if commit:
                 baseline["soak_reset_commit"] = commit
+            from xsp_killer.lane_a_entry import _sync_entry_telemetry
+
+            _sync_entry_telemetry(baseline)
             bp.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("baseline soak reset failed: %s", exc)
@@ -476,7 +479,11 @@ def clear_pnl_epoch(
             baseline["pnl_epoch_at"] = epoch_at
             if commit:
                 baseline["pnl_epoch_commit"] = commit
+            from xsp_killer.lane_a_entry import _sync_entry_telemetry, _write_entry_telemetry_brief
+
+            _sync_entry_telemetry(baseline)
             bp.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+            _write_entry_telemetry_brief(baseline)
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("baseline pnl clear failed: %s", exc)
 
@@ -682,11 +689,12 @@ def build_scoreboard(
         row.update(_variant_track_meta(variant_id, spec))
         row.update(_entry_session_stats(entry_logs))
         row.update(_promotion_meta(sessions_evaluated, trades))
-        tel = state.get("entry_telemetry") or {}
-        if isinstance(tel, dict) and tel:
+        tel = summarize_entry_telemetry_from_logs(entry_logs)
+        if tel.get("sessions_evaluated", 0) > 0:
             row["entry_telemetry"] = {
                 "skip_reason_counts": tel.get("skip_reason_counts") or {},
                 "regime_counts": tel.get("regime_counts") or {},
+                "entered_sessions": tel.get("entered_sessions", 0),
             }
         rows.append(row)
 
