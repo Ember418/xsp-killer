@@ -36,6 +36,8 @@ REGIME_GATE_COMPARISON_IDS = (
     "v2_yellow_top_quartile_bounce",
 )
 
+PROMOTION_SESSIONS_GATE = 20
+
 
 @dataclass
 class VariantSpec:
@@ -583,6 +585,44 @@ def _build_regime_gate_comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _promotion_meta(sessions_evaluated: int, trades_closed: int) -> dict[str, Any]:
+    remaining = max(0, PROMOTION_SESSIONS_GATE - sessions_evaluated)
+    if sessions_evaluated < PROMOTION_SESSIONS_GATE:
+        status = "collecting"
+    elif trades_closed == 0:
+        status = "sessions_met_no_trades"
+    else:
+        status = "eligible_review"
+    return {
+        "promotion_sessions_gate": PROMOTION_SESSIONS_GATE,
+        "sessions_to_promotion_gate": remaining,
+        "promotion_status": status,
+        "promotion_ready": status == "eligible_review",
+    }
+
+
+def _build_promotion_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    eligible = [
+        r["variant_id"]
+        for r in rows
+        if r.get("promotion_ready") and r.get("variant_id") != "v2_baseline_prod"
+    ]
+    collecting = sum(
+        1 for r in rows if r.get("promotion_status") == "collecting"
+    )
+    return {
+        "sessions_gate": PROMOTION_SESSIONS_GATE,
+        "variants_collecting": collecting,
+        "variants_eligible_review": eligible,
+        "baseline_promotion_ready": bool(
+            next(
+                (r for r in rows if r.get("variant_id") == "v2_baseline_prod"),
+                {},
+            ).get("promotion_ready")
+        ),
+    }
+
+
 def build_scoreboard(
     *,
     config_path: Path | None = None,
@@ -641,6 +681,13 @@ def build_scoreboard(
         }
         row.update(_variant_track_meta(variant_id, spec))
         row.update(_entry_session_stats(entry_logs))
+        row.update(_promotion_meta(sessions_evaluated, trades))
+        tel = state.get("entry_telemetry") or {}
+        if isinstance(tel, dict) and tel:
+            row["entry_telemetry"] = {
+                "skip_reason_counts": tel.get("skip_reason_counts") or {},
+                "regime_counts": tel.get("regime_counts") or {},
+            }
         rows.append(row)
 
     # Shadow variants
@@ -717,6 +764,7 @@ def build_scoreboard(
         "shadow_variants": shadow_rows,
         "variants": ordered,
         "regime_gate_comparison": _build_regime_gate_comparison(rows),
+        "promotion_summary": _build_promotion_summary(rows),
         "note": (
             "Per-variant comparison only. Need ≥20 post-epoch sessions per variant before promotion."
         ),

@@ -35,6 +35,7 @@ paper_economics:
   slippage_usd_per_share: 0.12
   slippage_pct_of_premium: 0.005
   slippage_max_pct_of_premium: 0.015
+  premium_scale: 10.0  # SPY chain mid → XSP notional; dual-log 1× in quotes for validation
 
 ta:
   symbol: SPY

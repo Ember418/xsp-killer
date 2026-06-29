@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
+from xsp_killer.paper_economics import load_premium_scale, scale_spy_premium
 from xsp_killer.spy_quote import (
     fetch_spy_call_quote_legacy as fetch_spy_call_quote,
     fetch_spy_call_quote as fetch_spy_call_mark,
@@ -106,6 +106,8 @@ class EntryDecision:
     errors: list[str] = field(default_factory=list)
     ta_snapshot: dict[str, Any] | None = None
     bb_entry_ok: bool = False
+    vol_shadow: dict[str, Any] | None = None
+    premium_scale_used: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -274,7 +276,7 @@ def pick_cheapest_atm_strike(
         if prem is None or prem <= 0:
             continue
         dist = abs(xsp_strike - spx_level)
-        xsp_prem = prem * SPY_TO_XSP_PREMIUM_SCALE
+        xsp_prem = scale_spy_premium(prem)
         if dist < best_dist or (
             dist == best_dist and (best_premium is None or xsp_prem < best_premium)
         ):
@@ -301,13 +303,13 @@ def pick_strike(
         prem, delta = fetch_spy_call_quote(atm / 10.0, expiration)
         if prem is None or prem <= 0:
             return atm, None, None
-        return atm, prem * SPY_TO_XSP_PREMIUM_SCALE, delta
+        return atm, scale_spy_premium(prem), delta
     if mode == "otm_one":
         otm = atm + 5.0
         prem, delta = fetch_spy_call_quote(otm / 10.0, expiration)
         if prem is None or prem <= 0:
             return otm, None, None
-        return otm, prem * SPY_TO_XSP_PREMIUM_SCALE, delta
+        return otm, scale_spy_premium(prem), delta
     return pick_cheapest_atm_strike(
         spx_level, expiration, max_steps_from_atm=max_steps_from_atm
     )
@@ -329,7 +331,7 @@ def estimate_fallback_premium(
         otm_steps = max(0.0, (xsp_strike - spx_level) / 5.0)
         prem *= max(0.55, 1.0 - 0.08 * otm_steps)
     if scale_to_xsp:
-        prem *= SPY_TO_XSP_PREMIUM_SCALE
+        prem = scale_spy_premium(prem)
     return round(prem, 4)
 
 
@@ -404,6 +406,8 @@ def append_entry_log(
         "prior_day_spy_return_pct": decision.prior_day_spy_return_pct,
         "ta_snapshot": decision.ta_snapshot,
         "bb_entry_ok": decision.bb_entry_ok,
+        "vol_shadow": decision.vol_shadow,
+        "premium_scale_used": decision.premium_scale_used,
         "position": decision.position,
         "errors": decision.errors,
     }
@@ -416,6 +420,56 @@ def write_entry_brief(decision: EntryDecision, out_path: Path | None = None) -> 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(decision.to_dict(), indent=2) + "\n", encoding="utf-8")
     return path
+
+
+def _bucket_skip_reason(reason: str | None) -> str:
+    if not reason:
+        return "unknown"
+    if reason.startswith("regime "):
+        return "regime_gate"
+    if reason.startswith("outside"):
+        return "out_of_window"
+    if reason.startswith("max open"):
+        return "max_positions"
+    if reason.startswith("already entered"):
+        return "already_entered_today"
+    if reason.startswith("prior-day"):
+        return "prior_day_filter"
+    if reason.startswith("paper_entry.disabled"):
+        return "disabled"
+    if reason.startswith("XSP_LANE_A"):
+        return "env_disabled"
+    if reason.lower().startswith("conductor") or "risk" in reason.lower():
+        return "risk_gate"
+    if "stale" in reason.lower() or reason.startswith("TA"):
+        return "ta_gate"
+    return reason.split(":")[0][:48]
+
+
+def _update_entry_telemetry(state: dict[str, Any], decision: EntryDecision) -> None:
+    tel = state.setdefault(
+        "entry_telemetry",
+        {"skip_reason_counts": {}, "regime_counts": {}, "last_updated_at": None},
+    )
+    tel["last_updated_at"] = decision.evaluated_at
+    if decision.regime:
+        rc = tel.setdefault("regime_counts", {})
+        rc[decision.regime] = int(rc.get(decision.regime, 0)) + 1
+    bucket = "entered" if decision.entered else _bucket_skip_reason(decision.skip_reason)
+    sc = tel.setdefault("skip_reason_counts", {})
+    sc[bucket] = int(sc.get(bucket, 0)) + 1
+
+
+def _write_entry_telemetry_brief(state: dict[str, Any], out_path: Path | None = None) -> None:
+    path = out_path or (ROOT / "briefs" / "xsp-lane-a-entry-telemetry-latest.json")
+    tel = state.get("entry_telemetry") or {}
+    payload = {
+        "updated_at": tel.get("last_updated_at"),
+        "skip_reason_counts": tel.get("skip_reason_counts") or {},
+        "regime_counts": tel.get("regime_counts") or {},
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
 def entry_gates_ok(
@@ -479,6 +533,10 @@ def run_paper_entry(
         ta_signal = evaluate_ta_signals(ta_rules, now_et=now)
 
     regime, regime_ok, yellow_frac, _ = read_regime_detail()
+    from xsp_killer.vol_monitor import evaluate_shadow_vol_gate
+
+    rules_file = rules_path or DEFAULT_RULES
+    vol_shadow = evaluate_shadow_vol_gate().to_dict()
     decision = EntryDecision(
         entered=False,
         evaluated_at=evaluated_at,
@@ -493,6 +551,8 @@ def run_paper_entry(
         prior_day_spy_session=None,
         ta_snapshot=ta_signal.to_dict(),
         bb_entry_ok=ta_signal.entry_ok,
+        vol_shadow=vol_shadow,
+        premium_scale_used=load_premium_scale(rules_file),
     )
 
     if not paper_entry_enabled():
@@ -825,10 +885,13 @@ def _finalize_entry(
         }
     )
     state["entry_log"] = log[-200:]
+    _update_entry_telemetry(state, decision)
     save_state(state_path or DEFAULT_STATE, state)
     append_entry_log(decision, log_path=log_path)
     if brief_path is not False:
         write_entry_brief(decision, out_path=brief_path)
+        if brief_path is None:
+            _write_entry_telemetry_brief(state)
 
     if publish_intel:
         try:

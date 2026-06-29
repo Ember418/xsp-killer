@@ -1,8 +1,10 @@
-"""Paper PnL economics — slippage and commission."""
+"""Paper PnL economics — slippage, commission, and SPY→XSP premium scale."""
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -10,8 +12,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RULES = ROOT / "config" / "lane_a_rules.yaml"
 
-# SPY option chain mid → XSP notional premium (1/10th index, ~10× per-share premium).
-SPY_TO_XSP_PREMIUM_SCALE = 10.0
+# Default SPY chain mid → XSP notional premium (1/10th index, ~10× per-share premium).
+DEFAULT_PREMIUM_SCALE = 10.0
+ALT_PREMIUM_SCALE_1X = 1.0
+
+# Backward-compatible module constant (prefer load_premium_scale()).
+SPY_TO_XSP_PREMIUM_SCALE = DEFAULT_PREMIUM_SCALE
 
 
 @dataclass
@@ -20,6 +26,7 @@ class PaperEconomics:
     slippage_pct_of_premium: float
     slippage_usd_per_share: float
     slippage_max_pct_of_premium: float
+    premium_scale: float = DEFAULT_PREMIUM_SCALE
 
     @classmethod
     def from_yaml(cls, path: Path | None = None) -> PaperEconomics:
@@ -34,7 +41,40 @@ class PaperEconomics:
             slippage_max_pct_of_premium=float(
                 cfg.get("slippage_max_pct_of_premium", 0.015)
             ),
+            premium_scale=float(cfg.get("premium_scale", DEFAULT_PREMIUM_SCALE)),
         )
+
+
+@lru_cache(maxsize=8)
+def _cached_premium_scale(resolved_rules_path: str) -> float:
+    return PaperEconomics.from_yaml(Path(resolved_rules_path)).premium_scale
+
+
+def load_premium_scale(path: Path | None = None) -> float:
+    """Active SPY→XSP premium scale (env override > yaml > default 10.0)."""
+    env = os.getenv("XSP_LANE_A_PREMIUM_SCALE")
+    if env:
+        return float(env)
+    rules_path = path or DEFAULT_RULES
+    return _cached_premium_scale(str(rules_path.resolve()))
+
+
+def scale_spy_premium(spy_premium: float, scale: float | None = None) -> float:
+    """Convert SPY per-share option mid to XSP notional premium."""
+    return spy_premium * (scale if scale is not None else load_premium_scale())
+
+
+def dual_notional_from_spy_mid(
+    spy_mid: float,
+    scale: float | None = None,
+) -> dict[str, float]:
+    """Dual-log primary scale vs 1× for premium-scale validation research."""
+    s = scale if scale is not None else load_premium_scale()
+    return {
+        "premium_scale_used": s,
+        "mark_xsp_scaled": round(spy_mid * s, 4),
+        "mark_xsp_alt_1x": round(spy_mid * ALT_PREMIUM_SCALE_1X, 4),
+    }
 
 
 def _slippage_per_share(mid_premium: float, econ: PaperEconomics) -> float:

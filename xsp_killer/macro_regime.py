@@ -9,6 +9,8 @@ from typing import Optional
 
 import pandas as pd
 
+from xsp_killer.data_hazards import classify_regime_hazard
+
 logger = logging.getLogger("xsp_killer.macro_regime")
 
 EMA_FAST = 21
@@ -29,6 +31,7 @@ class RegimeState:
     confidence: float
     timestamp: float
     reason: str
+    data_hazard: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -114,6 +117,7 @@ def classify_regime() -> RegimeState:
     tlt = _fetch_close("TLT")
 
     if spy is None or len(spy) < SMA_SLOW:
+        reason = "Insufficient SPY data — defensive default"
         return RegimeState(
             regime="RED",
             spy_price=0.0,
@@ -123,7 +127,8 @@ def classify_regime() -> RegimeState:
             jnk_tlt_flag=False,
             confidence=0.1,
             timestamp=time.time(),
-            reason="Insufficient SPY data — defensive default",
+            reason=reason,
+            data_hazard=classify_regime_hazard(reason),
         )
 
     spy_price = float(spy.iloc[-1])

@@ -625,3 +625,64 @@ def test_build_scoreboard_regime_gate_comparison(tmp_path):
     ]
     assert comparison["variants"][1]["regime_yellow_frac_min"] == 0.50
     assert comparison["variants"][2]["regime_yellow_frac_min"] == 0.75
+
+
+def test_promotion_meta_collecting():
+    from xsp_killer.lane_a_variants import _promotion_meta
+
+    meta = _promotion_meta(9, 0)
+    assert meta["promotion_status"] == "collecting"
+    assert meta["sessions_to_promotion_gate"] == 11
+    assert meta["promotion_ready"] is False
+
+
+def test_promotion_meta_eligible_review():
+    from xsp_killer.lane_a_variants import _promotion_meta
+
+    meta = _promotion_meta(20, 2)
+    assert meta["promotion_status"] == "eligible_review"
+    assert meta["promotion_ready"] is True
+
+
+def test_build_scoreboard_includes_promotion_summary(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_28dte_atm": {
+                "active": True,
+                "description": "promo test",
+                "overrides": {},
+            }
+        },
+    )
+    state = tmp_path / "variants-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_28dte_atm": {
+                        "entry_log": [
+                            {
+                                "evaluated_at": "2026-06-21T19:45:00+00:00",
+                                "entered": False,
+                            }
+                        ],
+                        "paper_events": [],
+                        "paper_positions": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard.json",
+        ).read_text(encoding="utf-8")
+    )
+    assert payload["promotion_summary"]["sessions_gate"] == 20
+    row = payload["shadow_variants"][0]
+    assert row["promotion_status"] == "collecting"

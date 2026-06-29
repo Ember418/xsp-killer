@@ -6,7 +6,10 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from xsp_killer.lane_a_entry import (
+    EntryDecision,
     EntryRules,
+    _bucket_skip_reason,
+    _finalize_entry,
     already_entered_today,
     in_entry_window,
     open_paper_positions,
@@ -227,3 +230,33 @@ def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
     pos = decision.position
     assert pos["entry_mid_premium"] == 24.5
     assert pos["average_price"] > pos["entry_mid_premium"]
+
+
+def test_bucket_skip_reason_regime():
+    assert _bucket_skip_reason("regime YELLOW blocks new risk") == "regime_gate"
+
+
+def test_entry_telemetry_counts_skips_and_regime(tmp_path):
+    state: dict = {"entry_log": []}
+    decision = EntryDecision(
+        entered=False,
+        evaluated_at="2026-06-26T19:45:00+00:00",
+        logic_version="test",
+        in_window=True,
+        regime="YELLOW",
+        regime_ok=False,
+        prior_day_spy_return_pct=None,
+        prior_day_ok=True,
+        skip_reason="regime YELLOW blocks new risk",
+    )
+    _finalize_entry(
+        state,
+        tmp_path / "state.json",
+        decision,
+        publish_intel=False,
+        brief_path=False,
+        log_path=tmp_path / "paper.jsonl",
+    )
+    tel = state["entry_telemetry"]
+    assert tel["regime_counts"]["YELLOW"] == 1
+    assert tel["skip_reason_counts"]["regime_gate"] == 1

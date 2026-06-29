@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from xsp_killer.paper_economics import SPY_TO_XSP_PREMIUM_SCALE
+from xsp_killer.data_hazards import classify_chain_hazard
+from xsp_killer.paper_economics import dual_notional_from_spy_mid, load_premium_scale
 
 
 @dataclass
@@ -23,6 +24,9 @@ class SpyCallQuote:
     exit_mark_xsp: float | None
     stale: bool = False
     stale_reason: str | None = None
+    hazard_class: str | None = None
+    premium_scale_used: float | None = None
+    mark_xsp_alt_1x: float | None = None
 
 
 def _select_spy_call_row(calls: Any, strike_spy: float) -> Any:
@@ -90,7 +94,19 @@ def fetch_spy_call_quote(
         calls = chain.calls
         if calls is None or calls.empty:
             return SpyCallQuote(
-                None, None, None, None, None, None, None, None, True, "empty_chain"
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                True,
+                "empty_chain",
+                classify_chain_hazard("empty_chain"),
+                None,
+                None,
             )
 
         row = _select_spy_call_row(calls, strike_spy)
@@ -109,11 +125,11 @@ def fetch_spy_call_quote(
             mid = bid
 
         exit_spy = _conservative_exit_mark_spy(bid=bid, ask=ask, last=last, mid=mid)
-        mark_xsp = round(mid * SPY_TO_XSP_PREMIUM_SCALE, 4) if mid is not None else None
+        scale = load_premium_scale()
+        dual = dual_notional_from_spy_mid(mid, scale) if mid is not None else {}
+        mark_xsp = dual.get("mark_xsp_scaled")
         exit_xsp = (
-            round(exit_spy * SPY_TO_XSP_PREMIUM_SCALE, 4)
-            if exit_spy is not None
-            else None
+            round(exit_spy * scale, 4) if exit_spy is not None else None
         )
 
         stale = False
@@ -152,10 +168,26 @@ def fetch_spy_call_quote(
             exit_mark_xsp=exit_xsp,
             stale=stale,
             stale_reason=reason,
+            hazard_class=classify_chain_hazard(reason),
+            premium_scale_used=scale,
+            mark_xsp_alt_1x=dual.get("mark_xsp_alt_1x"),
         )
     except Exception as exc:
+        err = str(exc)
         return SpyCallQuote(
-            None, None, None, None, None, None, None, None, True, str(exc)
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            True,
+            err,
+            classify_chain_hazard(err),
+            None,
+            None,
         )
 
 
