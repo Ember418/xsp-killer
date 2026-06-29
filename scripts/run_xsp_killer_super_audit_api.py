@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PACK = ROOT / "reports/gap-audit/pack-xsp-killer-v3"
-OUT_DIR = ROOT / "reports/gap-audit/premium-xsp-killer-v3"
+DEFAULT_PACK = ROOT / "reports/gap-audit/pack-xsp-killer-v4"
+OUT_DIR = ROOT / "reports/gap-audit/premium-xsp-killer-v4"
 
 
 def _load_env() -> None:
@@ -60,7 +60,7 @@ def _call_openai_compat(
             {
                 "role": "system",
                 "content": (
-                    "XSP Killer super audit v3 — expert options swing strategist, "
+                    "XSP Killer super audit v4 — expert options swing strategist, "
                     "quantitative options math, execution engineer, and Cemini platform architect. "
                     "Phases A–E: harvest, bot audit, variant soak, strategy math, efficiency tuning. "
                     "Follow required output format exactly. Readonly recommendations only."

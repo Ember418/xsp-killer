@@ -16,7 +16,7 @@ from pathlib import Path
 XSP_ROOT = Path(__file__).resolve().parent.parent
 CEMINI = Path("/opt/cemini")
 PROMPT = XSP_ROOT / "prompts" / "xsp_killer_super_audit.md"
-DEFAULT_OUT = XSP_ROOT / "reports" / "gap-audit" / "pack-xsp-killer-v3"
+DEFAULT_OUT = XSP_ROOT / "reports" / "gap-audit" / "pack-xsp-killer-v4"
 
 
 def _read_tail(path: Path, max_chars: int = 12000) -> str:
@@ -136,6 +136,49 @@ def main() -> int:
         ),
         "variants_scoreboard.json": _read_json_pretty(
             XSP_ROOT / "briefs" / "xsp-lane-a-variants-scoreboard.json"
+        ),
+        "entry_telemetry_latest.json": _read_json_pretty(
+            XSP_ROOT / "briefs" / "xsp-lane-a-entry-telemetry-latest.json"
+        ),
+        "health_soak_latest.md": _read_tail(
+            sorted((XSP_ROOT / "logs").glob("health_soak_*.md"))[-1]
+            if list((XSP_ROOT / "logs").glob("health_soak_*.md"))
+            else Path("(none)"),
+            8000,
+        ),
+        "deployment_status.txt": _run_cmd(
+            ["systemctl", "list-timers", "--all", "--no-pager"],
+            timeout=30,
+        )
+        + "\n\n"
+        + _run_cmd(
+            [
+                "systemctl",
+                "is-active",
+                "xsp-killer-lane-a-entry.timer",
+                "xsp-killer-lane-a-monitor.timer",
+                "xsp-killer-lane-a-intraday.timer",
+                "xsp-killer-lane-b-monitor.timer",
+            ],
+            timeout=15,
+        ),
+        "variant_log_yellow_mid_tail.jsonl": _read_tail(
+            XSP_ROOT
+            / "logs"
+            / "xsp_lane_a_variant_v2_yellow_mid_bounce.jsonl",
+            6000,
+        ),
+        "variant_log_yellow_top_tail.jsonl": _read_tail(
+            XSP_ROOT
+            / "logs"
+            / "xsp_lane_a_variant_v2_yellow_top_quartile_bounce.jsonl",
+            6000,
+        ),
+        "prior_audit_postpatch.md": _read_tail(
+            XSP_ROOT
+            / "briefs"
+            / "2026-06-21_xsp-killer-super-audit-synthesis-v3-postpatch.md",
+            12000,
         ),
         "variants_state.json": _read_json_pretty(
             XSP_ROOT / "briefs" / "xsp-lane-a-variants-state.json"
@@ -299,8 +342,9 @@ def main() -> int:
         "- Librarian/OSINT remote wiki **destroyed**; local research_wiki only",
         "- XSP timers: xsp-killer-* on prod; cemini-xsp-lane-* disabled post-cutover",
         "- RH poll off by default; paper log only for Lane A entries",
-        "- **13 variant shadow soak active** — scoreboard + variant logs in artifacts",
-        "- Pre-2026-06-16 14:18 UTC paper logs are **invalid** for PnL conclusions",
+        "- **16 variant shadow soak active** — scoreboard + regime_gate_comparison + variant logs",
+        "- Post-epoch only: pnl_epoch_at in scoreboard; promotion gate ≥20 sessions",
+        "- Jun 2026 upgrades: premium_scale, telemetry, vol shadow, hazard tags",
         "",
     ]
 
@@ -312,6 +356,12 @@ def main() -> int:
         out / "lane_a_rules.yaml",
         out / "lane_a_variants.yaml",
         out / "variants_scoreboard.json",
+        out / "deployment_status.txt",
+        out / "entry_telemetry_latest.json",
+        out / "prior_audit_postpatch.md",
+        out / "xsp_killer_source" / "vol_monitor.py",
+        out / "xsp_killer_source" / "data_hazards.py",
+        out / "xsp_killer_source" / "health_soak.py",
         out / "strategy_diagnosis.md",
         out / "prior_audit_synthesis_v2.md",
         out / "xsp_killer_source" / "lane_a_entry.py",
