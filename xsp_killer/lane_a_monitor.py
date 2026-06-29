@@ -9,7 +9,6 @@ from __future__ import annotations
 import fcntl
 import json
 import logging
-import os
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timezone
 from pathlib import Path
@@ -17,6 +16,17 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 import yaml
+
+from xsp_killer.rh_broker import (
+    fetch_robinhood_option_positions,
+    rh_poll_enabled,  # re-exported for tests and lane_b
+    rh_read_enabled,
+)
+from xsp_killer.robinhood_mcp import (
+    RhMcpError,
+    RobinhoodMCPAdapter,
+    rh_mcp_enabled,
+)
 
 logger = logging.getLogger("xsp_killer.xsp_lane_a")
 
@@ -147,6 +157,7 @@ class MonitorReport:
     errors: list[str] = field(default_factory=list)
     rh_connected: bool = False
     rh_poll_skipped: bool = False
+    rh_mcp_reviews: list[dict[str, Any]] = field(default_factory=list)
     paper_mode: str = "hypothetical"
     paper_mtm_usd: float | None = None
     paper_hypothetical_exits: list[dict[str, Any]] = field(default_factory=list)
@@ -758,49 +769,50 @@ def load_open_paper_positions(state: dict[str, Any]) -> list[dict[str, Any]]:
     return refresh_paper_marks(open_rows)
 
 
-def rh_poll_enabled() -> bool:
-    """Poll Robinhood only when explicitly enabled (no positions → skip auth)."""
-    return os.getenv("XSP_LANE_A_RH_POLL", "false").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
 
-
-def fetch_robinhood_option_positions() -> tuple[list[dict[str, Any]], str | None]:
-    """Return raw RH open option positions via RobinhoodAdapter."""
-    if not rh_poll_enabled():
-        return [], None
-    import asyncio
-
-    user = (
-        os.getenv("RH_USERNAME")
-        or os.getenv("ROBINHOOD_USERNAME")
-        or os.getenv("ROBINHOOD_USER")
-    )
-    pw = (
-        os.getenv("RH_PASSWORD")
-        or os.getenv("ROBINHOOD_PASSWORD")
-        or os.getenv("ROBINHOOD_PASS")
-    )
-    if not user or not pw:
-        return [], "missing RH_USERNAME/RH_PASSWORD"
-    try:
-        import robin_stocks.robinhood as r
-
-        session = r.login(user, pw, store_session=True)
-        if not session:
-            return [], "robinhood login failed — check RH_USERNAME/RH_PASSWORD or MFA"
-
-        from xsp_killer.robinhood import RobinhoodAdapter
-
-        adapter = RobinhoodAdapter(user, pw)
-        rows = asyncio.run(
-            adapter.get_open_option_positions(chain_symbols=("SPX", "XSP"))
-        )
-        return rows, None
-    except Exception as exc:
-        return [], str(exc)
+def dry_run_exit_reviews_via_mcp(
+    alerts: list["ExitAlert"],
+    positions: list["LaneAPosition"],
+) -> list[dict[str, Any]]:
+    """Phase 1: call review_option_order for exit alerts when MCP enabled (no place)."""
+    if not rh_mcp_enabled() or not alerts:
+        return []
+    pos_by_id = {p.position_id: p for p in positions}
+    adapter = RobinhoodMCPAdapter()
+    reviews: list[dict[str, Any]] = []
+    for alert in alerts:
+        pos = pos_by_id.get(alert.position_id)
+        if pos is None:
+            continue
+        order = {
+            "side": "sell",
+            "position_effect": "close",
+            "quantity": pos.quantity,
+            "option_id": pos.position_id,
+            "chain_symbol": pos.chain_symbol,
+            "strike_price": pos.strike,
+            "expiration_date": pos.expiration_date.isoformat() if pos.expiration_date else None,
+            "type": pos.option_type,
+            "exit_reason": alert.exit_reason,
+        }
+        try:
+            result = adapter.review_option_order(order)
+            reviews.append(
+                {
+                    "position_id": alert.position_id,
+                    "exit_reason": alert.exit_reason,
+                    "review": result,
+                }
+            )
+        except (RhMcpError, Exception) as exc:
+            reviews.append(
+                {
+                    "position_id": alert.position_id,
+                    "exit_reason": alert.exit_reason,
+                    "error": str(exc),
+                }
+            )
+    return reviews
 
 
 def append_paper_pnl_log(
@@ -950,7 +962,7 @@ def run_monitor(
     if positions_override is not None:
         raw_positions = positions_override
         report.rh_connected = True
-    elif not rh_poll_enabled():
+    elif not rh_read_enabled():
         raw_positions = []
         report.rh_poll_skipped = True
         paper_raw = load_open_paper_positions(state)
@@ -996,6 +1008,7 @@ def run_monitor(
         )
 
     report.alerts = [a.to_dict() for a in all_alerts]
+    report.rh_mcp_reviews = dry_run_exit_reviews_via_mcp(all_alerts, classified)
 
     paper_positions_active = (
         bool(state.get("paper_positions")) and report.rh_poll_skipped

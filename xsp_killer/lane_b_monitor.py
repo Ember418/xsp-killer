@@ -14,6 +14,7 @@ from typing import Any
 
 import yaml
 
+from xsp_killer.rh_broker import rh_read_enabled
 from xsp_killer.lane_a_monitor import (
     compute_dte,
     fetch_robinhood_option_positions,
@@ -389,7 +390,7 @@ def run_monitor(
     if positions_override is not None:
         raw_positions = positions_override
         report.rh_connected = True
-    elif not rh_poll_enabled():
+    elif not rh_read_enabled():
         raw_positions = []
         report.rh_poll_skipped = True
     else:

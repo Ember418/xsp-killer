@@ -7,6 +7,8 @@ Type=oneshot
 WorkingDirectory=/opt/xsp-killer
 Environment=PYTHONPATH=/opt/xsp-killer
 Environment=XSP_LANE_A_RH_POLL=false
+Environment=XSP_LANE_A_RH_MCP=false
+Environment=XSP_LANE_A_LIVE_EXITS=false
 Environment=XSP_LANE_A_PAPER_ENTRY=true
 EnvironmentFile=-/opt/xsp-killer/.env
 ExecStart=/opt/xsp-killer/scripts/lane_a_intraday_cron.sh

@@ -62,7 +62,10 @@ sudo systemctl disable --now cemini-xsp-lane-a-intraday.timer \
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `XSP_LANE_A_PAPER_ENTRY` | `true` | Automated paper entries |
-| `XSP_LANE_A_RH_POLL` | `false` | Poll Robinhood for live positions |
+| `XSP_LANE_A_RH_POLL` | `false` | Legacy `robin_stocks` position poll |
+| `XSP_LANE_A_RH_MCP` | `false` | Official Agentic Trading MCP reads |
+| `XSP_LANE_A_LIVE_EXITS` | `false` | Kill switch for MCP `place_option_order` |
+| `RH_AGENTIC_ACCOUNT_ID` | — | Pinned Agentic account for writes |
 | `XSP_KILLER_INTEL_DISABLED` | `false` | Skip Redis intel publish |
 | `REDIS_HOST` | `127.0.0.1` | Optional Cemini intel bus |
 
@@ -72,4 +75,4 @@ sudo systemctl disable --now cemini-xsp-lane-a-intraday.timer \
 - **Exit:** pump rejects upper Bollinger Band; max loss; morning cut (suppressed when DTE ≥ 30)
 - **Close window:** 3:45–4:00 PM ET still required for close-window entries
 
-See `docs/lane-a-brief.md` and `docs/lane-b-brief.md`.
+See `docs/lane-a-brief.md`, `docs/lane-b-brief.md`, and `docs/rh_mcp_runbook.md` (Agentic MCP — ready, not connected in paper mode).
