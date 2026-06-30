@@ -80,7 +80,5 @@ def entry_allowed_by_risk(state: dict[str, Any]) -> tuple[bool, str | None]:
     max_losses = _max_consecutive_losses()
     streak = consecutive_losing_paper_exits(state)
     if streak >= max_losses:
-        return False, (
-            f"consecutive paper losses halt ({streak} >= {max_losses})"
-        )
+        return False, (f"consecutive paper losses halt ({streak} >= {max_losses})")
     return True, None

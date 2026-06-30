@@ -96,9 +96,8 @@ class RhMcpConfig:
         token_raw = str(data.get("token_path") or ".local/robinhood_mcp_token.json")
         audit_raw = str(data.get("audit_log") or "logs/rh_mcp_audit.jsonl")
         symbols = data.get("allowed_chain_symbols") or ["XSP", "SPX"]
-        account = (
-            os.getenv("RH_AGENTIC_ACCOUNT_ID", "").strip()
-            or str(data.get("agentic_account_id") or "")
+        account = os.getenv("RH_AGENTIC_ACCOUNT_ID", "").strip() or str(
+            data.get("agentic_account_id") or ""
         )
         return cls(
             agentic_account_id=account,
@@ -130,9 +129,7 @@ def live_exits_enabled(*, config: RhMcpConfig | None = None) -> bool:
     if not flag:
         return False
     cfg = config or RhMcpConfig.load()
-    account = (
-        os.getenv("RH_AGENTIC_ACCOUNT_ID", "").strip() or cfg.agentic_account_id
-    )
+    account = os.getenv("RH_AGENTIC_ACCOUNT_ID", "").strip() or cfg.agentic_account_id
     return bool(account)
 
 
@@ -180,9 +177,7 @@ def normalize_mcp_position(row: dict[str, Any]) -> dict[str, Any]:
     exp = row.get("expiration_date") or row.get("expiration")
     qty = row.get("quantity") or row.get("qty") or row.get("contracts")
     avg = (
-        row.get("average_price")
-        or row.get("average_open_price")
-        or row.get("avg_cost")
+        row.get("average_price") or row.get("average_open_price") or row.get("avg_cost")
     )
     mark = row.get("mark_price") or row.get("adjusted_mark_price") or row.get("mark")
     oid = row.get("option_id") or row.get("id") or row.get("instrument_id")
