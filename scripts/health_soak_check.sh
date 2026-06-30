@@ -156,6 +156,16 @@ if isinstance(summary, dict):
         "- Regime-gate comparison variant count: "
         f"`{summary['regime_gate_comparison_variant_count']}`"
     )
+    md.append(
+        f"- Vol shadow latest SPY RV: `{summary.get('vol_shadow_latest_spy_rv')}`"
+    )
+    md.append(
+        f"- Vol shadow avg SPY RV: `{summary.get('vol_shadow_avg_spy_rv')}`"
+    )
+    axis = summary.get("regime_axis_summary") or {}
+    md.append(
+        f"- Regime axis counter divergence: `{axis.get('has_counter_divergence')}`"
+    )
 else:
     md.append("- Scoreboard summary: `unavailable`")
 md.append(
@@ -183,6 +193,26 @@ if isinstance(summary, dict):
         "- Baseline zero sessions after 5+ days: "
         f"`{summary['baseline_zero_sessions_after_grace']}`"
     )
+    axis = summary.get("regime_axis_summary") or {}
+    variants = axis.get("variants") or []
+    if variants:
+        md.append("")
+        md.append("### Regime axis counters (v4 brief — not PnL)")
+        for row in variants:
+            vid = row.get("variant_id")
+            counters = row.get("counters") or {}
+            md.append(f"- `{vid}`:")
+            md.append(
+                f"  sessions={counters.get('sessions_evaluated')} "
+                f"entered={counters.get('entered_sessions')} "
+                f"regime_skips={counters.get('regime_gate_skip_sessions')} "
+                f"bb_bounce={counters.get('bb_bounce_signal_sessions')} "
+                f"bb_blocked={counters.get('bb_bounce_blocked_by_regime_sessions')} "
+                f"vol_shadow_blocks={counters.get('vol_shadow_would_block_sessions')}"
+            )
+            diff = row.get("diff_vs_baseline")
+            if diff:
+                md.append(f"  diff_vs_baseline: `{json.dumps(diff)}`")
 if isinstance(payload, dict) and isinstance(payload.get("baseline_prod"), dict):
     md.append(
         "- Baseline variant id: "

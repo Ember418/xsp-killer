@@ -111,8 +111,9 @@ Local `research_wiki/` has SPY entity, Greeks sources, playbook research, Kalshi
 |---|---|
 | **P0** | Keep soak running — tonight's Mon close is first post-`19e9200` eval with vol_shadow + premium_scale in logs |
 | **P0** | Do not live flip — RH adapter + risk stack |
-| **P1** | After 5 more sessions, compare regime axis counters (not PnL) |
-| **P1** | Rebuild local `xsp-*` wiki concepts |
+| ~~**P1**~~ | ~~After 5 more sessions, compare regime axis counters~~ | ✅ health_soak `regime_axis_summary` |
+| ~~**P1**~~ | ~~Rebuild local `xsp-*` wiki concepts~~ | ✅ `a34c6fa` |
+| ~~**P1**~~ | Lane B separate `XSP_LANE_B_RH_POLL` | ✅ rh_broker |
 | **P2** | Consider shadow vol gate promotion only after trade sample exists |
 
 ---

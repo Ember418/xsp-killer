@@ -22,7 +22,6 @@ from xsp_killer.lane_a_monitor import (
     load_state,
     parse_expiration,
     read_regime,
-    rh_poll_enabled,
     save_state,
 )
 
@@ -390,11 +389,11 @@ def run_monitor(
     if positions_override is not None:
         raw_positions = positions_override
         report.rh_connected = True
-    elif not rh_read_enabled():
+    elif not rh_read_enabled(lane="b"):
         raw_positions = []
         report.rh_poll_skipped = True
     else:
-        raw_positions, err = fetch_robinhood_option_positions()
+        raw_positions, err = fetch_robinhood_option_positions(lane="b")
         if err:
             report.errors.append(err)
         else:

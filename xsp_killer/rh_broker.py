@@ -8,8 +8,12 @@ from typing import Any
 from xsp_killer.robinhood_mcp import fetch_option_positions_via_mcp, rh_mcp_enabled
 
 
-def rh_poll_enabled() -> bool:
-    """Legacy robin_stocks poll — explicit opt-in."""
+def rh_poll_enabled(*, lane: str = "a") -> bool:
+    """Legacy robin_stocks poll — explicit opt-in (Lane B has separate env)."""
+    if lane == "b":
+        b_raw = os.getenv("XSP_LANE_B_RH_POLL")
+        if b_raw is not None and str(b_raw).strip() != "":
+            return str(b_raw).strip().lower() in ("1", "true", "yes")
     return os.getenv("XSP_LANE_A_RH_POLL", "false").strip().lower() in (
         "1",
         "true",
@@ -17,16 +21,18 @@ def rh_poll_enabled() -> bool:
     )
 
 
-def rh_read_enabled() -> bool:
+def rh_read_enabled(*, lane: str = "a") -> bool:
     """Any Robinhood read path enabled (MCP preferred over legacy)."""
-    return rh_mcp_enabled() or rh_poll_enabled()
+    return rh_mcp_enabled() or rh_poll_enabled(lane=lane)
 
 
-def fetch_robinhood_option_positions() -> tuple[list[dict[str, Any]], str | None]:
+def fetch_robinhood_option_positions(
+    *, lane: str = "a"
+) -> tuple[list[dict[str, Any]], str | None]:
     """Return open XSP/SPX option positions via MCP or robin_stocks."""
     if rh_mcp_enabled():
         return fetch_option_positions_via_mcp()
-    if not rh_poll_enabled():
+    if not rh_poll_enabled(lane=lane):
         return [], None
     return _fetch_via_robin_stocks()
 

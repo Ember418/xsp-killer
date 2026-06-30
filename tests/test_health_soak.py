@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from xsp_killer.health_soak import (
     baseline_zero_sessions_after_grace,
     detect_strict_anomalies,
+    regime_axis_comparison_summary,
     scoreboard_report_metrics,
 )
 
@@ -25,13 +26,51 @@ def _scoreboard_payload(
         "baseline_prod": {
             "variant_id": "v2_baseline_prod",
             "sessions_evaluated": baseline_sessions_evaluated,
+            "vol_shadow_latest_spy_rv": 0.1761,
+            "vol_shadow_avg_spy_rv": 0.1763,
+            "regime_gate_skip_sessions": 12,
+            "bb_bounce_signal_sessions": 0,
         },
         "regime_gate_comparison": {
+            "baseline_variant_id": "v2_baseline_prod",
             "variants": [
-                {"variant_id": "v2_baseline_prod"},
-                {"variant_id": "v2_yellow_mid_bounce"},
-                {"variant_id": "v2_yellow_top_quartile_bounce"},
-            ]
+                {
+                    "variant_id": "v2_baseline_prod",
+                    "regime_gate": "GREEN",
+                    "sessions_evaluated": 18,
+                    "entered_sessions": 0,
+                    "regime_gate_skip_sessions": 12,
+                    "bb_bounce_signal_sessions": 0,
+                    "bb_bounce_blocked_by_regime_sessions": 0,
+                    "vol_shadow_would_block_sessions": 0,
+                    "vol_shadow_latest_spy_rv": 0.1761,
+                    "vol_shadow_avg_spy_rv": 0.1763,
+                },
+                {
+                    "variant_id": "v2_yellow_mid_bounce",
+                    "regime_gate": "GREEN_OR_YELLOW_BOUNCE",
+                    "regime_yellow_frac_min": 0.5,
+                    "sessions_evaluated": 9,
+                    "entered_sessions": 0,
+                    "regime_gate_skip_sessions": 0,
+                    "bb_bounce_signal_sessions": 0,
+                    "bb_bounce_blocked_by_regime_sessions": 0,
+                    "vol_shadow_would_block_sessions": 0,
+                    "vol_shadow_latest_spy_rv": 0.1759,
+                    "vol_shadow_avg_spy_rv": 0.1763,
+                },
+                {
+                    "variant_id": "v2_yellow_top_quartile_bounce",
+                    "regime_gate": "GREEN_OR_YELLOW_BOUNCE",
+                    "regime_yellow_frac_min": 0.75,
+                    "sessions_evaluated": 9,
+                    "entered_sessions": 0,
+                    "regime_gate_skip_sessions": 0,
+                    "bb_bounce_signal_sessions": 0,
+                    "bb_bounce_blocked_by_regime_sessions": 0,
+                    "vol_shadow_would_block_sessions": 0,
+                },
+            ],
         },
     }
 
@@ -75,3 +114,25 @@ def test_detect_strict_anomalies_includes_pytest_failures():
     anomalies = detect_strict_anomalies(payload, pytest_failed=True)
 
     assert anomalies == ["pytest_failed"]
+
+
+def test_regime_axis_comparison_summary_flags_session_divergence():
+    payload = _scoreboard_payload()
+
+    axis = regime_axis_comparison_summary(payload)
+
+    assert axis["has_counter_divergence"] is True
+    mid = next(v for v in axis["variants"] if v["variant_id"] == "v2_yellow_mid_bounce")
+    assert mid["diff_vs_baseline"]["sessions_evaluated"] == {
+        "baseline": 18,
+        "variant": 9,
+    }
+
+
+def test_scoreboard_report_metrics_includes_vol_shadow_and_regime_axis():
+    payload = _scoreboard_payload(baseline_sessions_evaluated=18)
+
+    metrics = scoreboard_report_metrics(payload)
+
+    assert metrics["vol_shadow_latest_spy_rv"] == 0.1761
+    assert metrics["regime_axis_summary"]["has_counter_divergence"] is True

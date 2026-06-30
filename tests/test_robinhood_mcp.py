@@ -19,6 +19,27 @@ from xsp_killer.robinhood_mcp import (
 )
 
 
+def test_rh_b_poll_separate_from_lane_a(monkeypatch):
+    monkeypatch.delenv("XSP_LANE_A_RH_POLL", raising=False)
+    monkeypatch.delenv("XSP_LANE_B_RH_POLL", raising=False)
+    monkeypatch.delenv("XSP_LANE_A_RH_MCP", raising=False)
+
+    from xsp_killer.rh_broker import rh_poll_enabled, rh_read_enabled
+
+    assert rh_poll_enabled(lane="a") is False
+    assert rh_poll_enabled(lane="b") is False
+    assert rh_read_enabled(lane="b") is False
+
+    monkeypatch.setenv("XSP_LANE_A_RH_POLL", "true")
+    assert rh_poll_enabled(lane="a") is True
+    assert rh_poll_enabled(lane="b") is True  # back-compat fallback
+
+    monkeypatch.setenv("XSP_LANE_A_RH_POLL", "false")
+    monkeypatch.setenv("XSP_LANE_B_RH_POLL", "true")
+    assert rh_poll_enabled(lane="a") is False
+    assert rh_poll_enabled(lane="b") is True
+
+
 def test_rh_mcp_disabled_by_default(monkeypatch):
     monkeypatch.delenv("XSP_LANE_A_RH_MCP", raising=False)
     assert rh_mcp_enabled() is False

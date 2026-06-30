@@ -9,6 +9,7 @@ Environment=PYTHONPATH=/opt/xsp-killer
 Environment=XSP_LANE_A_RH_POLL=false
 Environment=XSP_LANE_A_RH_MCP=false
 Environment=XSP_LANE_A_LIVE_EXITS=false
+Environment=XSP_LANE_B_RH_POLL=false
 EnvironmentFile=-/opt/xsp-killer/.env
 ExecStart=/opt/xsp-killer/scripts/lane_b_monitor_cron.sh
 StandardOutput=journal
