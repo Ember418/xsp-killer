@@ -166,6 +166,16 @@ if isinstance(summary, dict):
     md.append(
         f"- Regime axis counter divergence: `{axis.get('has_counter_divergence')}`"
     )
+    promo = summary.get("promotion_proximity") or {}
+    md.append(
+        f"- Baseline sessions to promotion gate: `{promo.get('baseline_sessions_to_gate')}`"
+    )
+    md.append(f"- Baseline near gate (≤2 left): `{promo.get('baseline_near_gate')}`")
+    if promo.get("variants_near_promotion_gate"):
+        md.append(
+            "- Variants near promotion gate: "
+            f"`{', '.join(promo['variants_near_promotion_gate'])}`"
+        )
 else:
     md.append("- Scoreboard summary: `unavailable`")
 md.append(

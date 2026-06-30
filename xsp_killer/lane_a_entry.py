@@ -439,7 +439,15 @@ def _bucket_skip_reason(reason: str | None) -> str:
         return "disabled"
     if reason.startswith("XSP_LANE_A"):
         return "env_disabled"
-    if reason.lower().startswith("conductor") or "risk" in reason.lower():
+    if reason.lower().startswith("conductor_shadow"):
+        return "conductor_shadow"
+    if reason.lower().startswith("conductor"):
+        return "conductor_shadow"
+    if "daily paper loss cap" in reason.lower():
+        return "risk_gate"
+    if "consecutive paper losses" in reason.lower():
+        return "risk_gate"
+    if "risk" in reason.lower():
         return "risk_gate"
     if "stale" in reason.lower() or reason.startswith("TA"):
         return "ta_gate"

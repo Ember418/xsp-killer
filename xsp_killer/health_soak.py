@@ -92,6 +92,42 @@ def regime_axis_comparison_summary(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def promotion_proximity_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    """Surface v4 brief promotion gate progress (informational only)."""
+    promo = payload.get("promotion_summary")
+    if not isinstance(promo, dict):
+        promo = {}
+    baseline = payload.get("baseline_prod")
+    baseline_row = baseline if isinstance(baseline, dict) else {}
+    shadow_rows = payload.get("shadow_variants")
+    near_gate: list[str] = []
+    if isinstance(shadow_rows, list):
+        for row in shadow_rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                remaining = int(row.get("sessions_to_promotion_gate") or 0)
+            except (TypeError, ValueError):
+                remaining = 999
+            if remaining <= 2:
+                vid = row.get("variant_id")
+                if vid:
+                    near_gate.append(str(vid))
+    baseline_remaining = baseline_row.get("sessions_to_promotion_gate")
+    try:
+        baseline_to_gate = int(baseline_remaining)
+    except (TypeError, ValueError):
+        baseline_to_gate = None
+    return {
+        "sessions_gate": promo.get("sessions_gate", 20),
+        "baseline_sessions_to_gate": baseline_to_gate,
+        "baseline_near_gate": baseline_to_gate is not None and baseline_to_gate <= 2,
+        "variants_near_promotion_gate": near_gate,
+        "variants_collecting": promo.get("variants_collecting"),
+        "variants_eligible_review": promo.get("variants_eligible_review") or [],
+    }
+
+
 def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
     baseline = payload.get("baseline_prod")
     baseline_sessions = None
@@ -110,6 +146,7 @@ def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
             comparison_variants = [row for row in raw_variants if isinstance(row, dict)]
 
     regime_axis = regime_axis_comparison_summary(payload)
+    promotion = promotion_proximity_summary(payload)
     baseline_zero_sessions = baseline_zero_sessions_after_grace(payload)
     anomalies: list[str] = []
     if payload.get("stale"):
@@ -125,6 +162,7 @@ def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
         "baseline_sessions_evaluated": baseline_sessions,
         "regime_gate_comparison_variant_count": len(comparison_variants),
         "regime_axis_summary": regime_axis,
+        "promotion_proximity": promotion,
         "vol_shadow_latest_spy_rv": vol_shadow_latest_spy_rv,
         "vol_shadow_avg_spy_rv": vol_shadow_avg_spy_rv,
         "baseline_zero_sessions_after_grace": baseline_zero_sessions,

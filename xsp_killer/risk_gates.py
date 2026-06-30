@@ -21,6 +21,33 @@ def _daily_loss_cap_usd() -> float:
         return 500.0
 
 
+def _max_consecutive_losses() -> int:
+    raw = os.getenv("XSP_LANE_A_MAX_CONSECUTIVE_LOSSES", "3")
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return 3
+
+
+def consecutive_losing_paper_exits(state: dict[str, Any]) -> int:
+    """Count trailing consecutive losing paper exits (K79 blow-up flag)."""
+    streak = 0
+    events = [e for e in (state.get("paper_events") or []) if isinstance(e, dict)]
+    for evt in reversed(events):
+        raw_pnl = evt.get("paper_pnl_usd")
+        if raw_pnl is None:
+            continue
+        try:
+            pnl = float(raw_pnl)
+        except (TypeError, ValueError):
+            continue
+        if pnl < 0:
+            streak += 1
+        elif pnl > 0:
+            break
+    return streak
+
+
 def realized_pnl_today(state: dict[str, Any], *, day: date | None = None) -> float:
     target = day or datetime.now(ET).date()
     total = 0.0
@@ -50,4 +77,10 @@ def entry_allowed_by_risk(state: dict[str, Any]) -> tuple[bool, str | None]:
     pnl = realized_pnl_today(state)
     if pnl <= -cap:
         return False, f"daily paper loss cap hit ({pnl:.2f} <= -{cap:.0f})"
+    max_losses = _max_consecutive_losses()
+    streak = consecutive_losing_paper_exits(state)
+    if streak >= max_losses:
+        return False, (
+            f"consecutive paper losses halt ({streak} >= {max_losses})"
+        )
     return True, None

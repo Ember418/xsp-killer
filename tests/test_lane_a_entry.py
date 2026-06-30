@@ -239,6 +239,20 @@ def test_bucket_skip_reason_regime():
     assert _bucket_skip_reason("regime YELLOW blocks new risk") == "regime_gate"
 
 
+def test_bucket_skip_reason_conductor_shadow():
+    assert (
+        _bucket_skip_reason("conductor_shadow: macro regime RED")
+        == "conductor_shadow"
+    )
+
+
+def test_bucket_skip_reason_consecutive_losses_risk_gate():
+    assert (
+        _bucket_skip_reason("consecutive paper losses halt (3 >= 3)")
+        == "risk_gate"
+    )
+
+
 def test_entry_telemetry_counts_skips_and_regime(tmp_path):
     state: dict = {"entry_log": []}
     decision = EntryDecision(

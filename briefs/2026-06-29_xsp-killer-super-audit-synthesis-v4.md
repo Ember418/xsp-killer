@@ -90,7 +90,7 @@ When YELLOW + BB bounce eventually align, **0.50 should enter more often than 0.
 
 Local `research_wiki/` has SPY entity, Greeks sources, playbook research, Kalshi BB baseline — **no dedicated `@wiki/concepts/xsp-*` pages** (librarian destroyed). Auditors unanimous: rebuild XSP liquidity/strike-notation reference before live flip.
 
-**Cemini steal list (unchanged P0 trio):** RH adapter, conductor reviewer, kill switch / daily loss cap.
+**Cemini steal list (paper partial):** RH MCP Phase 0 ✅; conductor_shadow stub ✅; daily loss cap + consecutive-loss halt ✅; full RH execution still FAIL.
 
 ---
 

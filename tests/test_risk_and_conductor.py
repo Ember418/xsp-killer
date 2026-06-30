@@ -73,3 +73,32 @@ def test_daily_loss_cap_allows_when_under(monkeypatch):
     ok, reason = entry_allowed_by_risk(state)
     assert ok is True
     assert reason is None
+
+
+def test_consecutive_losses_halt_entry(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_MAX_CONSECUTIVE_LOSSES", "3")
+    state = {
+        "paper_events": [
+            {"paper_pnl_usd": -10.0},
+            {"paper_pnl_usd": -20.0},
+            {"paper_pnl_usd": -5.0},
+        ]
+    }
+    ok, reason = entry_allowed_by_risk(state)
+    assert ok is False
+    assert "consecutive paper losses" in (reason or "")
+
+
+def test_consecutive_losses_reset_after_win(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_MAX_CONSECUTIVE_LOSSES", "3")
+    state = {
+        "paper_events": [
+            {"paper_pnl_usd": -10.0},
+            {"paper_pnl_usd": 5.0},
+            {"paper_pnl_usd": -20.0},
+            {"paper_pnl_usd": -5.0},
+        ]
+    }
+    ok, reason = entry_allowed_by_risk(state)
+    assert ok is True
+    assert reason is None

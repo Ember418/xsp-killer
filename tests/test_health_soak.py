@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from xsp_killer.health_soak import (
     baseline_zero_sessions_after_grace,
     detect_strict_anomalies,
+    promotion_proximity_summary,
     regime_axis_comparison_summary,
     scoreboard_report_metrics,
 )
@@ -26,6 +27,7 @@ def _scoreboard_payload(
         "baseline_prod": {
             "variant_id": "v2_baseline_prod",
             "sessions_evaluated": baseline_sessions_evaluated,
+            "sessions_to_promotion_gate": max(0, 20 - baseline_sessions_evaluated),
             "vol_shadow_latest_spy_rv": 0.1761,
             "vol_shadow_avg_spy_rv": 0.1763,
             "regime_gate_skip_sessions": 12,
@@ -71,6 +73,11 @@ def _scoreboard_payload(
                     "vol_shadow_would_block_sessions": 0,
                 },
             ],
+        },
+        "promotion_summary": {
+            "sessions_gate": 20,
+            "variants_collecting": 16,
+            "variants_eligible_review": [],
         },
     }
 
@@ -136,3 +143,20 @@ def test_scoreboard_report_metrics_includes_vol_shadow_and_regime_axis():
 
     assert metrics["vol_shadow_latest_spy_rv"] == 0.1761
     assert metrics["regime_axis_summary"]["has_counter_divergence"] is True
+    assert metrics["promotion_proximity"]["baseline_near_gate"] is True
+
+
+def test_promotion_proximity_summary_near_gate():
+    payload = _scoreboard_payload(baseline_sessions_evaluated=18)
+    payload["shadow_variants"] = [
+        {
+            "variant_id": "v2_28dte_atm",
+            "sessions_to_promotion_gate": 2,
+        }
+    ]
+
+    promo = promotion_proximity_summary(payload)
+
+    assert promo["baseline_sessions_to_gate"] == 2
+    assert promo["baseline_near_gate"] is True
+    assert promo["variants_near_promotion_gate"] == ["v2_28dte_atm"]
