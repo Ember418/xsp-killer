@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -11,7 +10,6 @@ from xsp_killer.rh_broker import fetch_robinhood_option_positions, rh_read_enabl
 from xsp_killer.robinhood_mcp import (
     RhMcpConfig,
     RhMcpLiveExitsDisabled,
-    RhMcpNotReady,
     RobinhoodMCPAdapter,
     live_exits_enabled,
     normalize_mcp_position,
@@ -128,7 +126,9 @@ def test_adapter_get_positions_mocked(tmp_path):
 def test_place_order_blocked_when_live_exits_off(tmp_path):
     token = tmp_path / "token.json"
     token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
-    cfg = RhMcpConfig(token_path=token, agentic_account_id="agentic-1", live_exits=False)
+    cfg = RhMcpConfig(
+        token_path=token, agentic_account_id="agentic-1", live_exits=False
+    )
 
     def fake_http(url, body, headers):
         return {"result": {"structuredContent": {"ok": True}}}

@@ -76,7 +76,9 @@ def rh_mcp_enabled() -> bool:
 class RhMcpConfig:
     agentic_account_id: str = ""
     mcp_url: str = "https://agent.robinhood.com/mcp/trading"
-    token_path: Path = field(default_factory=lambda: ROOT / ".local/robinhood_mcp_token.json")
+    token_path: Path = field(
+        default_factory=lambda: ROOT / ".local/robinhood_mcp_token.json"
+    )
     allowed_chain_symbols: tuple[str, ...] = ("XSP", "SPX")
     live_exits: bool = False
     max_contracts_per_order: int = 1
@@ -143,7 +145,9 @@ def _load_token(token_path: Path) -> dict[str, Any]:
     try:
         data = json.loads(token_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
-        raise RhMcpNotReady(f"rh_mcp: invalid token JSON at {token_path}: {exc}") from exc
+        raise RhMcpNotReady(
+            f"rh_mcp: invalid token JSON at {token_path}: {exc}"
+        ) from exc
     if not isinstance(data, dict):
         raise RhMcpNotReady(f"rh_mcp: token file must be a JSON object: {token_path}")
     return data
@@ -324,7 +328,8 @@ class RobinhoodMCPAdapter:
         if name == "place_option_order":
             if not live_exits_enabled(config=self.config):
                 raise RhMcpLiveExitsDisabled(
-                    "rh_mcp: place_option_order blocked — set XSP_LANE_A_LIVE_EXITS=true "
+                    "rh_mcp: place_option_order blocked — "
+                    "set XSP_LANE_A_LIVE_EXITS=true "
                     "and RH_AGENTIC_ACCOUNT_ID after operator GO"
                 )
             qty = args.get("quantity") or args.get("contracts") or 1
@@ -363,7 +368,9 @@ class RobinhoodMCPAdapter:
                 rows = list(rows.values())
         else:
             rows = []
-        allowed = {s.upper() for s in chain_symbols or self.config.allowed_chain_symbols}
+        allowed = {
+            s.upper() for s in chain_symbols or self.config.allowed_chain_symbols
+        }
         out: list[dict[str, Any]] = []
         for row in rows:
             if not isinstance(row, dict):

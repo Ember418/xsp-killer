@@ -34,8 +34,24 @@ jobs:
 
       - name: Ruff
         run: |
-          ruff check xsp_killer/health_soak.py tests/test_health_soak.py
-          ruff format --check xsp_killer/health_soak.py tests/test_health_soak.py
+          ruff check \
+            xsp_killer/health_soak.py \
+            xsp_killer/risk_gates.py \
+            xsp_killer/rh_broker.py \
+            xsp_killer/robinhood_mcp.py \
+            tests/test_health_soak.py \
+            tests/test_risk_and_conductor.py \
+            tests/test_robinhood_mcp.py
+          ruff format --check \
+            xsp_killer/health_soak.py \
+            xsp_killer/risk_gates.py \
+            xsp_killer/rh_broker.py \
+            xsp_killer/robinhood_mcp.py \
+            tests/test_health_soak.py \
+            tests/test_risk_and_conductor.py \
+            tests/test_robinhood_mcp.py
 
       - name: Run tests
-        run: pytest -q
+        run: python3 -m pytest tests/ -q
+        env:
+          XSP_KILLER_TEST_ISOLATION: "1"
