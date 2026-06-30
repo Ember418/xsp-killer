@@ -41,7 +41,11 @@ def regime_axis_comparison_summary(payload: dict[str, Any]) -> dict[str, Any]:
     """Counter-only comparison for regime-gate experiment (v4 brief P1)."""
     comparison = payload.get("regime_gate_comparison")
     if not isinstance(comparison, dict):
-        return {"baseline_variant_id": None, "variants": [], "has_counter_divergence": False}
+        return {
+            "baseline_variant_id": None,
+            "variants": [],
+            "has_counter_divergence": False,
+        }
 
     baseline_id = str(comparison.get("baseline_variant_id") or "v2_baseline_prod")
     raw_variants = comparison.get("variants")
