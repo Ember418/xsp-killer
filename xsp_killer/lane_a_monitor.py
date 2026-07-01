@@ -20,6 +20,7 @@ import yaml
 from xsp_killer.paper_economics import load_premium_scale
 from xsp_killer.rh_broker import (
     fetch_robinhood_option_positions,
+    rh_poll_enabled,  # re-exported for tests and lane_b
     rh_read_enabled,
 )
 from xsp_killer.robinhood_mcp import (
