@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import xsp_killer.lane_a_entry as lane_a_entry
-
+from xsp_killer.lane_a_ta import TaSignal
 from xsp_killer.lane_a_variants import (
     VariantSpec,
     build_scoreboard,
@@ -16,7 +16,6 @@ from xsp_killer.lane_a_variants import (
     reset_soak,
     run_variant_entry,
 )
-from xsp_killer.lane_a_ta import TaSignal
 
 
 def _write_variants_config(tmp_path, variants: dict[str, dict]) -> None:
@@ -688,16 +687,35 @@ def test_build_scoreboard_vol_shadow_stats(tmp_path):
 def test_promotion_meta_collecting():
     from xsp_killer.lane_a_variants import _promotion_meta
 
-    meta = _promotion_meta(9, 0)
+    meta = _promotion_meta(9, 0, 0)
     assert meta["promotion_status"] == "collecting"
     assert meta["sessions_to_promotion_gate"] == 11
+    assert meta["entered_sessions_to_promotion_gate"] == 10
+    assert meta["promotion_ready"] is False
+
+
+def test_promotion_meta_insufficient_enters():
+    from xsp_killer.lane_a_variants import _promotion_meta
+
+    meta = _promotion_meta(21, 0, 1)
+    assert meta["promotion_status"] == "insufficient_enters"
+    assert meta["sessions_to_promotion_gate"] == 0
+    assert meta["entered_sessions_to_promotion_gate"] == 9
+    assert meta["promotion_ready"] is False
+
+
+def test_promotion_meta_sessions_met_no_trades():
+    from xsp_killer.lane_a_variants import _promotion_meta
+
+    meta = _promotion_meta(20, 0, 10)
+    assert meta["promotion_status"] == "sessions_met_no_trades"
     assert meta["promotion_ready"] is False
 
 
 def test_promotion_meta_eligible_review():
     from xsp_killer.lane_a_variants import _promotion_meta
 
-    meta = _promotion_meta(20, 2)
+    meta = _promotion_meta(20, 2, 10)
     assert meta["promotion_status"] == "eligible_review"
     assert meta["promotion_ready"] is True
 
@@ -742,5 +760,8 @@ def test_build_scoreboard_includes_promotion_summary(tmp_path):
         ).read_text(encoding="utf-8")
     )
     assert payload["promotion_summary"]["sessions_gate"] == 20
+    assert payload["promotion_summary"]["entered_sessions_gate"] == 10
     row = payload["shadow_variants"][0]
     assert row["promotion_status"] == "collecting"
+    assert "regime_skip_breakdown" in payload
+    assert "v2_28dte_atm" in payload["regime_skip_breakdown"]["variants"]

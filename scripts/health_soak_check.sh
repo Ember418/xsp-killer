@@ -170,7 +170,13 @@ if isinstance(summary, dict):
     md.append(
         f"- Baseline sessions to promotion gate: `{promo.get('baseline_sessions_to_gate')}`"
     )
+    md.append(
+        f"- Baseline entered sessions to gate: `{promo.get('baseline_entered_sessions_to_gate')}`"
+    )
     md.append(f"- Baseline near gate (≤2 left): `{promo.get('baseline_near_gate')}`")
+    md.append(
+        f"- Baseline near entered gate (≤2 left): `{promo.get('baseline_near_entered_gate')}`"
+    )
     if promo.get("variants_near_promotion_gate"):
         md.append(
             "- Variants near promotion gate: "
@@ -202,6 +208,13 @@ if isinstance(summary, dict):
     md.append(
         "- Baseline zero sessions after 5+ days: "
         f"`{summary['baseline_zero_sessions_after_grace']}`"
+    )
+    md.append(
+        "- Baseline zero entries after 5+ days: "
+        f"`{summary.get('baseline_zero_entries_after_grace')}`"
+    )
+    md.append(
+        f"- Baseline entered sessions: `{summary.get('baseline_entered_sessions')}`"
     )
     axis = summary.get("regime_axis_summary") or {}
     variants = axis.get("variants") or []

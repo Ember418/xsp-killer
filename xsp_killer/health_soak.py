@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from xsp_killer.lane_a_variants import PROMOTION_ENTERED_SESSIONS_GATE
+
 BASELINE_ZERO_SESSIONS_GRACE_DAYS = 5
 
 REGIME_AXIS_VARIANT_IDS = (
@@ -114,14 +116,26 @@ def promotion_proximity_summary(payload: dict[str, Any]) -> dict[str, Any]:
                 if vid:
                     near_gate.append(str(vid))
     baseline_remaining = baseline_row.get("sessions_to_promotion_gate")
+    entered_remaining = baseline_row.get("entered_sessions_to_promotion_gate")
     try:
         baseline_to_gate = int(baseline_remaining)
     except (TypeError, ValueError):
         baseline_to_gate = None
+    try:
+        baseline_entered_to_gate = int(entered_remaining)
+    except (TypeError, ValueError):
+        baseline_entered_to_gate = None
     return {
         "sessions_gate": promo.get("sessions_gate", 20),
+        "entered_sessions_gate": promo.get(
+            "entered_sessions_gate", PROMOTION_ENTERED_SESSIONS_GATE
+        ),
         "baseline_sessions_to_gate": baseline_to_gate,
+        "baseline_entered_sessions_to_gate": baseline_entered_to_gate,
         "baseline_near_gate": baseline_to_gate is not None and baseline_to_gate <= 2,
+        "baseline_near_entered_gate": (
+            baseline_entered_to_gate is not None and baseline_entered_to_gate <= 2
+        ),
         "variants_near_promotion_gate": near_gate,
         "variants_collecting": promo.get("variants_collecting"),
         "variants_eligible_review": promo.get("variants_eligible_review") or [],
@@ -148,11 +162,14 @@ def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
     regime_axis = regime_axis_comparison_summary(payload)
     promotion = promotion_proximity_summary(payload)
     baseline_zero_sessions = baseline_zero_sessions_after_grace(payload)
+    baseline_zero_entries = baseline_zero_entries_after_grace(payload)
     anomalies: list[str] = []
     if payload.get("stale"):
         anomalies.append("scoreboard_stale")
     if baseline_zero_sessions:
         anomalies.append("baseline_zero_sessions_after_grace")
+    if baseline_zero_entries:
+        anomalies.append("baseline_zero_entries_after_grace")
 
     return {
         "stale": bool(payload.get("stale")),
@@ -160,12 +177,16 @@ def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
         "updated_at": payload.get("updated_at"),
         "soak_reset_at": payload.get("soak_reset_at"),
         "baseline_sessions_evaluated": baseline_sessions,
+        "baseline_entered_sessions": (
+            baseline.get("entered_sessions") if isinstance(baseline, dict) else None
+        ),
         "regime_gate_comparison_variant_count": len(comparison_variants),
         "regime_axis_summary": regime_axis,
         "promotion_proximity": promotion,
         "vol_shadow_latest_spy_rv": vol_shadow_latest_spy_rv,
         "vol_shadow_avg_spy_rv": vol_shadow_avg_spy_rv,
         "baseline_zero_sessions_after_grace": baseline_zero_sessions,
+        "baseline_zero_entries_after_grace": baseline_zero_entries,
         "strict_anomalies": anomalies,
     }
 
@@ -199,6 +220,37 @@ def baseline_zero_sessions_after_grace(
     return reference_now - epoch_at >= timedelta(days=grace_days)
 
 
+def baseline_zero_entries_after_grace(
+    payload: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    grace_days: int = BASELINE_ZERO_SESSIONS_GRACE_DAYS,
+) -> bool:
+    """Flag when baseline has sessions but zero enters past grace (GLM v4 P1)."""
+    baseline = payload.get("baseline_prod")
+    if not isinstance(baseline, dict):
+        return False
+
+    try:
+        sessions_evaluated = int(baseline.get("sessions_evaluated") or 0)
+        entered_sessions = int(baseline.get("entered_sessions") or 0)
+    except (TypeError, ValueError):
+        return False
+    if sessions_evaluated <= 0 or entered_sessions > 0:
+        return False
+
+    epoch_at = _parse_timestamp(
+        payload.get("soak_reset_at")
+        or payload.get("pnl_epoch_at")
+        or payload.get("updated_at")
+    )
+    if epoch_at is None:
+        return False
+
+    reference_now = now or datetime.now(timezone.utc)
+    return reference_now - epoch_at >= timedelta(days=grace_days)
+
+
 def detect_strict_anomalies(
     payload: dict[str, Any],
     *,
@@ -210,6 +262,8 @@ def detect_strict_anomalies(
         anomalies.append("scoreboard_stale")
     if baseline_zero_sessions_after_grace(payload, now=now):
         anomalies.append("baseline_zero_sessions_after_grace")
+    if baseline_zero_entries_after_grace(payload, now=now):
+        anomalies.append("baseline_zero_entries_after_grace")
     if pytest_failed:
         anomalies.append("pytest_failed")
     return anomalies

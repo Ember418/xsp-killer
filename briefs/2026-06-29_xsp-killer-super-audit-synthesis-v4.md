@@ -125,4 +125,25 @@ Local `research_wiki/` has SPY entity, Greeks sources, playbook research, Kalshi
 3. **Do not change production baseline** — unanimous WAIT
 4. **Watch for GREEN day** — first trade sample unlocks DTE/strike/exit ranking
 
+---
+
+## Post-first-entry addendum (2026-06-30)
+
+**First paper enter post-epoch** at 2026-06-30T19:45Z — XSP 7500C exp 2026-07-17, GREEN regime, `bb_bounce_long_call`. Baseline now **21/20 sessions**, **1 entered**, **0 closed**. Promotion status: `insufficient_enters` (need ≥10 entered sessions per GLM gate).
+
+| Check | Status |
+|---|---|
+| vol_shadow in entry log | ✅ ~17.97% RV, would not block |
+| premium_scale in entry log | ✅ 10.0 |
+| CI | ✅ green on `7b7cb72` |
+| Live RH / OAuth | ❌ still off (WAIT) |
+
+**Shipped from brief backlog (2026-06-30):**
+- `entered_sessions` promotion gate (≥10 enters before eligible_review)
+- `baseline_zero_entries_after_grace` health anomaly
+- `regime_skip_breakdown` on scoreboard
+- Dual 1× / 10× MTM in `xsp-lane-a-paper-pnl-latest.json`
+
+**Still WAIT:** variant promotion, live flip, shadow vol enforcement, force-entry variant.
+
 **Prior synthesis:** `briefs/2026-06-21_xsp-killer-super-audit-synthesis-v3-postpatch.md`

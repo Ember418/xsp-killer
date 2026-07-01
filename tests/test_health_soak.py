@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from xsp_killer.health_soak import (
+    baseline_zero_entries_after_grace,
     baseline_zero_sessions_after_grace,
     detect_strict_anomalies,
     promotion_proximity_summary,
@@ -27,7 +28,9 @@ def _scoreboard_payload(
         "baseline_prod": {
             "variant_id": "v2_baseline_prod",
             "sessions_evaluated": baseline_sessions_evaluated,
+            "entered_sessions": 0,
             "sessions_to_promotion_gate": max(0, 20 - baseline_sessions_evaluated),
+            "entered_sessions_to_promotion_gate": 10,
             "vol_shadow_latest_spy_rv": 0.1761,
             "vol_shadow_avg_spy_rv": 0.1763,
             "regime_gate_skip_sessions": 12,
@@ -115,10 +118,68 @@ def test_baseline_zero_sessions_after_grace_requires_full_grace_period():
     )
 
 
-def test_detect_strict_anomalies_includes_pytest_failures():
-    payload = _scoreboard_payload(baseline_sessions_evaluated=4)
+def test_baseline_zero_entries_after_grace_requires_sessions_and_no_enters():
+    payload = _scoreboard_payload(
+        soak_reset_at="2026-06-24T00:00:00+00:00",
+        baseline_sessions_evaluated=15,
+    )
 
-    anomalies = detect_strict_anomalies(payload, pytest_failed=True)
+    assert (
+        baseline_zero_entries_after_grace(
+            payload,
+            now=datetime(2026, 6, 28, 23, 59, tzinfo=timezone.utc),
+        )
+        is False
+    )
+    assert (
+        baseline_zero_entries_after_grace(
+            payload,
+            now=datetime(2026, 6, 29, 0, 0, tzinfo=timezone.utc),
+        )
+        is True
+    )
+
+
+def test_baseline_zero_entries_after_grace_cleared_when_enters_exist():
+    payload = _scoreboard_payload(
+        soak_reset_at="2026-06-24T00:00:00+00:00",
+        baseline_sessions_evaluated=21,
+    )
+    payload["baseline_prod"]["entered_sessions"] = 1
+
+    assert (
+        baseline_zero_entries_after_grace(
+            payload,
+            now=datetime(2026, 6, 29, 0, 0, tzinfo=timezone.utc),
+        )
+        is False
+    )
+
+
+def test_scoreboard_report_metrics_flags_zero_entries_anomaly():
+    payload = _scoreboard_payload(
+        soak_reset_at="2026-06-24T00:00:00+00:00",
+        baseline_sessions_evaluated=21,
+    )
+
+    metrics = scoreboard_report_metrics(payload)
+
+    assert metrics["baseline_zero_entries_after_grace"] is True
+    assert "baseline_zero_entries_after_grace" in metrics["strict_anomalies"]
+
+
+def test_detect_strict_anomalies_includes_pytest_failures():
+    payload = _scoreboard_payload(
+        baseline_sessions_evaluated=4,
+        soak_reset_at="2026-06-24T00:00:00+00:00",
+    )
+    payload["baseline_prod"]["entered_sessions"] = 1
+
+    anomalies = detect_strict_anomalies(
+        payload,
+        pytest_failed=True,
+        now=datetime(2026, 6, 26, 12, 0, tzinfo=timezone.utc),
+    )
 
     assert anomalies == ["pytest_failed"]
 

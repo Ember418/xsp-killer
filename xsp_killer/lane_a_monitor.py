@@ -17,9 +17,9 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from xsp_killer.paper_economics import load_premium_scale
 from xsp_killer.rh_broker import (
     fetch_robinhood_option_positions,
-    rh_poll_enabled,  # re-exported for tests and lane_b
     rh_read_enabled,
 )
 from xsp_killer.robinhood_mcp import (
@@ -895,6 +895,8 @@ def write_paper_pnl_brief(
     ]
     resolved_pnl = sum(float(e.get("paper_pnl_usd") or 0) for e in events)
     path = out_path or DEFAULT_PAPER_BRIEF
+    scale = load_premium_scale()
+    mtm_scaled = report.paper_mtm_usd if report else None
     payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "scope": "baseline_prod_only",
@@ -902,10 +904,18 @@ def write_paper_pnl_brief(
         "paper_mode": "hypothetical",
         "note": (
             "Production baseline lane only. Shadow variant comparison: "
-            "briefs/xsp-lane-a-variants-scoreboard.json (per-variant, not summed)."
+            "briefs/xsp-lane-a-variants-scoreboard.json (per-variant, not summed). "
+            "open_positions_mtm_usd uses premium_scale; "
+            "open_positions_mtm_usd_1x is SPY-proxy 1×."
         ),
         "pnl_epoch_at": epoch_at,
-        "open_positions_mtm_usd": report.paper_mtm_usd if report else None,
+        "premium_scale_used": scale,
+        "open_positions_mtm_usd": mtm_scaled,
+        "open_positions_mtm_usd_1x": (
+            round(mtm_scaled / scale, 2)
+            if mtm_scaled is not None and scale
+            else None
+        ),
         "hypothetical_exits_n": len(events),
         "hypothetical_realized_pnl_usd": round(resolved_pnl, 2),
         "latest_evaluated_at": report.evaluated_at if report else None,

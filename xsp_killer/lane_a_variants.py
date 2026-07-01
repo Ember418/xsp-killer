@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import fcntl
 import json
-import shutil
 import logging
+import shutil
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -37,6 +37,7 @@ REGIME_GATE_COMPARISON_IDS = (
 )
 
 PROMOTION_SESSIONS_GATE = 20
+PROMOTION_ENTERED_SESSIONS_GATE = 10
 
 
 @dataclass
@@ -479,7 +480,10 @@ def clear_pnl_epoch(
             baseline["pnl_epoch_at"] = epoch_at
             if commit:
                 baseline["pnl_epoch_commit"] = commit
-            from xsp_killer.lane_a_entry import _sync_entry_telemetry, _write_entry_telemetry_brief
+            from xsp_killer.lane_a_entry import (
+                _sync_entry_telemetry,
+                _write_entry_telemetry_brief,
+            )
 
             _sync_entry_telemetry(baseline)
             bp.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
@@ -639,20 +643,47 @@ def _build_regime_gate_comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _promotion_meta(sessions_evaluated: int, trades_closed: int) -> dict[str, Any]:
-    remaining = max(0, PROMOTION_SESSIONS_GATE - sessions_evaluated)
+def _promotion_meta(
+    sessions_evaluated: int,
+    trades_closed: int,
+    entered_sessions: int,
+) -> dict[str, Any]:
+    remaining_sessions = max(0, PROMOTION_SESSIONS_GATE - sessions_evaluated)
+    remaining_enters = max(0, PROMOTION_ENTERED_SESSIONS_GATE - entered_sessions)
     if sessions_evaluated < PROMOTION_SESSIONS_GATE:
         status = "collecting"
+    elif entered_sessions < PROMOTION_ENTERED_SESSIONS_GATE:
+        status = "insufficient_enters"
     elif trades_closed == 0:
         status = "sessions_met_no_trades"
     else:
         status = "eligible_review"
     return {
         "promotion_sessions_gate": PROMOTION_SESSIONS_GATE,
-        "sessions_to_promotion_gate": remaining,
+        "promotion_entered_sessions_gate": PROMOTION_ENTERED_SESSIONS_GATE,
+        "sessions_to_promotion_gate": remaining_sessions,
+        "entered_sessions_to_promotion_gate": remaining_enters,
         "promotion_status": status,
         "promotion_ready": status == "eligible_review",
     }
+
+
+def _build_regime_skip_breakdown(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Per-variant regime/skip distribution for cross-variant comparison (v4 GLM P2)."""
+    variants: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        variant_id = row.get("variant_id")
+        if not variant_id:
+            continue
+        tel = row.get("entry_telemetry") or {}
+        variants[str(variant_id)] = {
+            "sessions_evaluated": row.get("sessions_evaluated"),
+            "entered_sessions": row.get("entered_sessions"),
+            "regime_gate_skip_sessions": row.get("regime_gate_skip_sessions"),
+            "regime_counts": tel.get("regime_counts") or {},
+            "skip_reason_counts": tel.get("skip_reason_counts") or {},
+        }
+    return {"variants": variants}
 
 
 def _build_promotion_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -666,6 +697,7 @@ def _build_promotion_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     )
     return {
         "sessions_gate": PROMOTION_SESSIONS_GATE,
+        "entered_sessions_gate": PROMOTION_ENTERED_SESSIONS_GATE,
         "variants_collecting": collecting,
         "variants_eligible_review": eligible,
         "baseline_promotion_ready": bool(
@@ -734,9 +766,16 @@ def build_scoreboard(
             "last_exit": _last_exit_with_contract_meta(state, events),
         }
         row.update(_variant_track_meta(variant_id, spec))
-        row.update(_entry_session_stats(entry_logs))
+        entry_stats = _entry_session_stats(entry_logs)
+        row.update(entry_stats)
         row.update(_vol_shadow_session_stats(entry_logs))
-        row.update(_promotion_meta(sessions_evaluated, trades))
+        row.update(
+            _promotion_meta(
+                sessions_evaluated,
+                trades,
+                int(entry_stats.get("entered_sessions") or 0),
+            )
+        )
         tel = summarize_entry_telemetry_from_logs(entry_logs)
         if tel.get("sessions_evaluated", 0) > 0:
             row["entry_telemetry"] = {
@@ -820,6 +859,7 @@ def build_scoreboard(
         "shadow_variants": shadow_rows,
         "variants": ordered,
         "regime_gate_comparison": _build_regime_gate_comparison(rows),
+        "regime_skip_breakdown": _build_regime_skip_breakdown(rows),
         "promotion_summary": _build_promotion_summary(rows),
         "note": (
             "Per-variant comparison only. Need ≥20 post-epoch sessions per variant before promotion."

@@ -322,3 +322,22 @@ def test_suppress_morning_cut_for_long_dte():
     now = datetime(2026, 6, 17, 10, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now, suppress_morning_cut_dte=30)
     assert alerts == []
+
+
+def test_write_paper_pnl_brief_includes_dual_notional(tmp_path, monkeypatch):
+    from xsp_killer.lane_a_monitor import MonitorReport, write_paper_pnl_brief
+
+    monkeypatch.setenv("XSP_SPY_TO_XSP_PREMIUM_SCALE", "10")
+    report = MonitorReport(
+        evaluated_at="2026-06-30T19:45:23+00:00",
+        phase=0,
+        logic_version="xsp_lane_a_v2",
+        regime="GREEN",
+        regime_allows_new_risk=True,
+        paper_mtm_usd=-89.95,
+    )
+    out = write_paper_pnl_brief({}, report=report, out_path=tmp_path / "pnl.json")
+    payload = __import__("json").loads(out.read_text(encoding="utf-8"))
+    assert payload["premium_scale_used"] == 10.0
+    assert payload["open_positions_mtm_usd"] == -89.95
+    assert payload["open_positions_mtm_usd_1x"] == -9.0
