@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from xsp_killer.conductor_shadow import shadow_review_entry
+from xsp_killer.lane_a_monitor import DEFAULT_RULES
 from xsp_killer.risk_gates import entry_allowed_by_risk, realized_pnl_today
 
 ET = ZoneInfo("America/New_York")
@@ -213,15 +213,11 @@ def test_daily_loss_cap_respects_scale_regression(monkeypatch):
         ]
     }
 
-    ok, reason = entry_allowed_by_risk(
-        state, rules_path=Path("/opt/xsp-killer/config/lane_a_rules.yaml")
-    )
+    ok, reason = entry_allowed_by_risk(state, rules_path=DEFAULT_RULES)
     assert ok is True
     assert reason is None
 
     monkeypatch.setenv("XSP_LANE_A_PREMIUM_SCALE", "1")
-    ok, reason = entry_allowed_by_risk(
-        state, rules_path=Path("/opt/xsp-killer/config/lane_a_rules.yaml")
-    )
+    ok, reason = entry_allowed_by_risk(state, rules_path=DEFAULT_RULES)
     assert ok is False
     assert "scale=1.00x" in (reason or "")
