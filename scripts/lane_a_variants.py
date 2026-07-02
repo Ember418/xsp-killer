@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 from xsp_killer.lane_a_variants import (  # noqa: E402
     build_scoreboard,
     clear_pnl_epoch,
+    resync_epoch_briefs,
     reset_soak,
     run_all_variant_entries,
     run_all_variant_monitors,
@@ -59,6 +60,10 @@ def main() -> int:
     p_mon.add_argument("--at-et", help="Override evaluation time (HH:MM or ISO)")
 
     sub.add_parser("scoreboard", help="Rebuild variant comparison scoreboard")
+    sub.add_parser(
+        "sync",
+        help="Resync baseline brief epochs from variants-state canonical pnl_epoch_at",
+    )
 
     p_reset = sub.add_parser(
         "reset-soak",
@@ -147,6 +152,11 @@ def main() -> int:
         out = build_scoreboard()
         payload = json.loads(out.read_text(encoding="utf-8"))
         print(json.dumps(payload, indent=2))
+        return 0
+
+    if args.cmd == "sync":
+        meta = resync_epoch_briefs()
+        print(json.dumps(meta, indent=2))
         return 0
 
     return 1

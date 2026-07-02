@@ -25,6 +25,9 @@ def _scoreboard_payload(
         "stale": stale,
         "updated_at": "2026-06-26T12:00:00+00:00",
         "soak_reset_at": soak_reset_at,
+        "pnl_epoch_at": soak_reset_at,
+        "active_variant_ids": ["v2_baseline_prod", "v2_yellow_mid_bounce"],
+        "state_variant_ids": ["v2_baseline_prod", "v2_yellow_mid_bounce"],
         "last_entry_eval_at": "2026-06-26T11:45:00+00:00",
         "baseline_prod": {
             "variant_id": "v2_baseline_prod",
@@ -234,6 +237,42 @@ def test_scoreboard_report_metrics_includes_brief_consistency_anomalies():
     )
     assert "baseline_pnl_brief_mismatch" in metrics["brief_consistency_anomalies"]
     assert "entry_telemetry_sessions_mismatch" in metrics["strict_anomalies"]
+
+
+def test_brief_consistency_anomalies_detect_epoch_mismatch():
+    payload = _scoreboard_payload(baseline_sessions_evaluated=12)
+
+    anomalies = brief_consistency_anomalies(
+        payload,
+        paper_brief={
+            "pnl_epoch_at": "2026-06-21T00:00:00+00:00",
+            "hypothetical_realized_pnl_usd": payload["baseline_prod"][
+                "realized_pnl_usd"
+            ],
+            "open_positions_mtm_usd": payload["baseline_prod"]["open_positions_mtm_usd"],
+        },
+        telemetry_brief={
+            "pnl_epoch_at": payload["pnl_epoch_at"],
+            "sessions_evaluated": payload["baseline_prod"]["sessions_evaluated"],
+            "entered_sessions": payload["baseline_prod"]["entered_sessions"],
+            "evals_total": payload["baseline_prod"]["entry_evals_total"],
+            "skip_reason_counts": payload["baseline_prod"]["entry_telemetry"][
+                "skip_reason_counts"
+            ],
+        },
+    )
+
+    assert anomalies == ["pnl_epoch_mismatch"]
+
+
+def test_brief_consistency_anomalies_detect_variant_missing_from_state():
+    payload = _scoreboard_payload()
+    payload["active_variant_ids"] = ["v2_baseline_prod", "v2_28dte_atm_stack3"]
+    payload["state_variant_ids"] = ["v2_baseline_prod"]
+
+    anomalies = brief_consistency_anomalies(payload)
+
+    assert anomalies == ["variant_missing_from_state"]
 
 
 def test_regime_axis_comparison_summary_flags_session_divergence():

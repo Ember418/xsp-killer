@@ -531,5 +531,5 @@ class TestSessionGate:
             if r["variant_id"] == "v2_test_sessions_25"
         )
 
-        assert variant_row["sessions_evaluated"] == 25
+        assert variant_row["sessions_evaluated"] == 24
         assert variant_row["sessions_to_gate"] == 0

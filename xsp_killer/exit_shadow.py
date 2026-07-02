@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -58,6 +58,100 @@ def _recovery_pct_to_target(
     return round((target - mark) / mark * 100.0, 2)
 
 
+def _wide_stop_rules(rules: Any) -> Any:
+    from xsp_killer.lane_a_monitor import LaneRules
+
+    return LaneRules(
+        lane=rules.lane,
+        dte_min=rules.dte_min,
+        dte_max=rules.dte_max,
+        exclude_expiry_month=rules.exclude_expiry_month,
+        chain_symbols=rules.chain_symbols,
+        stop_loss_pct=0.30,
+        take_profit_pct=rules.take_profit_pct,
+        sell_eval_start_et=rules.sell_eval_start_et,
+        sell_deadline_et=rules.sell_deadline_et,
+        no_sell_start_et=rules.no_sell_start_et,
+        no_sell_end_et=rules.no_sell_end_et,
+        require_upper_bb_for_take_profit=rules.require_upper_bb_for_take_profit,
+        logic_version=rules.logic_version,
+        regime_gate=rules.regime_gate,
+        regime_yellow_frac_min=rules.regime_yellow_frac_min,
+        regime_yellow_require_bounce=rules.regime_yellow_require_bounce,
+    )
+
+
+def _defer_days_from_bracket_id(bracket_id: str) -> int | None:
+    prefix = "defer_morning_cut_"
+    suffix = "d"
+    if not bracket_id.startswith(prefix) or not bracket_id.endswith(suffix):
+        return None
+    try:
+        return int(bracket_id[len(prefix) : -len(suffix)])
+    except ValueError:
+        return None
+
+
+def _inside_defer_window(
+    pos: Any,
+    rules: Any,
+    *,
+    now_et: datetime,
+    defer_days: int,
+) -> bool:
+    from xsp_killer.lane_a_monitor import _entry_date_et
+
+    entry_day = _entry_date_et(pos.entry_ts)
+    if entry_day is None:
+        return False
+    today = now_et.date()
+    defer_until = entry_day + timedelta(days=defer_days)
+    return today < defer_until or (
+        today == defer_until and now_et.time() < rules.sell_deadline_et
+    )
+
+
+def _bracket_alerts(
+    pos: Any,
+    rules: Any,
+    *,
+    bracket_id: str,
+    now_et: datetime,
+    ta_signal: Any | None,
+    suppress_morning_cut_dte: int | None,
+    evaluate_fn: Any,
+) -> list[Any]:
+    if bracket_id == "wide_sl_30":
+        return evaluate_fn(
+            pos,
+            _wide_stop_rules(rules),
+            now_et=now_et,
+            ta_signal=ta_signal,
+            suppress_morning_cut_dte=suppress_morning_cut_dte,
+        )
+    if bracket_id == "no_morning_cut_14dte":
+        return evaluate_fn(
+            pos,
+            rules,
+            now_et=now_et,
+            ta_signal=ta_signal,
+            suppress_morning_cut_dte=14,
+        )
+    defer_days = _defer_days_from_bracket_id(bracket_id)
+    alerts = evaluate_fn(
+        pos,
+        rules,
+        now_et=now_et,
+        ta_signal=ta_signal,
+        suppress_morning_cut_dte=suppress_morning_cut_dte,
+    )
+    if defer_days is not None and _inside_defer_window(
+        pos, rules, now_et=now_et, defer_days=defer_days
+    ):
+        return [alert for alert in alerts if alert.exit_reason != "time_stop"]
+    return alerts
+
+
 def evaluate_shadow_brackets(
     pos: Any,
     rules: Any,
@@ -70,7 +164,6 @@ def evaluate_shadow_brackets(
 ) -> list[ShadowBracket]:
     """Compare prod exit to alternate rule brackets at the same mark snapshot."""
     from xsp_killer.lane_a_monitor import (
-        LaneRules,
         _entry_date_et,
         _position_return_pct,
     )
@@ -115,28 +208,14 @@ def evaluate_shadow_brackets(
         )
     )
 
-    wide_rules = LaneRules(
-        lane=rules.lane,
-        dte_min=rules.dte_min,
-        dte_max=rules.dte_max,
-        exclude_expiry_month=rules.exclude_expiry_month,
-        chain_symbols=rules.chain_symbols,
-        stop_loss_pct=0.30,
-        take_profit_pct=rules.take_profit_pct,
-        sell_eval_start_et=rules.sell_eval_start_et,
-        sell_deadline_et=rules.sell_deadline_et,
-        no_sell_start_et=rules.no_sell_start_et,
-        no_sell_end_et=rules.no_sell_end_et,
-        require_upper_bb_for_take_profit=rules.require_upper_bb_for_take_profit,
-        logic_version=rules.logic_version,
-        regime_gate=rules.regime_gate,
-    )
-    wide_alerts = evaluate_fn(
+    wide_alerts = _bracket_alerts(
         pos,
-        wide_rules,
+        rules,
+        bracket_id="wide_sl_30",
         now_et=now_et,
         ta_signal=ta_signal,
         suppress_morning_cut_dte=suppress_morning_cut_dte,
+        evaluate_fn=evaluate_fn,
     )
     sl_remaining = None
     if ret is not None and ret > -0.30:
@@ -161,12 +240,14 @@ def evaluate_shadow_brackets(
         )
     )
 
-    no_cut_alerts = evaluate_fn(
+    no_cut_alerts = _bracket_alerts(
         pos,
         rules,
+        bracket_id="no_morning_cut_14dte",
         now_et=now_et,
         ta_signal=ta_signal,
-        suppress_morning_cut_dte=14,
+        suppress_morning_cut_dte=suppress_morning_cut_dte,
+        evaluate_fn=evaluate_fn,
     )
     brackets.append(
         ShadowBracket(
@@ -293,3 +374,129 @@ def append_shadow_exit_log(
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(payload) + "\n")
+
+
+def open_virtual_holds(
+    state: dict[str, Any],
+    pos: Any,
+    record: ShadowExitRecord,
+    rules: Any,
+    *,
+    actual_alert: Any,
+) -> list[dict[str, Any]]:
+    holds = list(state.get("shadow_virtual_holds") or [])
+    existing_ids = {str(h.get("virtual_hold_id")) for h in holds if isinstance(h, dict)}
+    opened: list[dict[str, Any]] = []
+    for bracket in record.brackets:
+        if bracket.would_exit:
+            continue
+        hold_id = f"{record.position_id}:{bracket.bracket_id}:{record.evaluated_at}"
+        if hold_id in existing_ids:
+            continue
+        hold = {
+            "virtual_hold_id": hold_id,
+            "opened_at": record.evaluated_at,
+            "position_id": pos.position_id,
+            "bracket_id": bracket.bracket_id,
+            "label": bracket.label,
+            "logic_version": getattr(rules, "logic_version", None),
+            "lane": getattr(pos, "lane", "A"),
+            "chain_symbol": pos.chain_symbol,
+            "option_type": pos.option_type,
+            "strike": pos.strike,
+            "expiration_date": pos.expiration_date.isoformat(),
+            "quantity": pos.quantity,
+            "average_price": pos.average_price,
+            "entry_mid_premium": pos.entry_mid_premium,
+            "entry_ts": pos.entry_ts,
+            "delta_at_entry": pos.delta_at_entry,
+            "mark_price": pos.mark_price,
+            "mark_quote_stale": bool(pos.mark_quote_stale),
+            "dte": pos.dte,
+            "opened_actual_exit_reason": actual_alert.exit_reason,
+            "opened_actual_pnl_usd": actual_alert.pnl_usd,
+            "current_pnl_usd": bracket.pnl_usd,
+            "status": "open",
+        }
+        holds.append(hold)
+        opened.append(hold)
+        existing_ids.add(hold_id)
+    if opened:
+        state["shadow_virtual_holds"] = holds[-300:]
+    return opened
+
+
+def mark_virtual_holds(
+    state: dict[str, Any],
+    *,
+    now_et: datetime,
+    rules: Any,
+    ta_signal: Any | None,
+    suppress_morning_cut_dte: int | None,
+    evaluate_fn: Any,
+) -> list[dict[str, Any]]:
+    from xsp_killer.lane_a_monitor import paper_positions_to_lane, refresh_paper_marks
+
+    raw_holds = [
+        dict(row)
+        for row in (state.get("shadow_virtual_holds") or [])
+        if isinstance(row, dict) and row.get("status", "open") == "open"
+    ]
+    if not raw_holds:
+        state["shadow_virtual_holds"] = []
+        return []
+
+    refreshed = refresh_paper_marks(raw_holds)
+    positions = paper_positions_to_lane(refreshed, rules, today=now_et.date())
+    pos_by_id = {pos.position_id: pos for pos in positions}
+    remaining: list[dict[str, Any]] = []
+    close_events: list[dict[str, Any]] = []
+    shadow_events = list(state.get("paper_shadow_events") or [])
+
+    for hold in refreshed:
+        pos_id = str(hold.get("position_id") or "")
+        pos = pos_by_id.get(pos_id)
+        if pos is None:
+            remaining.append(hold)
+            continue
+        hold["mark_price"] = pos.mark_price
+        hold["mark_quote_stale"] = bool(pos.mark_quote_stale)
+        hold["dte"] = pos.dte
+        hold["current_pnl_usd"] = pos.pnl_usd
+        hold["current_pnl_per_contract"] = pos.pnl_per_contract
+        hold["last_marked_at"] = now_et.astimezone(timezone.utc).isoformat()
+        alerts = _bracket_alerts(
+            pos,
+            rules,
+            bracket_id=str(hold.get("bracket_id") or ""),
+            now_et=now_et,
+            ta_signal=ta_signal,
+            suppress_morning_cut_dte=suppress_morning_cut_dte,
+            evaluate_fn=evaluate_fn,
+        )
+        if alerts:
+            alert = alerts[0]
+            close_event = {
+                "event_type": "virtual_hold_closed",
+                "evaluated_at": now_et.astimezone(timezone.utc).isoformat(),
+                "opened_at": hold.get("opened_at"),
+                "virtual_hold_id": hold.get("virtual_hold_id"),
+                "position_id": pos.position_id,
+                "bracket_id": hold.get("bracket_id"),
+                "label": hold.get("label"),
+                "exit_reason": alert.exit_reason,
+                "paper_pnl_usd": alert.pnl_usd,
+                "paper_pnl_per_contract": alert.pnl_per_contract,
+                "logic_version": hold.get("logic_version") or rules.logic_version,
+                "mark_price": pos.mark_price,
+                "mark_quote_stale": bool(pos.mark_quote_stale),
+            }
+            shadow_events.append(close_event)
+            close_events.append(close_event)
+            continue
+        remaining.append(hold)
+
+    state["shadow_virtual_holds"] = remaining[-300:]
+    if close_events:
+        state["paper_shadow_events"] = shadow_events[-300:]
+    return close_events

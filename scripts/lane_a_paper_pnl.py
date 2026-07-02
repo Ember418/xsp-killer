@@ -15,7 +15,9 @@ if str(ROOT) not in sys.path:
 from xsp_killer.lane_a_monitor import (  # noqa: E402
     DEFAULT_PAPER_BRIEF,
     DEFAULT_PAPER_LOG,
+    DEFAULT_RULES,
     DEFAULT_STATE,
+    LaneRules,
     load_state,
     write_paper_pnl_brief,
 )
@@ -44,9 +46,11 @@ def main() -> int:
             latest_mtm = row.get("paper_mtm_usd")
             latest_ts = row.get("ts")
 
+    rules = LaneRules.from_yaml(DEFAULT_RULES)
+
     class _R:
         evaluated_at = latest_ts
-        logic_version = "xsp_lane_a_v1"
+        logic_version = rules.logic_version
         paper_mtm_usd = latest_mtm
 
     out = write_paper_pnl_brief(state, report=_R(), out_path=args.out)

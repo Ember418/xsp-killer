@@ -65,6 +65,7 @@ class LaneRules:
     logic_version: str
     regime_gate: str = "GREEN"
     regime_yellow_frac_min: float = 0.75
+    regime_yellow_require_bounce: bool = True
 
     @classmethod
     def from_yaml(cls, path: Path) -> LaneRules:
@@ -105,6 +106,9 @@ class LaneRules:
             logic_version=str(logging_cfg.get("logic_version", "xsp_lane_a_v2")),
             regime_gate=str(entry.get("regime_gate", "GREEN")),
             regime_yellow_frac_min=float(entry.get("regime_yellow_frac_min", 0.75)),
+            regime_yellow_require_bounce=bool(
+                entry.get("regime_yellow_require_bounce", True)
+            ),
         )
 
 
@@ -381,6 +385,7 @@ def regime_gate_allows(
     yellow_frac: float | None,
     ta_entry_ok: bool,
     yellow_frac_min: float = 0.75,
+    yellow_require_bounce: bool = True,
 ) -> tuple[bool, str | None]:
     gate = (regime_gate or "GREEN").strip().upper()
     if gate == "GREEN":
@@ -399,7 +404,7 @@ def regime_gate_allows(
                     False,
                     f"regime YELLOW blocks new risk: yellow_frac {yellow_frac:.2f} < {yellow_frac_min:.2f}",
                 )
-            if not ta_entry_ok:
+            if yellow_require_bounce and not ta_entry_ok:
                 return False, "regime YELLOW blocks new risk: BB bounce not confirmed"
             return True, None
         return False, f"regime {regime} blocks new risk"
@@ -899,6 +904,7 @@ def write_paper_pnl_brief(
     *,
     report: MonitorReport | None = None,
     out_path: Path | None = None,
+    logic_version: str | None = None,
 ) -> Path:
     """Baseline production lane only — variant PnL lives in variants scoreboard."""
     epoch_at = state.get("pnl_epoch_at") or state.get("soak_reset_at")
@@ -912,10 +918,24 @@ def write_paper_pnl_brief(
     path = out_path or DEFAULT_PAPER_BRIEF
     scale = load_premium_scale()
     mtm_scaled = report.paper_mtm_usd if report else None
+    if mtm_scaled is None:
+        open_count = sum(
+            1
+            for pos in (state.get("paper_positions") or {}).values()
+            if isinstance(pos, dict) and str(pos.get("status") or "open") == "open"
+        )
+        if open_count == 0:
+            mtm_scaled = 0.0
+    resolved_logic_version = (
+        (report.logic_version if report else None)
+        or logic_version
+        or str(state.get("logic_version") or "").strip()
+        or LaneRules.from_yaml(DEFAULT_RULES).logic_version
+    )
     payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "scope": "baseline_prod_only",
-        "logic_version": (report.logic_version if report else None) or "xsp_lane_a_v1",
+        "logic_version": resolved_logic_version,
         "paper_mode": "hypothetical",
         "note": (
             "Production baseline lane only. Shadow variant comparison: "
@@ -1029,6 +1049,20 @@ def run_monitor(
     merge_state_tags(classified, state)
     report.positions = [p.to_dict() for p in classified]
 
+    try:
+        from xsp_killer.exit_shadow import mark_virtual_holds
+
+        mark_virtual_holds(
+            state,
+            now_et=now_et or datetime.now(ET),
+            rules=rules,
+            ta_signal=ta_signal,
+            suppress_morning_cut_dte=suppress_dte,
+            evaluate_fn=evaluate_exit_alerts,
+        )
+    except Exception as exc:
+        report.errors.append(f"shadow virtual hold mark failed: {exc}")
+
     all_alerts: list[ExitAlert] = []
     for pos in classified:
         all_alerts.extend(
@@ -1077,6 +1111,7 @@ def run_monitor(
                 from xsp_killer.exit_shadow import (
                     append_shadow_exit_log,
                     build_shadow_exit_record,
+                    open_virtual_holds,
                 )
 
                 now_local = now_et or datetime.now(ET)
@@ -1098,6 +1133,13 @@ def run_monitor(
                         evaluate_fn=evaluate_exit_alerts,
                     )
                     append_shadow_exit_log(shadow_rec, state=state)
+                    open_virtual_holds(
+                        state,
+                        pos_obj,
+                        shadow_rec,
+                        rules,
+                        actual_alert=alert,
+                    )
             except Exception as exc:
                 report.errors.append(f"shadow exit log failed: {exc}")
     else:
@@ -1111,7 +1153,12 @@ def run_monitor(
         report=report, classified=classified, alerts=all_alerts, log_path=log_path
     )
     if write_paper_brief:
-        write_paper_pnl_brief(state, report=report, out_path=paper_brief_path)
+        write_paper_pnl_brief(
+            state,
+            report=report,
+            out_path=paper_brief_path,
+            logic_version=rules.logic_version,
+        )
 
     if publish_intel and all_alerts:
         try:

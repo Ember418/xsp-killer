@@ -13,6 +13,7 @@ from xsp_killer.lane_a_variants import (
     clear_pnl_epoch,
     load_variant_specs,
     merged_rules_path,
+    resync_epoch_briefs,
     reset_soak,
     run_variant_entry,
 )
@@ -71,6 +72,7 @@ def test_merged_rules_yellow_mid_bounce_variant(tmp_path):
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert data["entry"]["regime_gate"] == "GREEN_OR_YELLOW_BOUNCE"
     assert data["entry"]["regime_yellow_frac_min"] == 0.50
+    assert data["entry"]["regime_yellow_require_bounce"] is False
     assert data["logging"]["logic_version"] == "xsp_lane_a_v2_yellow_mid_bounce"
     assert data["ta"]["entry"]["mode"] == "close_window_only"
 
@@ -232,6 +234,42 @@ def test_build_scoreboard_includes_stateless_active_spec(tmp_path):
     assert variants["v2_new_variant"]["sessions_evaluated"] == 0
     assert variants["v2_new_variant"]["trades_closed"] == 0
     assert variants["v2_new_variant"]["description"] == "Active without state"
+    persisted = json.loads(state.read_text(encoding="utf-8"))
+    assert persisted["variants"]["v2_new_variant"] == {
+        "paper_positions": {},
+        "entry_log": [],
+        "paper_events": [],
+        "positions": {},
+    }
+
+
+def test_build_scoreboard_ensures_stack3_slice_registration(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_28dte_atm_stack3": {
+                "active": True,
+                "description": "Stack3 active",
+                "overrides": {},
+            }
+        },
+    )
+    state = tmp_path / "variants-state.json"
+    state.write_text(json.dumps({"variants": {}}, indent=2) + "\n", encoding="utf-8")
+
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard-stack3.json",
+        ).read_text(encoding="utf-8")
+    )
+
+    assert payload["active_variant_ids"] == ["v2_28dte_atm_stack3"]
+    assert payload["state_variant_ids"] == ["v2_28dte_atm_stack3"]
+    persisted = json.loads(state.read_text(encoding="utf-8"))
+    assert "v2_28dte_atm_stack3" in persisted["variants"]
 
 
 def test_build_scoreboard_respects_soak_reset(tmp_path):
@@ -572,6 +610,22 @@ def test_build_scoreboard_exit_shadow_summary(tmp_path):
                                         "exit_reason": None,
                                     },
                                 ],
+                            },
+                            {
+                                "event_type": "virtual_hold_closed",
+                                "evaluated_at": "2026-07-02T14:00:00+00:00",
+                                "bracket_id": "no_morning_cut_14dte",
+                                "label": "Suppress 10:00 time_stop for DTE≥14",
+                                "exit_reason": "take_profit",
+                                "paper_pnl_usd": 42.5,
+                            },
+                        ],
+                        "shadow_virtual_holds": [
+                            {
+                                "virtual_hold_id": "vh-1",
+                                "bracket_id": "no_morning_cut_14dte",
+                                "label": "Suppress 10:00 time_stop for DTE≥14",
+                                "status": "open",
                             }
                         ],
                         "paper_positions": {},
@@ -590,9 +644,58 @@ def test_build_scoreboard_exit_shadow_summary(tmp_path):
         ).read_text(encoding="utf-8")
     )
     row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
-    assert row["exit_shadow"]["events_evaluated"] == 1
+    assert row["exit_shadow"]["events_evaluated"] == 2
     assert row["exit_shadow"]["brackets"]["prod"]["would_exit"] == 1
     assert row["exit_shadow"]["brackets"]["no_morning_cut_14dte"]["would_hold"] == 1
+    assert row["exit_shadow"]["brackets"]["no_morning_cut_14dte"]["would_hold_open"] == 1
+    assert (
+        row["exit_shadow"]["brackets"]["no_morning_cut_14dte"][
+            "would_hold_realized_pnl_usd"
+        ]
+        == 42.5
+    )
+
+
+def test_build_scoreboard_excludes_holiday_sessions(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_28dte_atm": {
+                "active": True,
+                "description": "holiday filter",
+                "overrides": {},
+            }
+        },
+    )
+    state = tmp_path / "variants-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_28dte_atm": {
+                        "entry_log": [
+                            {"evaluated_at": "2026-07-03T19:45:00+00:00", "entered": False},
+                            {"evaluated_at": "2026-07-06T19:45:00+00:00", "entered": True},
+                        ],
+                        "paper_events": [],
+                        "paper_positions": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard-holiday.json",
+        ).read_text(encoding="utf-8")
+    )
+    row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
+    assert row["sessions_evaluated"] == 1
+    assert row["weekend_evals_excluded"] == 1
 
 
 def test_build_scoreboard_ranking_reliable_only_after_multi_variant_samples(tmp_path):
@@ -765,6 +868,88 @@ def test_clear_pnl_keeps_entry_log(tmp_path, monkeypatch):
     assert row["trades_closed"] == 0
     assert row["realized_pnl_usd"] == 0.0
     assert sb["baseline_prod"]["trades_closed"] == 0
+
+
+def test_resync_epoch_briefs_restores_parity(tmp_path, monkeypatch):
+    state = tmp_path / "variants-state.json"
+    baseline = tmp_path / "baseline-state.json"
+    scoreboard = tmp_path / "scoreboard.json"
+    canonical_epoch = "2026-06-23T22:20:36+00:00"
+    state.write_text(
+        json.dumps(
+            {
+                "pnl_epoch_at": canonical_epoch,
+                "variants": {
+                    "v2_28dte_atm": {
+                        "paper_events": [],
+                        "entry_log": [],
+                        "paper_positions": {},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline.write_text(
+        json.dumps(
+            {
+                "pnl_epoch_at": "2026-07-01T23:11:03+00:00",
+                "paper_events": [
+                    {
+                        "paper_pnl_usd": -12.5,
+                        "evaluated_at": "2026-06-24T14:00:00+00:00",
+                    }
+                ],
+                "entry_log": [
+                    {
+                        "evaluated_at": "2026-06-24T19:45:00+00:00",
+                        "entered": False,
+                        "skip_reason": "regime gate",
+                        "regime": "YELLOW",
+                    }
+                ],
+                "paper_positions": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_variants.load_variant_specs",
+        lambda _path=None: [
+            VariantSpec(
+                variant_id="v2_28dte_atm",
+                description="Epoch sync test",
+                active=True,
+                overrides={},
+            )
+        ],
+    )
+
+    meta = resync_epoch_briefs(
+        state_path=state,
+        baseline_state_path=baseline,
+        scoreboard_path=scoreboard,
+    )
+
+    telemetry = json.loads(
+        (tmp_path / "xsp-lane-a-entry-telemetry-latest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    paper = json.loads(
+        (tmp_path / "xsp-lane-a-paper-pnl-latest.json").read_text(encoding="utf-8")
+    )
+    refreshed_baseline = json.loads(baseline.read_text(encoding="utf-8"))
+    payload = json.loads(scoreboard.read_text(encoding="utf-8"))
+
+    assert meta["pnl_epoch_at"] == canonical_epoch
+    assert refreshed_baseline["pnl_epoch_at"] == canonical_epoch
+    assert telemetry["pnl_epoch_at"] == canonical_epoch
+    assert paper["pnl_epoch_at"] == canonical_epoch
+    assert payload["pnl_epoch_at"] == canonical_epoch
+    assert payload["baseline_prod"]["realized_pnl_usd"] == -12.5
+    assert payload["baseline_prod"]["sessions_evaluated"] == 1
+    assert payload["active_variant_ids"] == ["v2_28dte_atm"]
 
 
 def test_build_scoreboard_regime_gate_comparison(tmp_path):

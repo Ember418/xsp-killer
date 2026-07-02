@@ -15,12 +15,17 @@ from typing import Any
 import yaml
 
 from xsp_killer.lane_a_entry import (
+    DEFAULT_TELEMETRY_BRIEF,
+    _sync_entry_telemetry,
+    _write_entry_telemetry_brief,
     et_session_date,
+    is_et_trading_session,
     run_paper_entry,
     summarize_entry_telemetry_from_logs,
     unique_et_sessions,
 )
 from xsp_killer.lane_a_monitor import (
+    DEFAULT_PAPER_BRIEF,
     DEFAULT_RULES,
     ET,
     LaneRules,
@@ -28,6 +33,7 @@ from xsp_killer.lane_a_monitor import (
     paper_positions_to_lane,
     run_monitor,
     save_state,
+    write_paper_pnl_brief,
 )
 from xsp_killer.paper_economics import load_premium_scale
 
@@ -36,6 +42,7 @@ logger = logging.getLogger("xsp_killer.lane_a_variants")
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_VARIANTS_CONFIG = ROOT / "config" / "lane_a_variants.yaml"
 DEFAULT_VARIANTS_STATE = ROOT / "briefs" / "xsp-lane-a-variants-state.json"
+DEFAULT_BASELINE_STATE = ROOT / "briefs" / "xsp-lane-a-state.json"
 DEFAULT_SCOREBOARD = ROOT / "briefs" / "xsp-lane-a-variants-scoreboard.json"
 
 # Side-by-side regime-gate experiment axis (baseline GREEN vs YELLOW bounce brackets).
@@ -132,6 +139,23 @@ def _variants_state_lock(path: Path):
     return fh
 
 
+def _write_variants_state(root: dict[str, Any], path: Path | None = None) -> Path:
+    p = path or DEFAULT_VARIANTS_STATE
+    lock = _variants_state_lock(p)
+    try:
+        p.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
+    finally:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+        lock.close()
+    return p
+
+
+def _baseline_brief_path(baseline_state_path: Path, default_path: Path) -> Path:
+    if baseline_state_path == DEFAULT_BASELINE_STATE:
+        return default_path
+    return baseline_state_path.with_name(default_path.name)
+
+
 def save_variant_state_slice(
     root: dict[str, Any],
     variant_id: str,
@@ -140,13 +164,21 @@ def save_variant_state_slice(
     path: Path | None = None,
 ) -> None:
     root.setdefault("variants", {})[variant_id] = slice_state
-    p = path or DEFAULT_VARIANTS_STATE
-    lock = _variants_state_lock(p)
-    try:
-        p.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
-    finally:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-        lock.close()
+    _write_variants_state(root, path)
+
+
+def ensure_variant_slices(
+    root: dict[str, Any], specs: list[VariantSpec] | tuple[VariantSpec, ...]
+) -> list[str]:
+    created: list[str] = []
+    for spec in specs:
+        if not spec.active:
+            continue
+        variants = root.setdefault("variants", {})
+        if spec.variant_id not in variants or not isinstance(variants[spec.variant_id], dict):
+            variant_state_slice(root, spec.variant_id)
+            created.append(spec.variant_id)
+    return created
 
 
 def run_variant_entry(
@@ -243,6 +275,9 @@ def run_all_variant_entries(
     _prune_variant_rules_cache({s.variant_id for s in specs if s.active})
     clear_chain_cache()
     root = load_variants_state(state_path)
+    created = ensure_variant_slices(root, specs)
+    if created:
+        _write_variants_state(root, state_path)
     results: list[tuple[VariantSpec, Any]] = []
     for spec in specs:
         if not spec.active:
@@ -278,10 +313,14 @@ def run_all_variant_monitors(
 ) -> list[tuple[VariantSpec, Any]]:
     from xsp_killer.chain_cache import clear_chain_cache
 
+    specs = load_variant_specs(config_path)
     clear_chain_cache()
     root = load_variants_state(state_path)
+    created = ensure_variant_slices(root, specs)
+    if created:
+        _write_variants_state(root, state_path)
     results: list[tuple[VariantSpec, Any]] = []
-    for spec in load_variant_specs(config_path):
+    for spec in specs:
         if not spec.active:
             continue
         if exclude and spec.variant_id in exclude:
@@ -403,30 +442,34 @@ def reset_soak(
             slice_state["entry_log"] = []
 
     root["soak_reset_at"] = reset_at
+    root["pnl_epoch_at"] = reset_at
     if commit:
         root["soak_reset_commit"] = commit
+        root["pnl_epoch_commit"] = commit
     root["soak_reset_reason"] = reason
     root["soak_reset_archives"] = archived
 
-    lock = _variants_state_lock(sp)
-    try:
-        sp.parent.mkdir(parents=True, exist_ok=True)
-        sp.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
-    finally:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-        lock.close()
+    _write_variants_state(root, sp)
 
     if clear_baseline_events and bp.is_file():
         try:
             baseline = json.loads(bp.read_text(encoding="utf-8"))
             baseline["paper_events"] = []
             baseline["soak_reset_at"] = reset_at
+            baseline["pnl_epoch_at"] = reset_at
             if commit:
                 baseline["soak_reset_commit"] = commit
-            from xsp_killer.lane_a_entry import _sync_entry_telemetry
-
+                baseline["pnl_epoch_commit"] = commit
             _sync_entry_telemetry(baseline)
             bp.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+            _write_entry_telemetry_brief(
+                baseline,
+                out_path=_baseline_brief_path(bp, DEFAULT_TELEMETRY_BRIEF),
+            )
+            write_paper_pnl_brief(
+                baseline,
+                out_path=_baseline_brief_path(bp, DEFAULT_PAPER_BRIEF),
+            )
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("baseline soak reset failed: %s", exc)
 
@@ -479,12 +522,7 @@ def clear_pnl_epoch(
     root["pnl_clear_reason"] = reason
     root["pnl_clear_archives"] = archived
 
-    lock = _variants_state_lock(sp)
-    try:
-        sp.write_text(json.dumps(root, indent=2) + "\n", encoding="utf-8")
-    finally:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
-        lock.close()
+    _write_variants_state(root, sp)
 
     if bp.is_file():
         try:
@@ -494,14 +532,12 @@ def clear_pnl_epoch(
             baseline["pnl_epoch_at"] = epoch_at
             if commit:
                 baseline["pnl_epoch_commit"] = commit
-            from xsp_killer.lane_a_entry import (
-                _sync_entry_telemetry,
-                _write_entry_telemetry_brief,
-            )
-
             _sync_entry_telemetry(baseline)
             bp.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
-            _write_entry_telemetry_brief(baseline)
+            _write_entry_telemetry_brief(
+                baseline,
+                out_path=_baseline_brief_path(bp, DEFAULT_TELEMETRY_BRIEF),
+            )
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning("baseline pnl clear failed: %s", exc)
 
@@ -511,6 +547,52 @@ def clear_pnl_epoch(
         "pnl_epoch_commit": commit,
         "pnl_clear_reason": reason,
         "archived": archived,
+        "scoreboard": str(out),
+    }
+
+
+def resync_epoch_briefs(
+    *,
+    state_path: Path | None = None,
+    baseline_state_path: Path | None = None,
+    scoreboard_path: Path | None = None,
+    config_path: Path | None = None,
+) -> dict[str, Any]:
+    """Restore baseline brief epoch parity from variants-state canonical pnl_epoch_at."""
+    sp = state_path or DEFAULT_VARIANTS_STATE
+    bp = baseline_state_path or DEFAULT_BASELINE_STATE
+    sb = scoreboard_path or DEFAULT_SCOREBOARD
+
+    root = load_variants_state(sp)
+    canonical_epoch = root.get("pnl_epoch_at")
+    if bp.is_file():
+        try:
+            baseline = json.loads(bp.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            baseline = {}
+    else:
+        baseline = {}
+
+    baseline["pnl_epoch_at"] = canonical_epoch
+    _sync_entry_telemetry(baseline)
+    bp.parent.mkdir(parents=True, exist_ok=True)
+    bp.write_text(json.dumps(baseline, indent=2) + "\n", encoding="utf-8")
+
+    telemetry_path = _baseline_brief_path(bp, DEFAULT_TELEMETRY_BRIEF)
+    paper_path = _baseline_brief_path(bp, DEFAULT_PAPER_BRIEF)
+    _write_entry_telemetry_brief(baseline, out_path=telemetry_path)
+    write_paper_pnl_brief(baseline, out_path=paper_path)
+    out = build_scoreboard(
+        config_path=config_path,
+        state_path=sp,
+        baseline_state_path=bp,
+        out_path=sb,
+    )
+    return {
+        "pnl_epoch_at": canonical_epoch,
+        "baseline_state": str(bp),
+        "telemetry_brief": str(telemetry_path),
+        "paper_brief": str(paper_path),
         "scoreboard": str(out),
     }
 
@@ -621,7 +703,7 @@ def _entry_session_rows(entry_logs: list[dict[str, Any]]) -> list[list[dict[str,
         if not session:
             continue
         try:
-            if date.fromisoformat(session).weekday() >= 5:
+            if not is_et_trading_session(date.fromisoformat(session)):
                 continue
         except ValueError:
             continue
@@ -642,7 +724,7 @@ def _weekend_eval_count(entry_logs: list[dict[str, Any]]) -> int:
         if not session:
             continue
         try:
-            if date.fromisoformat(session).weekday() >= 5:
+            if not is_et_trading_session(date.fromisoformat(session)):
                 count += 1
         except ValueError:
             continue
@@ -767,6 +849,8 @@ def _exit_shadow_summary(
                     "label": bracket.get("label"),
                     "would_exit": 0,
                     "would_hold": 0,
+                    "would_hold_open": 0,
+                    "would_hold_realized_pnl_usd": 0.0,
                     "last_exit_reason": None,
                 },
             )
@@ -776,6 +860,46 @@ def _exit_shadow_summary(
                 summary["would_hold"] += 1
             if bracket.get("exit_reason") is not None:
                 summary["last_exit_reason"] = bracket.get("exit_reason")
+        if event.get("event_type") == "virtual_hold_closed":
+            bracket_id = event.get("bracket_id")
+            if not bracket_id:
+                continue
+            summary = brackets.setdefault(
+                str(bracket_id),
+                {
+                    "label": event.get("label"),
+                    "would_exit": 0,
+                    "would_hold": 0,
+                    "would_hold_open": 0,
+                    "would_hold_realized_pnl_usd": 0.0,
+                    "last_exit_reason": None,
+                },
+            )
+            summary["would_hold_realized_pnl_usd"] = round(
+                float(summary["would_hold_realized_pnl_usd"])
+                + float(event.get("paper_pnl_usd") or 0.0),
+                2,
+            )
+            if event.get("exit_reason") is not None:
+                summary["last_exit_reason"] = event.get("exit_reason")
+    for hold in state.get("shadow_virtual_holds") or []:
+        if not isinstance(hold, dict) or hold.get("status", "open") != "open":
+            continue
+        bracket_id = hold.get("bracket_id")
+        if not bracket_id:
+            continue
+        summary = brackets.setdefault(
+            str(bracket_id),
+            {
+                "label": hold.get("label"),
+                "would_exit": 0,
+                "would_hold": 0,
+                "would_hold_open": 0,
+                "would_hold_realized_pnl_usd": 0.0,
+                "last_exit_reason": None,
+            },
+        )
+        summary["would_hold_open"] += 1
     return {
         "events_evaluated": len(events),
         "last_evaluated_at": last_evaluated_at,
@@ -933,8 +1057,12 @@ def build_scoreboard(
     out_path: Path | None = None,
 ) -> Path:
     """Aggregate realized paper PnL per variant for comparison."""
-    specs = {s.variant_id: s for s in load_variant_specs(config_path)}
+    specs_list = load_variant_specs(config_path)
+    specs = {s.variant_id: s for s in specs_list}
     root = load_variants_state(state_path)
+    created = ensure_variant_slices(root, specs_list)
+    if created:
+        _write_variants_state(root, state_path)
     rows: list[dict[str, Any]] = []
     latest_entry_eval: datetime | None = None
 
@@ -1088,6 +1216,10 @@ def build_scoreboard(
         "pnl_epoch_at": root.get("pnl_epoch_at") or soak_reset_at,
         "soak_reset_commit": root.get("soak_reset_commit"),
         "pnl_epoch_commit": root.get("pnl_epoch_commit"),
+        "active_variant_ids": [spec.variant_id for spec in active_specs],
+        "state_variant_ids": sorted(
+            variant_id for variant_id, raw in state_variants.items() if isinstance(raw, dict)
+        ),
         "last_entry_eval_at": last_entry_eval_at,
         "stale": stale,
         "comparison_guidance": (

@@ -344,6 +344,14 @@ def test_write_paper_pnl_brief_includes_dual_notional(tmp_path, monkeypatch):
     assert payload["open_positions_mtm_usd_1x"] == -9.0
 
 
+def test_write_paper_pnl_brief_falls_back_to_rules_logic_version(tmp_path):
+    from xsp_killer.lane_a_monitor import write_paper_pnl_brief
+
+    out = write_paper_pnl_brief({}, report=None, out_path=tmp_path / "pnl.json")
+    payload = __import__("json").loads(out.read_text(encoding="utf-8"))
+    assert payload["logic_version"] == "xsp_lane_a_v2"
+
+
 def test_close_paper_positions_on_exit_stamps_spx_drift():
     state = {
         "paper_positions": {
@@ -444,3 +452,96 @@ def test_run_monitor_closes_paper_positions_with_spx_drift(tmp_path, monkeypatch
     assert pos["status"] == "closed"
     assert pos["spx_at_exit"] == 6120.0
     assert pos["spy_drift_pct"] == 2.0
+
+
+def test_run_monitor_opens_shadow_virtual_holds(tmp_path, monkeypatch):
+    state = {
+        "paper_positions": {
+            "paper:XSP:2026-07-18:6000": {
+                "position_id": "paper:XSP:2026-07-18:6000",
+                "lane": "A",
+                "chain_symbol": "XSP",
+                "option_type": "call",
+                "strike": 6000.0,
+                "expiration_date": "2026-07-18",
+                "quantity": 1.0,
+                "average_price": 100.0,
+                "mark_price": 79.0,
+                "entry_mid_premium": 100.0,
+                "status": "open",
+                "entry_ts": "2026-06-15T19:45:00+00:00",
+            }
+        }
+    }
+    save_state(tmp_path / "state.json", state)
+    monkeypatch.setattr("xsp_killer.lane_a_monitor.refresh_paper_marks", lambda rows: rows)
+    report = run_monitor(
+        state_path=tmp_path / "state.json",
+        now_et=datetime(2026, 6, 16, 9, 45, tzinfo=ET),
+        publish_intel=False,
+        fetch_ta=False,
+        write_paper_brief=False,
+    )
+    refreshed = load_state(tmp_path / "state.json")
+    hold_ids = {
+        row["bracket_id"] for row in refreshed.get("shadow_virtual_holds") or []
+    }
+    assert report.paper_hypothetical_exits[0]["exit_reason"] == "stop_loss"
+    assert "wide_sl_30" in hold_ids
+    assert "defer_morning_cut_1d" in hold_ids
+    assert "defer_morning_cut_3d" in hold_ids
+    assert "defer_morning_cut_5d" in hold_ids
+
+
+def test_run_monitor_closes_shadow_virtual_holds_on_future_cycle(tmp_path, monkeypatch):
+    state = {
+        "shadow_virtual_holds": [
+            {
+                "virtual_hold_id": "vh-1",
+                "opened_at": "2026-06-16T13:45:00+00:00",
+                "position_id": "paper:XSP:2026-07-18:6000",
+                "bracket_id": "wide_sl_30",
+                "label": "Wide stop 30% (variant-style)",
+                "logic_version": "xsp_lane_a_v2",
+                "lane": "A",
+                "chain_symbol": "XSP",
+                "option_type": "call",
+                "strike": 6000.0,
+                "expiration_date": "2026-07-18",
+                "quantity": 1.0,
+                "average_price": 100.0,
+                "entry_mid_premium": 100.0,
+                "entry_ts": "2026-06-15T19:45:00+00:00",
+                "mark_price": 84.0,
+                "mark_quote_stale": False,
+                "dte": 32,
+                "status": "open",
+            }
+        ]
+    }
+    save_state(tmp_path / "state.json", state)
+
+    def _mark_virtual(rows):
+        updated = []
+        for row in rows:
+            copy = dict(row)
+            copy["mark_price"] = 68.0
+            copy["last_mark_price"] = 68.0
+            updated.append(copy)
+        return updated
+
+    monkeypatch.setattr("xsp_killer.lane_a_monitor.refresh_paper_marks", _mark_virtual)
+    run_monitor(
+        state_path=tmp_path / "state.json",
+        positions_override=[],
+        now_et=datetime(2026, 6, 17, 10, 5, tzinfo=ET),
+        publish_intel=False,
+        fetch_ta=False,
+        write_paper_brief=False,
+    )
+    refreshed = load_state(tmp_path / "state.json")
+    assert refreshed.get("shadow_virtual_holds") == []
+    close_evt = refreshed["paper_shadow_events"][-1]
+    assert close_evt["event_type"] == "virtual_hold_closed"
+    assert close_evt["bracket_id"] == "wide_sl_30"
+    assert close_evt["exit_reason"] == "stop_loss"

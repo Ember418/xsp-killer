@@ -46,6 +46,18 @@ DEFAULT_OUT = ROOT / "briefs" / "xsp-lane-a-entry-latest.json"
 DEFAULT_TELEMETRY_BRIEF = ROOT / "briefs" / "xsp-lane-a-entry-telemetry-latest.json"
 ET = ZoneInfo("America/New_York")
 
+NYSE_2026_HOLIDAYS = {
+    date(2026, 1, 1),
+    date(2026, 1, 19),
+    date(2026, 2, 16),
+    date(2026, 4, 3),
+    date(2026, 5, 25),
+    date(2026, 7, 3),
+    date(2026, 9, 7),
+    date(2026, 11, 26),
+    date(2026, 12, 25),
+}
+
 
 @dataclass
 class EntryRules:
@@ -488,6 +500,14 @@ def et_session_date(raw: Any) -> str | None:
     return ts.astimezone(ET).date().isoformat()
 
 
+def is_et_trading_session(session_date: date) -> bool:
+    if session_date.weekday() >= 5:
+        return False
+    if session_date.year == 2026 and session_date in NYSE_2026_HOLIDAYS:
+        return False
+    return True
+
+
 def unique_et_sessions(entry_logs: list[dict[str, Any]]) -> list[str]:
     sessions: set[str] = set()
     for row in entry_logs:
@@ -495,7 +515,7 @@ def unique_et_sessions(entry_logs: list[dict[str, Any]]) -> list[str]:
         if not session:
             continue
         try:
-            if date.fromisoformat(session).weekday() >= 5:
+            if not is_et_trading_session(date.fromisoformat(session)):
                 continue
         except ValueError:
             continue
@@ -512,7 +532,7 @@ def _session_rows_by_et_date(
         if not session:
             continue
         try:
-            if date.fromisoformat(session).weekday() >= 5:
+            if not is_et_trading_session(date.fromisoformat(session)):
                 continue
         except ValueError:
             continue
@@ -770,6 +790,7 @@ def run_paper_entry(
         yellow_frac=yellow_frac,
         ta_entry_ok=ta_signal.entry_ok,
         yellow_frac_min=lane_rules.regime_yellow_frac_min,
+        yellow_require_bounce=lane_rules.regime_yellow_require_bounce,
     )
     if not regime_gate_ok:
         decision.skip_reason = regime_gate_reason

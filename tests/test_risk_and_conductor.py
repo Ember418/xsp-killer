@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from xsp_killer.conductor_shadow import shadow_review_entry
@@ -198,3 +199,29 @@ def test_consecutive_loss_streak_respects_reset_marker(monkeypatch):
     ok, reason = entry_allowed_by_risk(state)
     assert ok is True
     assert reason is None
+
+
+def test_daily_loss_cap_respects_scale_regression(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_DAILY_LOSS_CAP_USD", "500")
+    monkeypatch.delenv("XSP_LANE_A_PREMIUM_SCALE", raising=False)
+    state = {
+        "paper_events": [
+            {
+                "evaluated_at": datetime.now(ET).replace(hour=14).isoformat(),
+                "paper_pnl_usd": -1582.45,
+            }
+        ]
+    }
+
+    ok, reason = entry_allowed_by_risk(
+        state, rules_path=Path("/opt/xsp-killer/config/lane_a_rules.yaml")
+    )
+    assert ok is True
+    assert reason is None
+
+    monkeypatch.setenv("XSP_LANE_A_PREMIUM_SCALE", "1")
+    ok, reason = entry_allowed_by_risk(
+        state, rules_path=Path("/opt/xsp-killer/config/lane_a_rules.yaml")
+    )
+    assert ok is False
+    assert "scale=1.00x" in (reason or "")

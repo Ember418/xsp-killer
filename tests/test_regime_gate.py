@@ -88,3 +88,17 @@ def test_yellow_gate_blocks_red_regime():
     )
     assert ok is False
     assert reason == "regime RED blocks new risk"
+
+
+def test_yellow_gate_allows_without_bounce_when_relaxed():
+    ok, reason = regime_gate_allows(
+        regime_gate="GREEN_OR_YELLOW_BOUNCE",
+        regime="YELLOW",
+        regime_ok=False,
+        yellow_frac=0.5,
+        ta_entry_ok=False,
+        yellow_frac_min=0.50,
+        yellow_require_bounce=False,
+    )
+    assert ok is True
+    assert reason is None

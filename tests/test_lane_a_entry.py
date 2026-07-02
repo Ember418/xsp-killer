@@ -15,6 +15,7 @@ from xsp_killer.lane_a_entry import (
     et_session_date,
     entry_logs_for_epoch,
     in_entry_window,
+    is_et_trading_session,
     open_paper_positions,
     pick_cheapest_atm_strike,
     reap_expired_paper_positions,
@@ -389,8 +390,15 @@ def test_unique_et_sessions_dedupes_intraday_and_excludes_weekends():
         {"evaluated_at": "2026-06-26T20:00:00+00:00"},
         {"evaluated_at": "2026-06-27T19:45:00+00:00"},
         {"evaluated_at": "2026-06-29T19:45:00+00:00"},
+        {"evaluated_at": "2026-07-03T19:45:00+00:00"},
     ]
     assert unique_et_sessions(logs) == ["2026-06-26", "2026-06-29"]
+
+
+def test_is_et_trading_session_excludes_2026_nyse_holidays():
+    assert is_et_trading_session(date(2026, 7, 2)) is True
+    assert is_et_trading_session(date(2026, 7, 3)) is False
+    assert is_et_trading_session(date(2026, 7, 4)) is False
 
 
 def test_entry_telemetry_dedupes_sessions_and_keeps_raw_eval_total():

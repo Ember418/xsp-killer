@@ -153,6 +153,29 @@ def brief_consistency_anomalies(
     if not isinstance(baseline, dict):
         return anomalies
 
+    epoch_values: list[str | None] = [payload.get("pnl_epoch_at")]
+    if isinstance(paper_brief, dict):
+        if "pnl_epoch_at" in paper_brief:
+            epoch_values.append(paper_brief.get("pnl_epoch_at"))
+    if isinstance(telemetry_brief, dict):
+        if "pnl_epoch_at" in telemetry_brief:
+            epoch_values.append(telemetry_brief.get("pnl_epoch_at"))
+    if len(epoch_values) > 1 and len({str(value) for value in epoch_values}) > 1:
+        anomalies.append("pnl_epoch_mismatch")
+
+    active_variant_ids = {
+        str(variant_id)
+        for variant_id in (payload.get("active_variant_ids") or [])
+        if variant_id
+    }
+    state_variant_ids = {
+        str(variant_id)
+        for variant_id in (payload.get("state_variant_ids") or [])
+        if variant_id
+    }
+    if active_variant_ids.difference(state_variant_ids):
+        anomalies.append("variant_missing_from_state")
+
     if isinstance(paper_brief, dict):
         if paper_brief.get("hypothetical_realized_pnl_usd") != baseline.get(
             "realized_pnl_usd"
