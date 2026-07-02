@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import xsp_killer.lane_a_entry as lane_a_entry
+import xsp_killer.lane_a_monitor as lane_a_monitor
 from xsp_killer.data_hazards import (
     EXECUTION_FAILURE,
     OUTPUT_DRIFT,
@@ -23,3 +25,8 @@ def test_regime_insufficient_data_hazard():
         classify_regime_hazard("Insufficient SPY data — defensive default")
         == EXECUTION_FAILURE
     )
+
+
+def test_runtime_briefs_are_isolated_to_tmp_paths():
+    assert "xsp_runtime" in str(lane_a_monitor.DEFAULT_PAPER_BRIEF)
+    assert "xsp_runtime" in str(lane_a_entry.DEFAULT_TELEMETRY_BRIEF)

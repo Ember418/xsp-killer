@@ -8,19 +8,28 @@ import logging
 import shutil
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from xsp_killer.lane_a_entry import run_paper_entry, summarize_entry_telemetry_from_logs
+from xsp_killer.lane_a_entry import (
+    et_session_date,
+    run_paper_entry,
+    summarize_entry_telemetry_from_logs,
+    unique_et_sessions,
+)
 from xsp_killer.lane_a_monitor import (
     DEFAULT_RULES,
+    ET,
+    LaneRules,
     load_state,
+    paper_positions_to_lane,
     run_monitor,
     save_state,
 )
+from xsp_killer.paper_economics import load_premium_scale
 
 logger = logging.getLogger("xsp_killer.lane_a_variants")
 
@@ -353,6 +362,11 @@ def _last_exit_with_contract_meta(
     if expiration is not None:
         last_exit["expiration"] = expiration
 
+    for field in ("chain_symbol", "option_type", "strike"):
+        value = last_exit.get(field, position.get(field))
+        if value is not None:
+            last_exit[field] = value
+
     return last_exit
 
 
@@ -533,19 +547,25 @@ def _variant_track_meta(
 
 
 def _entry_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, int]:
-    entered_sessions = sum(1 for row in entry_logs if row.get("entered"))
+    sessions = _entry_session_rows(entry_logs)
+    entered_sessions = sum(
+        1 for rows in sessions if any(row.get("entered") for row in rows)
+    )
     regime_gate_skips = sum(
         1
-        for row in entry_logs
-        if str(row.get("skip_reason") or "").startswith("regime ")
+        for rows in sessions
+        if not any(row.get("entered") for row in rows)
+        and str(_session_outcome_row(rows).get("skip_reason") or "").startswith("regime ")
     )
-    bounce_signal_sessions = sum(1 for row in entry_logs if row.get("bb_entry_ok"))
+    bounce_signal_sessions = sum(
+        1 for rows in sessions if any(row.get("bb_entry_ok") for row in rows)
+    )
     bounce_blocked_by_regime = sum(
         1
-        for row in entry_logs
-        if row.get("bb_entry_ok")
-        and not row.get("entered")
-        and str(row.get("skip_reason") or "").startswith("regime ")
+        for rows in sessions
+        if any(row.get("bb_entry_ok") for row in rows)
+        and not any(row.get("entered") for row in rows)
+        and str(_session_outcome_row(rows).get("skip_reason") or "").startswith("regime ")
     )
     return {
         "entered_sessions": entered_sessions,
@@ -592,6 +612,202 @@ def _vol_shadow_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, Any
         "vol_shadow_latest_would_block": (latest or {}).get("shadow_would_block"),
         "vol_shadow_avg_spy_rv": round(sum(rvs) / len(rvs), 4) if rvs else None,
     }
+
+
+def _entry_session_rows(entry_logs: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in entry_logs:
+        session = et_session_date(row.get("evaluated_at"))
+        if not session:
+            continue
+        try:
+            if date.fromisoformat(session).weekday() >= 5:
+                continue
+        except ValueError:
+            continue
+        grouped.setdefault(session, []).append(row)
+    return [grouped[key] for key in sorted(grouped)]
+
+
+def _session_outcome_row(session_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered = sorted(session_rows, key=lambda row: str(row.get("evaluated_at") or ""))
+    entered = next((row for row in ordered if row.get("entered")), None)
+    return entered or ordered[-1]
+
+
+def _weekend_eval_count(entry_logs: list[dict[str, Any]]) -> int:
+    count = 0
+    for row in entry_logs:
+        session = et_session_date(row.get("evaluated_at"))
+        if not session:
+            continue
+        try:
+            if date.fromisoformat(session).weekday() >= 5:
+                count += 1
+        except ValueError:
+            continue
+    return count
+
+
+def _open_positions_metrics(
+    state: dict[str, Any],
+    *,
+    rules_path: Path | None = None,
+) -> dict[str, float]:
+    open_positions = [
+        p
+        for p in (state.get("paper_positions") or {}).values()
+        if isinstance(p, dict) and p.get("status", "open") == "open"
+    ]
+    if not open_positions:
+        return {
+            "open_positions_mtm_usd": 0.0,
+            "open_positions_mtm_usd_1x": 0.0,
+        }
+    rules = LaneRules.from_yaml(rules_path or DEFAULT_RULES)
+    classified = paper_positions_to_lane(
+        open_positions,
+        rules,
+        today=datetime.now(ET).date(),
+    )
+    mtm_scaled = round(sum(float(pos.pnl_usd or 0.0) for pos in classified), 2)
+    scale = load_premium_scale(rules_path or DEFAULT_RULES)
+    return {
+        "open_positions_mtm_usd": mtm_scaled,
+        "open_positions_mtm_usd_1x": (
+            round(mtm_scaled / scale, 2) if scale else None
+        ),
+    }
+
+
+def _contract_key(raw: dict[str, Any]) -> str | None:
+    expiration = raw.get("expiration_date") or raw.get("expiration")
+    strike = raw.get("strike")
+    position_id = str(raw.get("position_id") or "")
+    chain_symbol = str(raw.get("chain_symbol") or "XSP").upper()
+    option_type = str(raw.get("option_type") or "call").lower()
+    if (expiration is None or strike is None) and position_id.startswith("paper:"):
+        parts = position_id.split(":")
+        if len(parts) >= 4:
+            chain_symbol = str(parts[1] or chain_symbol).upper()
+            if expiration is None:
+                expiration = parts[2]
+            if strike is None:
+                strike = parts[3]
+    if expiration is None or strike is None:
+        return None
+    try:
+        strike_val = float(strike)
+    except (TypeError, ValueError):
+        return None
+    if strike_val.is_integer():
+        strike_part = str(int(strike_val))
+    else:
+        strike_part = str(strike_val)
+    return f"{chain_symbol}:{option_type}:{expiration}:{strike_part}"
+
+
+def _contract_cluster_id(
+    *,
+    open_positions: list[dict[str, Any]],
+    last_exit: dict[str, Any] | None,
+) -> str | None:
+    keys = sorted(
+        {
+            key
+            for pos in open_positions
+            if isinstance(pos, dict)
+            for key in [_contract_key(pos)]
+            if key
+        }
+    )
+    if not keys and isinstance(last_exit, dict):
+        key = _contract_key(last_exit)
+        if key:
+            keys = [key]
+    if not keys:
+        return None
+    if len(keys) == 1:
+        return keys[0]
+    return "multi:" + "|".join(keys)
+
+
+def _exit_shadow_summary(
+    state: dict[str, Any],
+    soak_reset_at: str | None,
+) -> dict[str, Any] | None:
+    events = [
+        event
+        for event in (state.get("paper_shadow_events") or [])
+        if isinstance(event, dict)
+        and (
+            not soak_reset_at
+            or str(event.get("evaluated_at") or "") >= str(soak_reset_at)
+        )
+    ]
+    if not events:
+        return None
+    brackets: dict[str, dict[str, Any]] = {}
+    last_evaluated_at: str | None = None
+    for event in events:
+        evaluated_at = event.get("evaluated_at")
+        if evaluated_at and (
+            last_evaluated_at is None or str(evaluated_at) > last_evaluated_at
+        ):
+            last_evaluated_at = str(evaluated_at)
+        for bracket in event.get("brackets") or []:
+            if not isinstance(bracket, dict):
+                continue
+            bracket_id = bracket.get("bracket_id")
+            if not bracket_id:
+                continue
+            summary = brackets.setdefault(
+                str(bracket_id),
+                {
+                    "label": bracket.get("label"),
+                    "would_exit": 0,
+                    "would_hold": 0,
+                    "last_exit_reason": None,
+                },
+            )
+            if bracket.get("would_exit"):
+                summary["would_exit"] += 1
+            else:
+                summary["would_hold"] += 1
+            if bracket.get("exit_reason") is not None:
+                summary["last_exit_reason"] = bracket.get("exit_reason")
+    return {
+        "events_evaluated": len(events),
+        "last_evaluated_at": last_evaluated_at,
+        "brackets": brackets,
+    }
+
+
+def _build_contract_clusters(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    clusters: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        cluster_id = row.get("contract_cluster_id")
+        if not cluster_id:
+            continue
+        cluster = clusters.setdefault(
+            str(cluster_id),
+            {
+                "variant_ids": [],
+                "variant_count": 0,
+                "open_positions": 0,
+                "trades_closed": 0,
+                "realized_pnl_usd": 0.0,
+            },
+        )
+        cluster["variant_ids"].append(row["variant_id"])
+        cluster["variant_count"] = len(cluster["variant_ids"])
+        cluster["open_positions"] += int(row.get("open_positions") or 0)
+        cluster["trades_closed"] += int(row.get("trades_closed") or 0)
+        cluster["realized_pnl_usd"] = round(
+            float(cluster["realized_pnl_usd"]) + float(row.get("realized_pnl_usd") or 0),
+            2,
+        )
+    return clusters
 
 
 def _build_regime_gate_comparison(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -737,6 +953,7 @@ def build_scoreboard(
             for p in (state.get("paper_positions") or {}).values()
             if isinstance(p, dict) and p.get("status", "open") == "open"
         ]
+        rules_path = merged_rules_path(spec) if spec is not None else DEFAULT_RULES
         nonlocal latest_entry_eval
         for row in entry_logs:
             evaluated_at = _parse_timestamp(row.get("evaluated_at"))
@@ -748,9 +965,16 @@ def build_scoreboard(
         wins = sum(1 for e in events if float(e.get("paper_pnl_usd") or 0) > 0)
         losses = sum(1 for e in events if float(e.get("paper_pnl_usd") or 0) < 0)
         trades = len(events)
-        sessions_evaluated = len(entry_logs)
+        evals_total = len(entry_logs)
+        weekend_evals_excluded = _weekend_eval_count(entry_logs)
+        sessions_evaluated = len(unique_et_sessions(entry_logs))
         win_rate = round(wins / trades * 100.0, 1) if trades else None
         avg_pnl = round(realized / trades, 2) if trades else None
+        last_exit = _last_exit_with_contract_meta(state, events)
+        contract_cluster_id = _contract_cluster_id(
+            open_positions=open_pos,
+            last_exit=last_exit,
+        )
         row: dict[str, Any] = {
             "variant_id": variant_id,
             "description": description,
@@ -761,14 +985,19 @@ def build_scoreboard(
             "realized_pnl_usd": realized,
             "avg_pnl_per_trade_usd": avg_pnl,
             "sessions_evaluated": sessions_evaluated,
+            "entry_evals_total": evals_total,
+            "weekend_evals_excluded": weekend_evals_excluded,
             "sessions_to_gate": max(0, 20 - sessions_evaluated),
             "open_positions": len(open_pos),
-            "last_exit": _last_exit_with_contract_meta(state, events),
+            "last_exit": last_exit,
+            "contract_cluster_id": contract_cluster_id,
+            "low_sample": sessions_evaluated < PROMOTION_SESSIONS_GATE or trades < 2,
         }
         row.update(_variant_track_meta(variant_id, spec))
         entry_stats = _entry_session_stats(entry_logs)
         row.update(entry_stats)
         row.update(_vol_shadow_session_stats(entry_logs))
+        row.update(_open_positions_metrics(state, rules_path=rules_path))
         row.update(
             _promotion_meta(
                 sessions_evaluated,
@@ -777,12 +1006,16 @@ def build_scoreboard(
             )
         )
         tel = summarize_entry_telemetry_from_logs(entry_logs)
-        if tel.get("sessions_evaluated", 0) > 0:
+        if tel.get("evals_total", 0) > 0:
             row["entry_telemetry"] = {
                 "skip_reason_counts": tel.get("skip_reason_counts") or {},
                 "regime_counts": tel.get("regime_counts") or {},
+                "evals_total": tel.get("evals_total", 0),
                 "entered_sessions": tel.get("entered_sessions", 0),
             }
+        exit_shadow = _exit_shadow_summary(state, soak_reset_at)
+        if exit_shadow is not None:
+            row["exit_shadow"] = exit_shadow
         rows.append(row)
 
     # Shadow variants
@@ -828,14 +1061,21 @@ def build_scoreboard(
         else:
             row["vs_baseline_avg_per_trade_usd"] = None
 
-    shadow_rows.sort(
-        key=lambda r: (
-            r.get("avg_pnl_per_trade_usd") is not None,
-            r.get("avg_pnl_per_trade_usd") or -1e18,
-        ),
-        reverse=True,
+    ranking_reliable = (
+        sum(1 for row in shadow_rows if not row.get("low_sample")) >= 2
     )
+    if ranking_reliable:
+        shadow_rows.sort(
+            key=lambda r: (
+                r.get("avg_pnl_per_trade_usd") is not None,
+                r.get("avg_pnl_per_trade_usd") or -1e18,
+            ),
+            reverse=True,
+        )
+    else:
+        shadow_rows.sort(key=lambda r: str(r.get("variant_id") or ""))
     ordered = shadow_rows + ([baseline_row] if baseline_row else [])
+    contract_clusters = _build_contract_clusters(ordered)
     updated_at_dt = datetime.now(timezone.utc)
     updated_at = updated_at_dt.isoformat()
     last_entry_eval_at = latest_entry_eval.isoformat() if latest_entry_eval else None
@@ -855,9 +1095,11 @@ def build_scoreboard(
             "Do NOT sum PnL across variants — configs are independent experiments."
         ),
         "ranked_by": "avg_pnl_per_trade_usd",
+        "ranking_reliable": ranking_reliable,
         "baseline_prod": baseline_row,
         "shadow_variants": shadow_rows,
         "variants": ordered,
+        "contract_clusters": contract_clusters,
         "regime_gate_comparison": _build_regime_gate_comparison(rows),
         "regime_skip_breakdown": _build_regime_skip_breakdown(rows),
         "promotion_summary": _build_promotion_summary(rows),

@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from xsp_killer.health_soak import (
     baseline_zero_entries_after_grace,
     baseline_zero_sessions_after_grace,
+    brief_consistency_anomalies,
     detect_strict_anomalies,
     promotion_proximity_summary,
     regime_axis_comparison_summary,
@@ -29,12 +30,20 @@ def _scoreboard_payload(
             "variant_id": "v2_baseline_prod",
             "sessions_evaluated": baseline_sessions_evaluated,
             "entered_sessions": 0,
+            "entry_evals_total": baseline_sessions_evaluated,
             "sessions_to_promotion_gate": max(0, 20 - baseline_sessions_evaluated),
             "entered_sessions_to_promotion_gate": 10,
+            "realized_pnl_usd": -1582.45,
+            "open_positions_mtm_usd": 0.0,
             "vol_shadow_latest_spy_rv": 0.1761,
             "vol_shadow_avg_spy_rv": 0.1763,
             "regime_gate_skip_sessions": 12,
             "bb_bounce_signal_sessions": 0,
+            "entry_telemetry": {
+                "skip_reason_counts": {"regime_gate": 12},
+                "entered_sessions": 0,
+                "evals_total": baseline_sessions_evaluated,
+            },
         },
         "regime_gate_comparison": {
             "baseline_variant_id": "v2_baseline_prod",
@@ -182,6 +191,49 @@ def test_detect_strict_anomalies_includes_pytest_failures():
     )
 
     assert anomalies == ["pytest_failed"]
+
+
+def test_brief_consistency_anomalies_detect_brief_mismatches():
+    payload = _scoreboard_payload(baseline_sessions_evaluated=12)
+    anomalies = brief_consistency_anomalies(
+        payload,
+        paper_brief={
+            "hypothetical_realized_pnl_usd": -75.0,
+            "open_positions_mtm_usd": -10.0,
+        },
+        telemetry_brief={
+            "sessions_evaluated": 0,
+            "entered_sessions": 0,
+            "evals_total": 0,
+            "skip_reason_counts": {},
+        },
+    )
+    assert anomalies == [
+        "baseline_pnl_brief_mismatch",
+        "baseline_open_mtm_brief_mismatch",
+        "entry_telemetry_sessions_mismatch",
+        "entry_telemetry_evals_total_mismatch",
+        "entry_telemetry_skip_counts_mismatch",
+    ]
+
+
+def test_scoreboard_report_metrics_includes_brief_consistency_anomalies():
+    payload = _scoreboard_payload(baseline_sessions_evaluated=12)
+    metrics = scoreboard_report_metrics(
+        payload,
+        paper_brief={
+            "hypothetical_realized_pnl_usd": -75.0,
+            "open_positions_mtm_usd": -10.0,
+        },
+        telemetry_brief={
+            "sessions_evaluated": 0,
+            "entered_sessions": 0,
+            "evals_total": 0,
+            "skip_reason_counts": {},
+        },
+    )
+    assert "baseline_pnl_brief_mismatch" in metrics["brief_consistency_anomalies"]
+    assert "entry_telemetry_sessions_mismatch" in metrics["strict_anomalies"]
 
 
 def test_regime_axis_comparison_summary_flags_session_divergence():

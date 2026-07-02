@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from xsp_killer.paper_economics import load_premium_scale
+
 ET = ZoneInfo("America/New_York")
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STATE = ROOT / "briefs" / "xsp-lane-a-state.json"
@@ -29,11 +31,19 @@ def _max_consecutive_losses() -> int:
         return 3
 
 
+def _event_marker_ts(evt: dict[str, Any]) -> str:
+    return str(evt.get("evaluated_at") or evt.get("exit_ts") or "")
+
+
 def consecutive_losing_paper_exits(state: dict[str, Any]) -> int:
     """Count trailing consecutive losing paper exits (K79 blow-up flag)."""
     streak = 0
+    reset_at = str(state.get("risk_streak_reset_at") or "")
     events = [e for e in (state.get("paper_events") or []) if isinstance(e, dict)]
     for evt in reversed(events):
+        evt_ts = _event_marker_ts(evt)
+        if reset_at and (not evt_ts or evt_ts < reset_at):
+            break
         raw_pnl = evt.get("paper_pnl_usd")
         if raw_pnl is None:
             continue
@@ -66,17 +76,25 @@ def realized_pnl_today(state: dict[str, Any], *, day: date | None = None) -> flo
     return round(total, 2)
 
 
-def entry_allowed_by_risk(state: dict[str, Any]) -> tuple[bool, str | None]:
+def entry_allowed_by_risk(
+    state: dict[str, Any], *, rules_path: Path | None = None
+) -> tuple[bool, str | None]:
     if os.getenv("XSP_LANE_A_RISK_GATE", "true").strip().lower() in (
         "0",
         "false",
         "no",
     ):
         return True, None
+    scale = load_premium_scale(rules_path)
     cap = _daily_loss_cap_usd()
+    effective_cap = cap * scale
     pnl = realized_pnl_today(state)
-    if pnl <= -cap:
-        return False, f"daily paper loss cap hit ({pnl:.2f} <= -{cap:.0f})"
+    if pnl <= -effective_cap:
+        return (
+            False,
+            "daily paper loss cap hit "
+            f"({pnl:.2f} <= -{effective_cap:.0f}; scale={scale:.2f}x)",
+        )
     max_losses = _max_consecutive_losses()
     streak = consecutive_losing_paper_exits(state)
     if streak >= max_losses:

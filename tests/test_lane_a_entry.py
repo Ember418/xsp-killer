@@ -12,13 +12,16 @@ from xsp_killer.lane_a_entry import (
     _finalize_entry,
     _write_entry_telemetry_brief,
     already_entered_today,
+    et_session_date,
     entry_logs_for_epoch,
     in_entry_window,
     open_paper_positions,
     pick_cheapest_atm_strike,
+    reap_expired_paper_positions,
     round_xsp_strike,
     run_paper_entry,
     summarize_entry_telemetry_from_logs,
+    unique_et_sessions,
 )
 from xsp_killer.lane_a_monitor import LaneRules
 from xsp_killer.lane_a_ta import TaSignal
@@ -131,6 +134,11 @@ def test_run_paper_entry_outside_window(tmp_path, monkeypatch):
 def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
     monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
     _mock_ta_entry_ok(monkeypatch)
+    rules_path = tmp_path / "rules-close-window.yaml"
+    rules_path.write_text(
+        "ta:\n  entry:\n    mode: close_window_only\n",
+        encoding="utf-8",
+    )
 
     def _regime():
         return "GREEN", True, None, None
@@ -155,6 +163,7 @@ def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
     )
 
     decision = run_paper_entry(
+        rules_path=rules_path,
         state_path=tmp_path / "state.json",
         log_path=tmp_path / "paper.jsonl",
         now_et=datetime(2026, 6, 16, 15, 47, tzinfo=ET),
@@ -164,6 +173,8 @@ def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
     assert decision.position is not None
     assert decision.position["strike"] == 6010.0
     assert decision.position["average_price"] > 2.45
+    assert decision.position["entry_reason"] == "close_window_long_call"
+    assert decision.position["spx_at_entry"] == 6010.0
 
 
 def test_run_paper_entry_blocks_when_open_position(tmp_path, monkeypatch):
@@ -233,6 +244,54 @@ def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
     pos = decision.position
     assert pos["entry_mid_premium"] == 24.5
     assert pos["average_price"] > pos["entry_mid_premium"]
+
+
+def test_run_paper_entry_bb_bounce_reason(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_PAPER_ENTRY", "true")
+    rules_path = tmp_path / "rules-bb.yaml"
+    rules_path.write_text("ta:\n  entry:\n    mode: bb_bounce\n", encoding="utf-8")
+    ta_signal = TaSignal(
+        signal="bb_bounce_entry",
+        primary=None,
+        confirm=None,
+        entry_ok=True,
+        exit_ok=False,
+        upper_bb_touched=False,
+        detail="bb bounce confirmed",
+    )
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.read_regime_detail",
+        lambda: ("GREEN", True, None, None),
+    )
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.fetch_spy_ohlcv",
+        lambda: (600.0, 595.0, 0.5, "2026-06-17"),
+    )
+    monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6010.0)
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.pick_expiration",
+        lambda rules, today=None, dte_pick="min", dte_target=None: date(2026, 7, 18),
+    )
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.pick_strike",
+        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (
+            6010.0,
+            2.45,
+            0.52,
+        ),
+    )
+
+    decision = run_paper_entry(
+        rules_path=rules_path,
+        state_path=tmp_path / "state.json",
+        log_path=tmp_path / "paper.jsonl",
+        now_et=datetime(2026, 6, 16, 10, 0, tzinfo=ET),
+        publish_intel=False,
+        ta_signal=ta_signal,
+    )
+    assert decision.entered is True
+    assert decision.position is not None
+    assert decision.position["entry_reason"] == "bb_bounce_long_call"
 
 
 def test_bucket_skip_reason_regime():
@@ -314,6 +373,85 @@ def test_entry_telemetry_respects_pnl_epoch(tmp_path):
 
     payload = json.loads(brief_path.read_text(encoding="utf-8"))
     assert payload["pnl_epoch_at"] == epoch
+    assert payload["evals_total"] == 1
     assert payload["entered_sessions"] == 0
     assert payload["sessions_evaluated"] == 1
     assert "entered" not in payload["skip_reason_counts"]
+
+
+def test_et_session_date_uses_new_york_calendar():
+    assert et_session_date("2026-06-27T01:15:00+00:00") == "2026-06-26"
+
+
+def test_unique_et_sessions_dedupes_intraday_and_excludes_weekends():
+    logs = [
+        {"evaluated_at": "2026-06-26T19:45:00+00:00"},
+        {"evaluated_at": "2026-06-26T20:00:00+00:00"},
+        {"evaluated_at": "2026-06-27T19:45:00+00:00"},
+        {"evaluated_at": "2026-06-29T19:45:00+00:00"},
+    ]
+    assert unique_et_sessions(logs) == ["2026-06-26", "2026-06-29"]
+
+
+def test_entry_telemetry_dedupes_sessions_and_keeps_raw_eval_total():
+    logs = [
+        {
+            "evaluated_at": "2026-06-26T19:45:00+00:00",
+            "entered": False,
+            "skip_reason": "regime YELLOW blocks new risk",
+            "regime": "YELLOW",
+        },
+        {
+            "evaluated_at": "2026-06-26T20:00:00+00:00",
+            "entered": False,
+            "skip_reason": "regime YELLOW blocks new risk",
+            "regime": "YELLOW",
+        },
+        {
+            "evaluated_at": "2026-06-29T19:45:00+00:00",
+            "entered": True,
+            "regime": "GREEN",
+        },
+        {
+            "evaluated_at": "2026-06-28T19:45:00+00:00",
+            "entered": False,
+            "skip_reason": "regime RED blocks new risk",
+            "regime": "RED",
+        },
+    ]
+    tel = summarize_entry_telemetry_from_logs(logs)
+    assert tel["evals_total"] == 4
+    assert tel["sessions_evaluated"] == 2
+    assert tel["entered_sessions"] == 1
+    assert tel["skip_reason_counts"]["entered"] == 1
+    assert tel["skip_reason_counts"]["regime_gate"] == 1
+
+
+def test_reap_expired_paper_positions_closes_only_expired(tmp_path):
+    state = {
+        "paper_positions": {
+            "expired": {
+                "position_id": "expired",
+                "status": "open",
+                "expiration_date": "2026-06-13",
+                "logic_version": "xsp_lane_a_v2",
+            },
+            "active": {
+                "position_id": "active",
+                "status": "open",
+                "expiration_date": "2026-06-30",
+                "logic_version": "xsp_lane_a_v2",
+            },
+        }
+    }
+    closed = reap_expired_paper_positions(
+        state,
+        state_path=tmp_path / "state.json",
+        evaluated_at="2026-06-16T14:00:00+00:00",
+        today=date(2026, 6, 16),
+    )
+    assert len(closed) == 1
+    assert state["paper_positions"]["expired"]["status"] == "closed"
+    assert state["paper_positions"]["expired"]["exit_reason"] == "expired"
+    assert state["paper_positions"]["active"]["status"] == "open"
+    assert state["paper_events"][-1]["position_id"] == "expired"

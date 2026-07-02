@@ -708,6 +708,7 @@ def close_paper_positions_on_exit(
     *,
     evaluated_at: str,
     logic_version: str,
+    spx_at_exit: float | None = None,
 ) -> list[dict[str, Any]]:
     """Mark paper positions closed on first exit alert of the session."""
     paper = state.get("paper_positions") or {}
@@ -727,6 +728,19 @@ def close_paper_positions_on_exit(
         raw["exit_reason"] = alert.exit_reason if alert else "manual"
         raw["exit_pnl_usd"] = alert.pnl_usd if alert else None
         raw["exit_pnl_per_contract"] = alert.pnl_per_contract if alert else None
+        raw["spx_at_exit"] = spx_at_exit
+        entry_spx_raw = raw.get("spx_at_entry")
+        try:
+            entry_spx = float(entry_spx_raw) if entry_spx_raw is not None else None
+        except (TypeError, ValueError):
+            entry_spx = None
+        if (
+            entry_spx is not None
+            and entry_spx > 0
+            and spx_at_exit is not None
+            and spx_at_exit > 0
+        ):
+            raw["spy_drift_pct"] = round((spx_at_exit - entry_spx) / entry_spx * 100.0, 4)
         paper[pos_id] = raw
         closed.append(raw)
         events = list(state.get("paper_events") or [])
@@ -969,6 +983,8 @@ def run_monitor(
     if ta_signal is not None and hasattr(ta_signal, "to_dict"):
         report.ta_snapshot = ta_signal.to_dict()
 
+    today = (now_et or datetime.now(ET)).date()
+
     raw_positions: list[dict[str, Any]]
     if positions_override is not None:
         raw_positions = positions_override
@@ -976,6 +992,14 @@ def run_monitor(
     elif not rh_read_enabled():
         raw_positions = []
         report.rh_poll_skipped = True
+        from xsp_killer.lane_a_entry import reap_expired_paper_positions
+
+        reap_expired_paper_positions(
+            state,
+            state_path=state_path or DEFAULT_STATE,
+            evaluated_at=report.evaluated_at,
+            today=today,
+        )
         paper_raw = load_open_paper_positions(state)
         if paper_raw:
             report.paper_mode = "automated_paper"
@@ -991,7 +1015,6 @@ def run_monitor(
         else:
             report.rh_connected = True
 
-    today = (now_et or datetime.now(ET)).date()
     classified: list[LaneAPosition] = []
     for raw in raw_positions:
         pos = classify_position(raw, rules, for_monitor=True, today=today)
@@ -1025,11 +1048,18 @@ def run_monitor(
         bool(state.get("paper_positions")) and report.rh_poll_skipped
     )
     if paper_positions_active and not positions_override:
+        try:
+            from xsp_killer.lane_a_entry import fetch_spx_proxy
+
+            spx_at_exit = fetch_spx_proxy()
+        except Exception:
+            spx_at_exit = None
         closed_paper = close_paper_positions_on_exit(
             state,
             all_alerts,
             evaluated_at=report.evaluated_at,
             logic_version=rules.logic_version,
+            spx_at_exit=spx_at_exit,
         )
         report.paper_hypothetical_exits = [
             {

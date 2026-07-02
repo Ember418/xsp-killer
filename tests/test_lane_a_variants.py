@@ -29,9 +29,10 @@ def _write_variants_config(tmp_path, variants: dict[str, dict]) -> None:
 
 def test_load_variant_specs():
     specs = load_variant_specs()
-    assert len(specs) >= 10
+    assert len(specs) >= 11
     ids = {s.variant_id for s in specs}
     assert "v2_28dte_atm" in ids
+    assert "v2_28dte_atm_stack3" in ids
     assert "v2_21dte_atm" in ids
     assert "v2_yellow_top_quartile_bounce" in ids
     assert "v2_yellow_mid_bounce" in ids
@@ -58,7 +59,7 @@ def test_merged_rules_yellow_bounce_variant(tmp_path):
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     assert data["entry"]["regime_gate"] == "GREEN_OR_YELLOW_BOUNCE"
     assert data["entry"]["regime_yellow_frac_min"] == 0.75
-    assert data["ta"]["entry"]["mode"] == "close_window_and_bb"
+    assert data["ta"]["entry"]["mode"] == "close_window_only"
 
 
 def test_merged_rules_yellow_mid_bounce_variant(tmp_path):
@@ -71,7 +72,18 @@ def test_merged_rules_yellow_mid_bounce_variant(tmp_path):
     assert data["entry"]["regime_gate"] == "GREEN_OR_YELLOW_BOUNCE"
     assert data["entry"]["regime_yellow_frac_min"] == 0.50
     assert data["logging"]["logic_version"] == "xsp_lane_a_v2_yellow_mid_bounce"
-    assert data["ta"]["entry"]["mode"] == "close_window_and_bb"
+    assert data["ta"]["entry"]["mode"] == "close_window_only"
+
+
+def test_merged_rules_stack3_variant(tmp_path):
+    specs = load_variant_specs()
+    spec = next(s for s in specs if s.variant_id == "v2_28dte_atm_stack3")
+    path = merged_rules_path(spec, tmp_dir=tmp_path)
+    import yaml
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["entry"]["dte_target"] == 28
+    assert data["paper_entry"]["max_open_positions"] == 3
 
 
 def test_build_scoreboard(tmp_path):
@@ -111,7 +123,7 @@ def test_build_scoreboard(tmp_path):
                         },
                         "entry_log": [
                             {
-                                "evaluated_at": "2026-06-21T19:45:00+00:00",
+                                "evaluated_at": "2026-06-22T19:45:00+00:00",
                                 "entered": False,
                             }
                         ],
@@ -133,13 +145,23 @@ def test_build_scoreboard(tmp_path):
     assert row["trades_closed"] == 2
     assert row["avg_pnl_per_trade_usd"] == 2.5
     assert row["sessions_evaluated"] == 1
+    assert row["entry_evals_total"] == 1
+    assert row["weekend_evals_excluded"] == 0
     assert row["sessions_to_gate"] == 19
     assert row["last_exit"]["dte_actual"] == 23
     assert row["last_exit"]["expiration"] == "2026-07-18"
+    assert row["open_positions_mtm_usd"] == 0.0
+    assert row["open_positions_mtm_usd_1x"] == 0.0
+    assert row["contract_cluster_id"] == "XSP:call:2026-07-18:6010"
+    assert row["low_sample"] is True
     assert payload["baseline_prod"] is None
     assert len(payload["shadow_variants"]) == 1
-    assert payload["last_entry_eval_at"] == "2026-06-21T19:45:00+00:00"
+    assert payload["last_entry_eval_at"] == "2026-06-22T19:45:00+00:00"
     assert "Do NOT sum PnL" in payload["comparison_guidance"]
+    assert payload["ranking_reliable"] is False
+    assert payload["contract_clusters"]["XSP:call:2026-07-18:6010"]["variant_ids"] == [
+        "v2_28dte_atm"
+    ]
 
 
 def test_build_scoreboard_includes_stateless_active_spec(tmp_path):
@@ -171,7 +193,7 @@ def test_build_scoreboard_includes_stateless_active_spec(tmp_path):
                     "v2_test_a": {
                         "entry_log": [
                             {
-                                "evaluated_at": "2026-06-21T19:45:00+00:00",
+                                "evaluated_at": "2026-06-22T19:45:00+00:00",
                                 "entered": False,
                             }
                         ],
@@ -181,7 +203,7 @@ def test_build_scoreboard_includes_stateless_active_spec(tmp_path):
                     "v2_test_b": {
                         "entry_log": [
                             {
-                                "evaluated_at": "2026-06-21T20:00:00+00:00",
+                                "evaluated_at": "2026-06-23T20:00:00+00:00",
                                 "entered": True,
                             }
                         ],
@@ -213,7 +235,7 @@ def test_build_scoreboard_includes_stateless_active_spec(tmp_path):
 
 
 def test_build_scoreboard_respects_soak_reset(tmp_path):
-    reset_at = "2026-06-21T12:00:00+00:00"
+    reset_at = "2026-06-22T12:00:00+00:00"
     state = tmp_path / "variants-state.json"
     state.write_text(
         json.dumps(
@@ -224,24 +246,24 @@ def test_build_scoreboard_respects_soak_reset(tmp_path):
                         "paper_events": [
                             {
                                 "paper_pnl_usd": -10.0,
-                                "evaluated_at": "2026-06-20T14:00:00+00:00",
+                                "evaluated_at": "2026-06-19T14:00:00+00:00",
                             },
                             {
                                 "paper_pnl_usd": 7.0,
-                                "evaluated_at": "2026-06-21T14:00:00+00:00",
+                                "evaluated_at": "2026-06-22T14:00:00+00:00",
                             },
                         ],
                         "entry_log": [
                             {
-                                "evaluated_at": "2026-06-20T19:45:00+00:00",
-                                "entered": False,
-                            },
-                            {
-                                "evaluated_at": "2026-06-21T19:45:00+00:00",
+                                "evaluated_at": "2026-06-19T19:45:00+00:00",
                                 "entered": False,
                             },
                             {
                                 "evaluated_at": "2026-06-22T19:45:00+00:00",
+                                "entered": False,
+                            },
+                            {
+                                "evaluated_at": "2026-06-23T19:45:00+00:00",
                                 "entered": True,
                             },
                         ],
@@ -260,6 +282,64 @@ def test_build_scoreboard_respects_soak_reset(tmp_path):
     assert row["sessions_evaluated"] == 2
     assert row["sessions_to_gate"] == 18
     assert payload["soak_reset_at"] == reset_at
+
+
+def test_build_scoreboard_dedupes_weekday_sessions_and_excludes_weekends(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_28dte_atm": {
+                "active": True,
+                "description": "dedupe test",
+                "overrides": {},
+            }
+        },
+    )
+    state = tmp_path / "variants-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_28dte_atm": {
+                        "entry_log": [
+                            {
+                                "evaluated_at": "2026-06-26T19:45:00+00:00",
+                                "entered": False,
+                            },
+                            {
+                                "evaluated_at": "2026-06-26T20:00:00+00:00",
+                                "entered": False,
+                            },
+                            {
+                                "evaluated_at": "2026-06-27T19:45:00+00:00",
+                                "entered": False,
+                            },
+                            {
+                                "evaluated_at": "2026-06-29T19:45:00+00:00",
+                                "entered": True,
+                            },
+                        ],
+                        "paper_events": [],
+                        "paper_positions": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard.json",
+        ).read_text(encoding="utf-8")
+    )
+    row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
+    assert row["sessions_evaluated"] == 2
+    assert row["entry_evals_total"] == 4
+    assert row["weekend_evals_excluded"] == 1
+    assert row["entered_sessions"] == 1
 
 
 def test_run_variant_entry_regime_skip_does_not_write_default_entry_brief(
@@ -394,6 +474,194 @@ def test_build_scoreboard_sets_liveness_from_latest_entry_eval(tmp_path):
     )
     assert stale_payload["last_entry_eval_at"] == backdated_eval
     assert stale_payload["stale"] is True
+
+
+def test_build_scoreboard_includes_open_mtm_and_contract_clusters(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_28dte_atm": {
+                "active": True,
+                "description": "open mtm test",
+                "overrides": {},
+            }
+        },
+    )
+    state = tmp_path / "variants-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_28dte_atm": {
+                        "entry_log": [
+                            {
+                                "evaluated_at": "2026-06-26T19:45:00+00:00",
+                                "entered": True,
+                            }
+                        ],
+                        "paper_events": [],
+                        "paper_positions": {
+                            "paper:XSP:2026-07-18:6010": {
+                                "position_id": "paper:XSP:2026-07-18:6010",
+                                "chain_symbol": "XSP",
+                                "option_type": "call",
+                                "strike": 6010.0,
+                                "expiration_date": "2026-07-18",
+                                "quantity": 1,
+                                "average_price": 20.0,
+                                "entry_mid_premium": 20.0,
+                                "mark_price": 21.0,
+                                "status": "open",
+                            }
+                        },
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard-open.json",
+        ).read_text(encoding="utf-8")
+    )
+    row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
+    assert row["open_positions"] == 1
+    assert row["open_positions_mtm_usd"] == 74.7
+    assert row["open_positions_mtm_usd_1x"] == 7.47
+    assert row["contract_cluster_id"] == "XSP:call:2026-07-18:6010"
+    assert payload["contract_clusters"]["XSP:call:2026-07-18:6010"]["open_positions"] == 1
+
+
+def test_build_scoreboard_exit_shadow_summary(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_28dte_atm": {
+                "active": True,
+                "description": "exit shadow test",
+                "overrides": {},
+            }
+        },
+    )
+    state = tmp_path / "variants-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_28dte_atm": {
+                        "entry_log": [],
+                        "paper_events": [],
+                        "paper_shadow_events": [
+                            {
+                                "evaluated_at": "2026-07-01T14:00:00+00:00",
+                                "brackets": [
+                                    {
+                                        "bracket_id": "prod",
+                                        "label": "Production rules (active)",
+                                        "would_exit": True,
+                                        "exit_reason": "time_stop",
+                                    },
+                                    {
+                                        "bracket_id": "no_morning_cut_14dte",
+                                        "label": "Suppress 10:00 time_stop for DTE≥14",
+                                        "would_exit": False,
+                                        "exit_reason": None,
+                                    },
+                                ],
+                            }
+                        ],
+                        "paper_positions": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard-shadow.json",
+        ).read_text(encoding="utf-8")
+    )
+    row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
+    assert row["exit_shadow"]["events_evaluated"] == 1
+    assert row["exit_shadow"]["brackets"]["prod"]["would_exit"] == 1
+    assert row["exit_shadow"]["brackets"]["no_morning_cut_14dte"]["would_hold"] == 1
+
+
+def test_build_scoreboard_ranking_reliable_only_after_multi_variant_samples(tmp_path):
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_alpha": {
+                "active": True,
+                "description": "alpha",
+                "overrides": {},
+            },
+            "v2_beta": {
+                "active": True,
+                "description": "beta",
+                "overrides": {},
+            },
+        },
+    )
+    weekday_sessions = [
+        f"2026-06-{day:02d}T19:45:00+00:00"
+        for day in range(1, 29)
+        if datetime(2026, 6, day, tzinfo=timezone.utc).weekday() < 5
+    ][:20]
+    state = tmp_path / "variants-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_alpha": {
+                        "entry_log": [
+                            {"evaluated_at": ts, "entered": True}
+                            for ts in weekday_sessions
+                        ],
+                        "paper_events": [
+                            {"paper_pnl_usd": 10.0},
+                            {"paper_pnl_usd": 14.0},
+                        ],
+                        "paper_positions": {},
+                    },
+                    "v2_beta": {
+                        "entry_log": [
+                            {"evaluated_at": ts, "entered": True}
+                            for ts in weekday_sessions
+                        ],
+                        "paper_events": [
+                            {"paper_pnl_usd": 8.0},
+                            {"paper_pnl_usd": 10.0},
+                        ],
+                        "paper_positions": {},
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard-ranked.json",
+        ).read_text(encoding="utf-8")
+    )
+    assert payload["ranking_reliable"] is True
+    assert [row["variant_id"] for row in payload["shadow_variants"]] == [
+        "v2_alpha",
+        "v2_beta",
+    ]
+    assert payload["shadow_variants"][0]["low_sample"] is False
 
 
 def test_reset_soak_archives_and_clears(tmp_path, monkeypatch):

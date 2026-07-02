@@ -108,6 +108,8 @@ class TestYellowBounceVariantSpecs:
 
         assert mid_rules["entry"]["regime_yellow_frac_min"] == 0.50
         assert top_rules["entry"]["regime_yellow_frac_min"] == 0.75
+        assert mid_rules["ta"]["entry"]["mode"] == "close_window_only"
+        assert top_rules["ta"]["entry"]["mode"] == "close_window_only"
 
 
 class TestRegimeGateComparison:
@@ -423,17 +425,19 @@ class TestSessionGate:
             },
         )
 
-        # Create state with 15 sessions evaluated
+        weekday_logs = [
+            {"evaluated_at": f"2026-06-{day:02d}T19:45:00+00:00"}
+            for day in range(2, 23)
+            if datetime(2026, 6, day, tzinfo=timezone.utc).weekday() < 5
+        ][:15]
+        # Create state with 15 weekday sessions evaluated
         variant_state = tmp_path / "variants-state.json"
         variant_state.write_text(
             json.dumps(
                 {
                     "variants": {
                         "v2_test_sessions": {
-                            "entry_log": [
-                                {"evaluated_at": f"2026-06-{i:02d}T19:45:00+00:00"}
-                                for i in range(15, 30)
-                            ],
+                            "entry_log": weekday_logs,
                             "paper_events": [],
                             "paper_positions": {},
                         }
@@ -480,17 +484,23 @@ class TestSessionGate:
             },
         )
 
-        # Create state with 25 sessions evaluated
+        weekday_logs = [
+            {"evaluated_at": f"2026-05-{day:02d}T19:45:00+00:00"}
+            for day in range(1, 32)
+            if datetime(2026, 5, day, tzinfo=timezone.utc).weekday() < 5
+        ][:21] + [
+            {"evaluated_at": f"2026-06-{day:02d}T19:45:00+00:00"}
+            for day in range(1, 8)
+            if datetime(2026, 6, day, tzinfo=timezone.utc).weekday() < 5
+        ][:4]
+        # Create state with 25 weekday sessions evaluated
         variant_state = tmp_path / "variants-state.json"
         variant_state.write_text(
             json.dumps(
                 {
                     "variants": {
                         "v2_test_sessions_25": {
-                            "entry_log": [
-                                {"evaluated_at": f"2026-06-{i:02d}T19:45:00+00:00"}
-                                for i in range(5, 30)
-                            ],
+                            "entry_log": weekday_logs,
                             "paper_events": [],
                             "paper_positions": {},
                         }

@@ -44,6 +44,21 @@ variants:
       exit:
         require_upper_bb_for_take_profit: false
 
+  v2_28dte_atm_stack3:
+    active: true
+    description: "28 DTE ATM, stack up to 3 concurrent entries"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_28dte_atm_stack3
+      entry:
+        dte_pick: target
+        dte_target: 28
+        strike_pick: atm_only
+      paper_entry:
+        max_open_positions: 3
+      exit:
+        require_upper_bb_for_take_profit: false
+
   v2_35dte_atm:
     active: true
     description: "35 DTE target, ATM — mid-range theta"
@@ -200,7 +215,7 @@ variants:
         strike_pick: atm_only
       ta:
         entry:
-          mode: close_window_and_bb
+          mode: close_window_only
       exit:
         require_upper_bb_for_take_profit: false
 
@@ -218,7 +233,7 @@ variants:
         strike_pick: atm_only
       ta:
         entry:
-          mode: close_window_and_bb
+          mode: close_window_only
       exit:
         require_upper_bb_for_take_profit: false
 

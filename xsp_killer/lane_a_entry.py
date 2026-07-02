@@ -32,6 +32,7 @@ from xsp_killer.lane_a_monitor import (
     compute_dte,
     is_lane_a_contract,
     load_state,
+    parse_expiration,
     read_regime_detail,
     regime_gate_allows,
     save_state,
@@ -42,6 +43,7 @@ logger = logging.getLogger("xsp_killer.xsp_lane_a_entry")
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "briefs" / "xsp-lane-a-entry-latest.json"
+DEFAULT_TELEMETRY_BRIEF = ROOT / "briefs" / "xsp-lane-a-entry-telemetry-latest.json"
 ET = ZoneInfo("America/New_York")
 
 
@@ -347,6 +349,8 @@ def build_paper_position(
     evaluated_at: str,
     spy_return_pct: float | None,
     regime: str | None,
+    entry_reason: str,
+    spx_at_entry: float | None = None,
 ) -> dict[str, Any]:
     pos_id = f"paper:{entry_rules.chain_symbol}:{expiration.isoformat()}:{int(strike)}"
     return {
@@ -366,11 +370,12 @@ def build_paper_position(
         "dte_actual": compute_dte(expiration),
         "status": "open",
         "paper_mode": "automated_log_only",
-        "entry_reason": "bb_bounce_long_call",
+        "entry_reason": entry_reason,
         "logic_version": rules.logic_version,
         "regime_at_entry": regime,
         "prior_day_spy_return_pct": spy_return_pct,
         "quote_source": "SPY_chain_proxy",
+        "spx_at_entry": spx_at_entry,
     }
 
 
@@ -468,6 +473,59 @@ def entry_logs_for_epoch(state: dict[str, Any]) -> list[dict[str, Any]]:
     return [row for row in logs if str(row.get("evaluated_at") or "") >= epoch]
 
 
+def et_session_date(raw: Any) -> str | None:
+    if not raw:
+        return None
+    if isinstance(raw, datetime):
+        ts = raw
+    else:
+        try:
+            ts = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(ET).date().isoformat()
+
+
+def unique_et_sessions(entry_logs: list[dict[str, Any]]) -> list[str]:
+    sessions: set[str] = set()
+    for row in entry_logs:
+        session = et_session_date(row.get("evaluated_at"))
+        if not session:
+            continue
+        try:
+            if date.fromisoformat(session).weekday() >= 5:
+                continue
+        except ValueError:
+            continue
+        sessions.add(session)
+    return sorted(sessions)
+
+
+def _session_rows_by_et_date(
+    entry_logs: list[dict[str, Any]],
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in entry_logs:
+        session = et_session_date(row.get("evaluated_at"))
+        if not session:
+            continue
+        try:
+            if date.fromisoformat(session).weekday() >= 5:
+                continue
+        except ValueError:
+            continue
+        grouped.setdefault(session, []).append(row)
+    return [(session, grouped[session]) for session in sorted(grouped)]
+
+
+def _representative_session_row(session_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered = sorted(session_rows, key=lambda row: str(row.get("evaluated_at") or ""))
+    entered = next((row for row in ordered if row.get("entered")), None)
+    return entered or ordered[-1]
+
+
 def summarize_entry_telemetry_from_logs(
     entry_logs: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -476,12 +534,15 @@ def summarize_entry_telemetry_from_logs(
     regime_counts: dict[str, int] = {}
     last_updated_at: str | None = None
     entered_sessions = 0
+    evals_total = len(entry_logs)
     for row in entry_logs:
         evaluated_at = row.get("evaluated_at")
         if evaluated_at and (
             last_updated_at is None or str(evaluated_at) > last_updated_at
         ):
             last_updated_at = str(evaluated_at)
+    for _, session_rows in _session_rows_by_et_date(entry_logs):
+        row = _representative_session_row(session_rows)
         regime = row.get("regime")
         if regime:
             regime_counts[str(regime)] = regime_counts.get(str(regime), 0) + 1
@@ -495,7 +556,8 @@ def summarize_entry_telemetry_from_logs(
         "last_updated_at": last_updated_at,
         "skip_reason_counts": skip_reason_counts,
         "regime_counts": regime_counts,
-        "sessions_evaluated": len(entry_logs),
+        "evals_total": evals_total,
+        "sessions_evaluated": len(unique_et_sessions(entry_logs)),
         "entered_sessions": entered_sessions,
     }
 
@@ -511,11 +573,12 @@ def _update_entry_telemetry(state: dict[str, Any], decision: EntryDecision) -> N
 
 
 def _write_entry_telemetry_brief(state: dict[str, Any], out_path: Path | None = None) -> None:
-    path = out_path or (ROOT / "briefs" / "xsp-lane-a-entry-telemetry-latest.json")
+    path = out_path or DEFAULT_TELEMETRY_BRIEF
     tel = _sync_entry_telemetry(state)
     payload = {
         "pnl_epoch_at": _epoch_at(state),
         "updated_at": tel.get("last_updated_at"),
+        "evals_total": tel.get("evals_total", 0),
         "sessions_evaluated": tel.get("sessions_evaluated", 0),
         "entered_sessions": tel.get("entered_sessions", 0),
         "skip_reason_counts": tel.get("skip_reason_counts") or {},
@@ -561,6 +624,27 @@ def entry_gates_ok(
     if not ta.entry_ok:
         return False, f"no BB bounce at close window: {ta.detail}"
     return True, None
+
+
+def _resolve_entry_reason(
+    *,
+    now: datetime,
+    entry_rules: EntryRules,
+    ta_rules: TaRules,
+    ta_signal: TaSignal,
+    force: bool,
+    intraday: bool,
+) -> str:
+    in_win = in_entry_window(now, entry_rules) or force
+    if ta_rules.entry_mode == "bb_bounce":
+        return "bb_bounce_long_call"
+    if ta_rules.entry_mode == "close_window_only":
+        return "close_window_long_call"
+    if intraday and ta_rules.intraday_entry_enabled and ta_signal.entry_ok and in_rth(now):
+        return "bb_bounce_long_call"
+    if in_win:
+        return "close_window_long_call"
+    return "bb_bounce_long_call"
 
 
 def run_paper_entry(
@@ -716,7 +800,7 @@ def run_paper_entry(
             )
             return decision
 
-    ok_risk, risk_reason = entry_allowed_by_risk(state)
+    ok_risk, risk_reason = entry_allowed_by_risk(state, rules_path=rules_file)
     if not ok_risk:
         decision.skip_reason = risk_reason
         _finalize_entry(
@@ -797,6 +881,15 @@ def run_paper_entry(
         evaluated_at=evaluated_at,
         spy_return_pct=spy_ret,
         regime=regime,
+        entry_reason=_resolve_entry_reason(
+            now=now,
+            entry_rules=entry_rules,
+            ta_rules=ta_rules,
+            ta_signal=ta_signal,
+            force=force,
+            intraday=intraday,
+        ),
+        spx_at_entry=spx,
     )
     spy_row = None
     try:
@@ -911,6 +1004,66 @@ def close_open_paper_positions(
                     )
                     + "\n"
                 )
+    return closed
+
+
+def reap_expired_paper_positions(
+    state: dict[str, Any],
+    *,
+    state_path: Path | None = None,
+    evaluated_at: str | None = None,
+    today: date | None = None,
+) -> list[dict[str, Any]]:
+    """Close stale paper positions whose expiration is before the current ET date."""
+    ts = evaluated_at or datetime.now(timezone.utc).isoformat()
+    ref_day = today or datetime.now(ET).date()
+    paper = state.setdefault("paper_positions", {})
+    if not isinstance(paper, dict):
+        return []
+    closed: list[dict[str, Any]] = []
+    events = list(state.get("paper_events") or [])
+    seen = {
+        (
+            e.get("position_id"),
+            e.get("exit_reason"),
+            (e.get("evaluated_at") or "")[:10],
+        )
+        for e in events
+        if isinstance(e, dict)
+    }
+    for pid, raw in list(paper.items()):
+        if not isinstance(raw, dict) or raw.get("status", "open") != "open":
+            continue
+        exp = parse_expiration(str(raw.get("expiration_date") or ""))
+        if exp is None or exp >= ref_day:
+            continue
+        row = dict(raw)
+        row["status"] = "closed"
+        row["exit_ts"] = ts
+        row["exit_reason"] = "expired"
+        row["exit_pnl_usd"] = None
+        row["exit_pnl_per_contract"] = None
+        paper[pid] = row
+        closed.append(row)
+        evt_key = (pid, "expired", ts[:10])
+        if evt_key not in seen:
+            events.append(
+                {
+                    "evaluated_at": ts,
+                    "position_id": pid,
+                    "exit_reason": "expired",
+                    "paper_pnl_usd": None,
+                    "paper_pnl_per_contract": None,
+                    "logic_version": raw.get("logic_version", "xsp_lane_a_v1"),
+                    "paper_mode": "automated_paper_close",
+                    "entry_ts": raw.get("entry_ts"),
+                    "expiration_date": raw.get("expiration_date"),
+                }
+            )
+            seen.add(evt_key)
+    if closed:
+        state["paper_events"] = events[-500:]
+        save_state(state_path or DEFAULT_STATE, state)
     return closed
 
 

@@ -31,6 +31,8 @@ scoreboard_payload_tmp="$(mktemp)"
 scoreboard_meta_tmp="$(mktemp)"
 scoreboard_log_tmp="$(mktemp)"
 pytest_tmp="$(mktemp)"
+paper_brief_path="${XSP_KILLER_DIR}/briefs/xsp-lane-a-paper-pnl-latest.json"
+telemetry_brief_path="${XSP_KILLER_DIR}/briefs/xsp-lane-a-entry-telemetry-latest.json"
 
 cleanup() {
   rm -f \
@@ -45,7 +47,7 @@ trap cleanup EXIT
 systemctl list-timers --all --no-pager --plain > "${timer_tmp}" 2>&1 || true
 
 scoreboard_status=0
-"${PYTHON_BIN}" - "${scoreboard_payload_tmp}" "${scoreboard_meta_tmp}" <<'PY' > "${scoreboard_log_tmp}" 2>&1 || scoreboard_status=$?
+"${PYTHON_BIN}" - "${scoreboard_payload_tmp}" "${scoreboard_meta_tmp}" "${paper_brief_path}" "${telemetry_brief_path}" <<'PY' > "${scoreboard_log_tmp}" 2>&1 || scoreboard_status=$?
 import json
 import sys
 from pathlib import Path
@@ -53,9 +55,23 @@ from pathlib import Path
 from xsp_killer.health_soak import scoreboard_report_metrics
 from xsp_killer.lane_a_variants import build_scoreboard
 
+
+def _read_json(path: Path):
+    if not path.is_file():
+        return None
+    raw = path.read_text(encoding="utf-8").strip()
+    if not raw:
+        return None
+    return json.loads(raw)
+
+
 out = build_scoreboard()
 payload = json.loads(out.read_text(encoding="utf-8"))
-summary = scoreboard_report_metrics(payload)
+summary = scoreboard_report_metrics(
+    payload,
+    paper_brief=_read_json(Path(sys.argv[3])),
+    telemetry_brief=_read_json(Path(sys.argv[4])),
+)
 
 Path(sys.argv[1]).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 Path(sys.argv[2]).write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
@@ -177,6 +193,11 @@ if isinstance(summary, dict):
     md.append(
         f"- Baseline near entered gate (≤2 left): `{promo.get('baseline_near_entered_gate')}`"
     )
+    if summary.get("brief_consistency_anomalies"):
+        md.append(
+            "- Brief consistency anomalies: "
+            f"`{', '.join(summary['brief_consistency_anomalies'])}`"
+        )
     if promo.get("variants_near_promotion_gate"):
         md.append(
             "- Variants near promotion gate: "

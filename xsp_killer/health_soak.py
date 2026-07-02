@@ -142,7 +142,50 @@ def promotion_proximity_summary(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
+def brief_consistency_anomalies(
+    payload: dict[str, Any],
+    *,
+    paper_brief: dict[str, Any] | None = None,
+    telemetry_brief: dict[str, Any] | None = None,
+) -> list[str]:
+    anomalies: list[str] = []
+    baseline = payload.get("baseline_prod")
+    if not isinstance(baseline, dict):
+        return anomalies
+
+    if isinstance(paper_brief, dict):
+        if paper_brief.get("hypothetical_realized_pnl_usd") != baseline.get(
+            "realized_pnl_usd"
+        ):
+            anomalies.append("baseline_pnl_brief_mismatch")
+        if paper_brief.get("open_positions_mtm_usd") != baseline.get(
+            "open_positions_mtm_usd"
+        ):
+            anomalies.append("baseline_open_mtm_brief_mismatch")
+
+    if isinstance(telemetry_brief, dict):
+        baseline_tel = baseline.get("entry_telemetry") or {}
+        if telemetry_brief.get("sessions_evaluated") != baseline.get(
+            "sessions_evaluated"
+        ):
+            anomalies.append("entry_telemetry_sessions_mismatch")
+        if telemetry_brief.get("entered_sessions") != baseline.get("entered_sessions"):
+            anomalies.append("entry_telemetry_entered_mismatch")
+        if telemetry_brief.get("evals_total") != baseline.get("entry_evals_total"):
+            anomalies.append("entry_telemetry_evals_total_mismatch")
+        if (telemetry_brief.get("skip_reason_counts") or {}) != (
+            baseline_tel.get("skip_reason_counts") or {}
+        ):
+            anomalies.append("entry_telemetry_skip_counts_mismatch")
+    return anomalies
+
+
+def scoreboard_report_metrics(
+    payload: dict[str, Any],
+    *,
+    paper_brief: dict[str, Any] | None = None,
+    telemetry_brief: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     baseline = payload.get("baseline_prod")
     baseline_sessions = None
     vol_shadow_latest_spy_rv = None
@@ -163,6 +206,11 @@ def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
     promotion = promotion_proximity_summary(payload)
     baseline_zero_sessions = baseline_zero_sessions_after_grace(payload)
     baseline_zero_entries = baseline_zero_entries_after_grace(payload)
+    brief_anomalies = brief_consistency_anomalies(
+        payload,
+        paper_brief=paper_brief,
+        telemetry_brief=telemetry_brief,
+    )
     anomalies: list[str] = []
     if payload.get("stale"):
         anomalies.append("scoreboard_stale")
@@ -170,6 +218,7 @@ def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
         anomalies.append("baseline_zero_sessions_after_grace")
     if baseline_zero_entries:
         anomalies.append("baseline_zero_entries_after_grace")
+    anomalies.extend(brief_anomalies)
 
     return {
         "stale": bool(payload.get("stale")),
@@ -187,6 +236,7 @@ def scoreboard_report_metrics(payload: dict[str, Any]) -> dict[str, Any]:
         "vol_shadow_avg_spy_rv": vol_shadow_avg_spy_rv,
         "baseline_zero_sessions_after_grace": baseline_zero_sessions,
         "baseline_zero_entries_after_grace": baseline_zero_entries,
+        "brief_consistency_anomalies": brief_anomalies,
         "strict_anomalies": anomalies,
     }
 
@@ -256,6 +306,8 @@ def detect_strict_anomalies(
     *,
     pytest_failed: bool = False,
     now: datetime | None = None,
+    paper_brief: dict[str, Any] | None = None,
+    telemetry_brief: dict[str, Any] | None = None,
 ) -> list[str]:
     anomalies: list[str] = []
     if payload.get("stale"):
@@ -264,6 +316,13 @@ def detect_strict_anomalies(
         anomalies.append("baseline_zero_sessions_after_grace")
     if baseline_zero_entries_after_grace(payload, now=now):
         anomalies.append("baseline_zero_entries_after_grace")
+    anomalies.extend(
+        brief_consistency_anomalies(
+            payload,
+            paper_brief=paper_brief,
+            telemetry_brief=telemetry_brief,
+        )
+    )
     if pytest_failed:
         anomalies.append("pytest_failed")
     return anomalies

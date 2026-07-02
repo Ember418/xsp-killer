@@ -46,6 +46,7 @@ def test_shadow_passes_green_tape():
 
 def test_daily_loss_cap_blocks_entry(monkeypatch):
     monkeypatch.setenv("XSP_LANE_A_DAILY_LOSS_CAP_USD", "100")
+    monkeypatch.setenv("XSP_LANE_A_PREMIUM_SCALE", "1")
     state = {
         "paper_events": [
             {
@@ -62,6 +63,7 @@ def test_daily_loss_cap_blocks_entry(monkeypatch):
 
 def test_daily_loss_cap_allows_when_under(monkeypatch):
     monkeypatch.setenv("XSP_LANE_A_DAILY_LOSS_CAP_USD", "500")
+    monkeypatch.setenv("XSP_LANE_A_PREMIUM_SCALE", "1")
     state = {
         "paper_events": [
             {
@@ -73,6 +75,42 @@ def test_daily_loss_cap_allows_when_under(monkeypatch):
     ok, reason = entry_allowed_by_risk(state)
     assert ok is True
     assert reason is None
+
+
+def test_daily_loss_cap_scales_from_rules(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_DAILY_LOSS_CAP_USD", "100")
+    monkeypatch.delenv("XSP_LANE_A_PREMIUM_SCALE", raising=False)
+    rules = tmp_path / "rules.yaml"
+    rules.write_text("paper_economics:\n  premium_scale: 2.0\n", encoding="utf-8")
+    state = {
+        "paper_events": [
+            {
+                "evaluated_at": datetime.now(ET).replace(hour=14).isoformat(),
+                "paper_pnl_usd": -150.0,
+            }
+        ]
+    }
+    ok, reason = entry_allowed_by_risk(state, rules_path=rules)
+    assert ok is True
+    assert reason is None
+
+
+def test_daily_loss_cap_reason_shows_scale(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_DAILY_LOSS_CAP_USD", "100")
+    monkeypatch.delenv("XSP_LANE_A_PREMIUM_SCALE", raising=False)
+    rules = tmp_path / "rules.yaml"
+    rules.write_text("paper_economics:\n  premium_scale: 2.0\n", encoding="utf-8")
+    state = {
+        "paper_events": [
+            {
+                "evaluated_at": datetime.now(ET).replace(hour=14).isoformat(),
+                "paper_pnl_usd": -250.0,
+            }
+        ]
+    }
+    ok, reason = entry_allowed_by_risk(state, rules_path=rules)
+    assert ok is False
+    assert "scale=2.00x" in (reason or "")
 
 
 def test_consecutive_losses_halt_entry(monkeypatch):
@@ -98,6 +136,34 @@ def test_consecutive_losses_reset_after_win(monkeypatch):
             {"paper_pnl_usd": -20.0},
             {"paper_pnl_usd": -5.0},
         ]
+    }
+    ok, reason = entry_allowed_by_risk(state)
+    assert ok is True
+    assert reason is None
+
+
+def test_consecutive_loss_streak_respects_reset_marker(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_MAX_CONSECUTIVE_LOSSES", "3")
+    state = {
+        "risk_streak_reset_at": "2026-06-16T14:00:00+00:00",
+        "paper_events": [
+            {
+                "evaluated_at": "2026-06-16T13:00:00+00:00",
+                "paper_pnl_usd": -10.0,
+            },
+            {
+                "evaluated_at": "2026-06-16T13:30:00+00:00",
+                "paper_pnl_usd": -20.0,
+            },
+            {
+                "evaluated_at": "2026-06-16T14:30:00+00:00",
+                "paper_pnl_usd": -5.0,
+            },
+            {
+                "evaluated_at": "2026-06-16T15:00:00+00:00",
+                "paper_pnl_usd": -6.0,
+            },
+        ],
     }
     ok, reason = entry_allowed_by_risk(state)
     assert ok is True

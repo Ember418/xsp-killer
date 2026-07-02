@@ -9,6 +9,7 @@ from xsp_killer.lane_a_monitor import (
     ExitAlert,
     LaneRules,
     classify_position,
+    close_paper_positions_on_exit,
     compute_dte,
     evaluate_exit_alerts,
     is_lane_a_contract,
@@ -341,3 +342,105 @@ def test_write_paper_pnl_brief_includes_dual_notional(tmp_path, monkeypatch):
     assert payload["premium_scale_used"] == 10.0
     assert payload["open_positions_mtm_usd"] == -89.95
     assert payload["open_positions_mtm_usd_1x"] == -9.0
+
+
+def test_close_paper_positions_on_exit_stamps_spx_drift():
+    state = {
+        "paper_positions": {
+            "p1": {
+                "position_id": "p1",
+                "status": "open",
+                "spx_at_entry": 6000.0,
+            }
+        }
+    }
+    alerts = [ExitAlert("p1", "take_profit", "green", 45.0, 45.0)]
+    closed = close_paper_positions_on_exit(
+        state,
+        alerts,
+        evaluated_at="2026-06-16T14:00:00+00:00",
+        logic_version="xsp_lane_a_v2",
+        spx_at_exit=6120.0,
+    )
+    assert len(closed) == 1
+    assert closed[0]["spx_at_exit"] == 6120.0
+    assert closed[0]["spy_drift_pct"] == 2.0
+
+
+def test_run_monitor_reaps_expired_paper_positions(tmp_path):
+    state = {
+        "paper_positions": {
+            "paper:XSP:2026-06-13:6000": {
+                "position_id": "paper:XSP:2026-06-13:6000",
+                "lane": "A",
+                "chain_symbol": "XSP",
+                "option_type": "call",
+                "strike": 6000.0,
+                "expiration_date": "2026-06-13",
+                "quantity": 1.0,
+                "average_price": 2.5,
+                "mark_price": 2.0,
+                "entry_mid_premium": 2.4,
+                "status": "open",
+                "entry_ts": "2026-06-12T19:45:00+00:00",
+            }
+        }
+    }
+    save_state(tmp_path / "state.json", state)
+    report = run_monitor(
+        state_path=tmp_path / "state.json",
+        now_et=datetime(2026, 6, 16, 9, 45, tzinfo=ET),
+        publish_intel=False,
+        fetch_ta=False,
+        write_paper_brief=False,
+    )
+    refreshed = load_state(tmp_path / "state.json")
+    pos = refreshed["paper_positions"]["paper:XSP:2026-06-13:6000"]
+    assert report.paper_hypothetical_exits == []
+    assert pos["status"] == "closed"
+    assert pos["exit_reason"] == "expired"
+    assert refreshed["paper_events"][-1]["exit_reason"] == "expired"
+
+
+def test_run_monitor_closes_paper_positions_with_spx_drift(tmp_path, monkeypatch):
+    state = {
+        "paper_positions": {
+            "paper:XSP:2026-07-18:6000": {
+                "position_id": "paper:XSP:2026-07-18:6000",
+                "lane": "A",
+                "chain_symbol": "XSP",
+                "option_type": "call",
+                "strike": 6000.0,
+                "expiration_date": "2026-07-18",
+                "quantity": 1.0,
+                "average_price": 2.5,
+                "mark_price": 2.0,
+                "entry_mid_premium": 2.4,
+                "status": "open",
+                "entry_ts": "2026-06-15T19:45:00+00:00",
+                "spx_at_entry": 6000.0,
+            }
+        }
+    }
+    save_state(tmp_path / "state.json", state)
+    monkeypatch.setattr("xsp_killer.lane_a_monitor.refresh_paper_marks", lambda rows: rows)
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_monitor.evaluate_exit_alerts",
+        lambda pos, rules, now_et=None, ta_signal=None, suppress_morning_cut_dte=None: [
+            ExitAlert(pos.position_id, "take_profit", "green", 45.0, 45.0)
+        ],
+    )
+    monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6120.0)
+    report = run_monitor(
+        state_path=tmp_path / "state.json",
+        now_et=datetime(2026, 6, 16, 9, 45, tzinfo=ET),
+        publish_intel=False,
+        fetch_ta=False,
+        write_paper_brief=False,
+    )
+    refreshed = load_state(tmp_path / "state.json")
+    pos = refreshed["paper_positions"]["paper:XSP:2026-07-18:6000"]
+    assert report.paper_hypothetical_exits[0]["position_id"] == pos["position_id"]
+    assert pos["status"] == "closed"
+    assert pos["spx_at_exit"] == 6120.0
+    assert pos["spy_drift_pct"] == 2.0
