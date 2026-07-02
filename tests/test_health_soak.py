@@ -249,7 +249,9 @@ def test_brief_consistency_anomalies_detect_epoch_mismatch():
             "hypothetical_realized_pnl_usd": payload["baseline_prod"][
                 "realized_pnl_usd"
             ],
-            "open_positions_mtm_usd": payload["baseline_prod"]["open_positions_mtm_usd"],
+            "open_positions_mtm_usd": payload["baseline_prod"][
+                "open_positions_mtm_usd"
+            ],
         },
         telemetry_brief={
             "pnl_epoch_at": payload["pnl_epoch_at"],
