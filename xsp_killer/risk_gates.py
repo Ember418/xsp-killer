@@ -76,27 +76,53 @@ def realized_pnl_today(state: dict[str, Any], *, day: date | None = None) -> flo
     return round(total, 2)
 
 
-def entry_allowed_by_risk(
+def risk_gate_snapshot(
     state: dict[str, Any], *, rules_path: Path | None = None
-) -> tuple[bool, str | None]:
+) -> dict[str, Any]:
+    """Structured risk-gate diagnostic for entry logs and health soak."""
     if os.getenv("XSP_LANE_A_RISK_GATE", "true").strip().lower() in (
         "0",
         "false",
         "no",
     ):
-        return True, None
+        return {"enabled": False, "allowed": True, "reason": None}
+
     scale = load_premium_scale(rules_path)
     cap = _daily_loss_cap_usd()
-    effective_cap = cap * scale
+    effective_cap = round(cap * scale, 2)
     pnl = realized_pnl_today(state)
-    if pnl <= -effective_cap:
-        return (
-            False,
-            "daily paper loss cap hit "
-            f"({pnl:.2f} <= -{effective_cap:.0f}; scale={scale:.2f}x)",
-        )
     max_losses = _max_consecutive_losses()
     streak = consecutive_losing_paper_exits(state)
-    if streak >= max_losses:
-        return False, (f"consecutive paper losses halt ({streak} >= {max_losses})")
-    return True, None
+    allowed = True
+    reason: str | None = None
+    if pnl <= -effective_cap:
+        allowed = False
+        reason = (
+            "daily paper loss cap hit "
+            f"({pnl:.2f} <= -{effective_cap:.0f}; scale={scale:.2f}x)"
+        )
+    elif streak >= max_losses:
+        allowed = False
+        reason = f"consecutive paper losses halt ({streak} >= {max_losses})"
+    return {
+        "enabled": True,
+        "allowed": allowed,
+        "reason": reason,
+        "scale": round(scale, 4),
+        "cap_usd": cap,
+        "effective_cap_usd": effective_cap,
+        "pnl_today_usd": pnl,
+        "consecutive_losses": streak,
+        "max_consecutive_losses": max_losses,
+    }
+
+
+def entry_allowed_by_risk(
+    state: dict[str, Any], *, rules_path: Path | None = None
+) -> tuple[bool, str | None]:
+    snap = risk_gate_snapshot(state, rules_path=rules_path)
+    if not snap.get("enabled", True):
+        return True, None
+    if snap.get("allowed"):
+        return True, None
+    return False, snap.get("reason")

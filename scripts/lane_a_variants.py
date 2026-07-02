@@ -19,6 +19,7 @@ from xsp_killer.lane_a_variants import (  # noqa: E402
     build_scoreboard,
     clear_pnl_epoch,
     resync_epoch_briefs,
+    resync_epoch_briefs_if_needed,
     reset_soak,
     run_all_variant_entries,
     run_all_variant_monitors,
@@ -63,6 +64,10 @@ def main() -> int:
     sub.add_parser(
         "sync",
         help="Resync baseline brief epochs from variants-state canonical pnl_epoch_at",
+    )
+    sub.add_parser(
+        "sync-if-needed",
+        help="Resync baseline brief epochs only when pnl_epoch_mismatch detected",
     )
 
     p_reset = sub.add_parser(
@@ -156,6 +161,11 @@ def main() -> int:
 
     if args.cmd == "sync":
         meta = resync_epoch_briefs()
+        print(json.dumps(meta, indent=2))
+        return 0
+
+    if args.cmd == "sync-if-needed":
+        meta = resync_epoch_briefs_if_needed()
         print(json.dumps(meta, indent=2))
         return 0
 

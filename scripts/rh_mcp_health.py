@@ -54,6 +54,16 @@ def main() -> int:
         if err:
             print(f"MCP error: {err}")
         else:
+            from xsp_killer.data_hazards import fusion_tier
+            from xsp_killer.robinhood_mcp import last_mcp_fetch_confidence
+
+            wrap = last_mcp_fetch_confidence()
+            if wrap:
+                tier = fusion_tier(float(wrap.get("confidence") or 0.0))
+                print(
+                    f"MCP read confidence: {wrap.get('confidence')} "
+                    f"(tier={tier}, hazard={wrap.get('hazard_class')})"
+                )
             sample = [
                 {
                     "chain": r.get("chain_symbol"),

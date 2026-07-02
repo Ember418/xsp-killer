@@ -203,11 +203,42 @@ def brief_consistency_anomalies(
     return anomalies
 
 
+def risk_gate_diag_anomalies(baseline_state: dict[str, Any] | None) -> list[str]:
+    """Flag stale cap messaging or inconsistent scale-aware risk diagnostics."""
+    if not isinstance(baseline_state, dict):
+        return []
+    log = baseline_state.get("entry_log") or []
+    if not isinstance(log, list) or not log:
+        return []
+    latest = log[-1]
+    if not isinstance(latest, dict):
+        return []
+    risk_gate = latest.get("risk_gate")
+    if isinstance(risk_gate, dict):
+        cap = risk_gate.get("cap_usd")
+        scale = risk_gate.get("scale")
+        effective = risk_gate.get("effective_cap_usd")
+        if cap is not None and scale is not None and effective is not None:
+            try:
+                expected = round(float(cap) * float(scale), 2)
+                if abs(float(effective) - expected) > 0.01:
+                    return ["risk_gate_effective_cap_mismatch"]
+            except (TypeError, ValueError):
+                return ["risk_gate_effective_cap_mismatch"]
+        return []
+
+    skip = str(latest.get("skip_reason") or "")
+    if "daily paper loss cap" in skip and "scale=" not in skip:
+        return ["risk_gate_scale_diag_missing"]
+    return []
+
+
 def scoreboard_report_metrics(
     payload: dict[str, Any],
     *,
     paper_brief: dict[str, Any] | None = None,
     telemetry_brief: dict[str, Any] | None = None,
+    baseline_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     baseline = payload.get("baseline_prod")
     baseline_sessions = None
@@ -234,6 +265,7 @@ def scoreboard_report_metrics(
         paper_brief=paper_brief,
         telemetry_brief=telemetry_brief,
     )
+    risk_anomalies = risk_gate_diag_anomalies(baseline_state)
     anomalies: list[str] = []
     if payload.get("stale"):
         anomalies.append("scoreboard_stale")
@@ -242,6 +274,7 @@ def scoreboard_report_metrics(
     if baseline_zero_entries:
         anomalies.append("baseline_zero_entries_after_grace")
     anomalies.extend(brief_anomalies)
+    anomalies.extend(risk_anomalies)
 
     return {
         "stale": bool(payload.get("stale")),
@@ -260,6 +293,7 @@ def scoreboard_report_metrics(
         "baseline_zero_sessions_after_grace": baseline_zero_sessions,
         "baseline_zero_entries_after_grace": baseline_zero_entries,
         "brief_consistency_anomalies": brief_anomalies,
+        "risk_gate_anomalies": risk_anomalies,
         "strict_anomalies": anomalies,
     }
 

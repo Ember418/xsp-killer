@@ -551,6 +551,60 @@ def clear_pnl_epoch(
     }
 
 
+def resync_epoch_briefs_if_needed(
+    *,
+    state_path: Path | None = None,
+    baseline_state_path: Path | None = None,
+    scoreboard_path: Path | None = None,
+    config_path: Path | None = None,
+) -> dict[str, Any]:
+    """Idempotent epoch resync when scoreboard/brief parity is broken."""
+    from xsp_killer.health_soak import brief_consistency_anomalies
+
+    sb = scoreboard_path or DEFAULT_SCOREBOARD
+    bp = baseline_state_path or DEFAULT_BASELINE_STATE
+    telemetry_path = _baseline_brief_path(bp, DEFAULT_TELEMETRY_BRIEF)
+    paper_path = _baseline_brief_path(bp, DEFAULT_PAPER_BRIEF)
+
+    out = build_scoreboard(
+        config_path=config_path,
+        state_path=state_path,
+        baseline_state_path=bp,
+        out_path=sb,
+    )
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    paper_brief = None
+    telemetry_brief = None
+    if paper_path.is_file():
+        try:
+            paper_brief = json.loads(paper_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            paper_brief = None
+    if telemetry_path.is_file():
+        try:
+            telemetry_brief = json.loads(telemetry_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            telemetry_brief = None
+
+    anomalies = brief_consistency_anomalies(
+        payload,
+        paper_brief=paper_brief,
+        telemetry_brief=telemetry_brief,
+    )
+    if "pnl_epoch_mismatch" not in anomalies:
+        return {"synced": False, "reason": "parity_ok", "scoreboard": str(out)}
+
+    meta = resync_epoch_briefs(
+        state_path=state_path,
+        baseline_state_path=bp,
+        scoreboard_path=sb,
+        config_path=config_path,
+    )
+    meta["synced"] = True
+    meta["reason"] = "pnl_epoch_mismatch"
+    return meta
+
+
 def resync_epoch_briefs(
     *,
     state_path: Path | None = None,

@@ -11,6 +11,7 @@ from xsp_killer.health_soak import (
     detect_strict_anomalies,
     promotion_proximity_summary,
     regime_axis_comparison_summary,
+    risk_gate_diag_anomalies,
     scoreboard_report_metrics,
 )
 
@@ -275,6 +276,34 @@ def test_brief_consistency_anomalies_detect_variant_missing_from_state():
     anomalies = brief_consistency_anomalies(payload)
 
     assert anomalies == ["variant_missing_from_state"]
+
+
+def test_risk_gate_diag_anomalies_detect_stale_cap_message():
+    baseline = {
+        "entry_log": [
+            {
+                "evaluated_at": "2026-07-02T19:45:00+00:00",
+                "skip_reason": "daily paper loss cap hit (-600.00 <= -500)",
+            }
+        ]
+    }
+    assert risk_gate_diag_anomalies(baseline) == ["risk_gate_scale_diag_missing"]
+
+
+def test_risk_gate_diag_anomalies_ok_when_snapshot_present():
+    baseline = {
+        "entry_log": [
+            {
+                "evaluated_at": "2026-07-02T19:45:00+00:00",
+                "risk_gate": {
+                    "scale": 2.0,
+                    "cap_usd": 500.0,
+                    "effective_cap_usd": 1000.0,
+                },
+            }
+        ]
+    }
+    assert risk_gate_diag_anomalies(baseline) == []
 
 
 def test_regime_axis_comparison_summary_flags_session_divergence():

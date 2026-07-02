@@ -229,6 +229,7 @@ variants:
       entry:
         regime_gate: GREEN_OR_YELLOW_BOUNCE
         regime_yellow_frac_min: 0.75
+        regime_yellow_require_bounce: false
         dte_pick: target
         dte_target: 28
         strike_pick: atm_only

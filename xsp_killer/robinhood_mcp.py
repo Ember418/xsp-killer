@@ -18,6 +18,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from xsp_killer.data_hazards import (
+    classify_mcp_read_confidence,
+    fusion_tier,
+    mcp_read_trusted,
+    unwrap_tool_result,
+    wrap_tool_result,
+)
+
 logger = logging.getLogger("xsp_killer.robinhood_mcp")
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -210,6 +218,7 @@ class RobinhoodMCPAdapter:
         self.config = config or RhMcpConfig.load()
         self._http_post = http_post or self._default_http_post
         self._last_review: dict[str, Any] | None = None
+        self.last_read_wrap: dict[str, Any] | None = None
 
     def _default_http_post(
         self, url: str, body: bytes, headers: dict[str, str]
@@ -283,6 +292,20 @@ class RobinhoodMCPAdapter:
                 headers,
             )
             result = self._unwrap_tool_result(response)
+            if name in READ_TOOLS:
+                confidence, hazard_class, signals = classify_mcp_read_confidence(
+                    result,
+                    tool=name,
+                )
+                wrapped = wrap_tool_result(
+                    result,
+                    confidence=confidence,
+                    signals=signals,
+                    hazard_class=hazard_class,
+                )
+                self.last_read_wrap = wrapped
+                self._audit(name, args, ok=True, result=result)
+                return wrapped
             self._audit(name, args, ok=True, result=result)
             if name == "review_option_order":
                 self._last_review = {"arguments": args, "result": result}
@@ -354,6 +377,7 @@ class RobinhoodMCPAdapter:
         chain_symbols: tuple[str, ...] | None = None,
     ) -> list[dict[str, Any]]:
         raw = self.call_tool("get_option_positions", {})
+        raw = unwrap_tool_result(raw)
         rows: list[Any]
         if isinstance(raw, list):
             rows = raw
@@ -388,14 +412,29 @@ class RobinhoodMCPAdapter:
         result = self.call_tool("place_option_order", patched)
         return result if isinstance(result, dict) else {"result": result}
 
+    def last_read_confidence(self) -> dict[str, Any] | None:
+        return self.last_read_wrap
+
+
+def last_mcp_fetch_confidence() -> dict[str, Any] | None:
+    """Confidence wrapper from the most recent MCP positions fetch."""
+    return _last_mcp_fetch_wrap
+
 
 def fetch_option_positions_via_mcp() -> tuple[list[dict[str, Any]], str | None]:
     """Return MCP option positions or ( [], error ) when not ready."""
+    global _last_mcp_fetch_wrap
     if not rh_mcp_enabled():
+        _last_mcp_fetch_wrap = None
         return [], None
     try:
         adapter = RobinhoodMCPAdapter()
         rows = adapter.get_open_option_positions()
+        _last_mcp_fetch_wrap = adapter.last_read_confidence()
+        wrap = _last_mcp_fetch_wrap
+        if wrap and not mcp_read_trusted(wrap):
+            tier = fusion_tier(float(wrap.get("confidence") or 0.0))
+            return [], f"MCP read confidence {tier} ({wrap.get('confidence')})"
         return rows, None
     except RhMcpNotReady as exc:
         return [], str(exc)

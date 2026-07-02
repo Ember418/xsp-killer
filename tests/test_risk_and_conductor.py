@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from xsp_killer.conductor_shadow import shadow_review_entry
 from xsp_killer.lane_a_monitor import DEFAULT_RULES
-from xsp_killer.risk_gates import entry_allowed_by_risk, realized_pnl_today
+from xsp_killer.risk_gates import entry_allowed_by_risk, realized_pnl_today, risk_gate_snapshot
 
 ET = ZoneInfo("America/New_York")
 
@@ -73,6 +73,17 @@ def test_shadow_passes_green_tape():
     )
     assert ok is True
     assert reason is None
+
+
+def test_risk_gate_snapshot_structure(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_DAILY_LOSS_CAP_USD", "500")
+    monkeypatch.setenv("XSP_LANE_A_PREMIUM_SCALE", "1")
+    state = {"paper_events": []}
+    snap = risk_gate_snapshot(state)
+    assert snap["enabled"] is True
+    assert snap["allowed"] is True
+    assert snap["scale"] == 1.0
+    assert snap["effective_cap_usd"] == 500.0
 
 
 def test_daily_loss_cap_blocks_entry(monkeypatch):

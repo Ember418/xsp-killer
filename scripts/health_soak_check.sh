@@ -53,7 +53,7 @@ import sys
 from pathlib import Path
 
 from xsp_killer.health_soak import scoreboard_report_metrics
-from xsp_killer.lane_a_variants import build_scoreboard
+from xsp_killer.lane_a_variants import DEFAULT_BASELINE_STATE, build_scoreboard
 
 
 def _read_json(path: Path):
@@ -67,10 +67,18 @@ def _read_json(path: Path):
 
 out = build_scoreboard()
 payload = json.loads(out.read_text(encoding="utf-8"))
+baseline_state = None
+baseline_path = Path(sys.argv[5]) if len(sys.argv) > 5 else DEFAULT_BASELINE_STATE
+if baseline_path.is_file():
+    try:
+        baseline_state = json.loads(baseline_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        baseline_state = None
 summary = scoreboard_report_metrics(
     payload,
     paper_brief=_read_json(Path(sys.argv[3])),
     telemetry_brief=_read_json(Path(sys.argv[4])),
+    baseline_state=baseline_state,
 )
 
 Path(sys.argv[1]).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")

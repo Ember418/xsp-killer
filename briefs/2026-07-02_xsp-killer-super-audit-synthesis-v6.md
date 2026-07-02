@@ -123,3 +123,18 @@ All v6 backlog items implemented. **162/162 tests pass.**
 | **P2** | NYSE holiday session dedupe | ✅ |
 
 **Post-deploy:** `python3 scripts/lane_a_variants.py sync` — telemetry/scoreboard epoch aligned at 6 sessions.
+
+---
+
+## Implementation addendum (2026-07-02 batch 2)
+
+Jul 2 research briefs → Fable plan → subagent batches. **Paper-loop + MCP confidence.**
+
+| Item | Status |
+|---|---|
+| Yellow top-quartile `regime_yellow_require_bounce: false` | ✅ yaml |
+| Scale-aware `risk_gate_snapshot` on entry + health soak diag | ✅ |
+| Cron `sync-if-needed` after scoreboard | ✅ |
+| MCP read wrapper `{result, confidence, signals, hazard_class}` | ✅ |
+| Fusion: LOW confidence blocks RH position reads | ✅ |
+| `rh_mcp_health.py` logs confidence tier | ✅ |

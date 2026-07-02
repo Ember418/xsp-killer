@@ -14,6 +14,7 @@ from xsp_killer.lane_a_variants import (
     load_variant_specs,
     merged_rules_path,
     resync_epoch_briefs,
+    resync_epoch_briefs_if_needed,
     reset_soak,
     run_variant_entry,
 )
@@ -950,6 +951,39 @@ def test_resync_epoch_briefs_restores_parity(tmp_path, monkeypatch):
     assert payload["baseline_prod"]["realized_pnl_usd"] == -12.5
     assert payload["baseline_prod"]["sessions_evaluated"] == 1
     assert payload["active_variant_ids"] == ["v2_28dte_atm"]
+
+
+def test_resync_epoch_briefs_if_needed_skips_when_parity_ok(tmp_path, monkeypatch):
+    state = tmp_path / "variants-state.json"
+    baseline = tmp_path / "baseline-state.json"
+    scoreboard = tmp_path / "scoreboard.json"
+    epoch = "2026-06-23T22:20:36+00:00"
+    state.write_text(
+        json.dumps({"pnl_epoch_at": epoch, "variants": {"v2_28dte_atm": {}}}),
+        encoding="utf-8",
+    )
+    baseline.write_text(
+        json.dumps({"pnl_epoch_at": epoch, "paper_events": [], "entry_log": []}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_variants.load_variant_specs",
+        lambda _path=None: [
+            VariantSpec(
+                variant_id="v2_28dte_atm",
+                description="sync-if-needed",
+                active=True,
+                overrides={},
+            )
+        ],
+    )
+    meta = resync_epoch_briefs_if_needed(
+        state_path=state,
+        baseline_state_path=baseline,
+        scoreboard_path=scoreboard,
+    )
+    assert meta["synced"] is False
+    assert meta["reason"] == "parity_ok"
 
 
 def test_build_scoreboard_regime_gate_comparison(tmp_path):

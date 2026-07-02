@@ -23,7 +23,7 @@ from xsp_killer.spy_quote import (
     xsp_strike_to_spy_chain_strike,
 )
 from xsp_killer.conductor_shadow import shadow_review_entry
-from xsp_killer.risk_gates import entry_allowed_by_risk
+from xsp_killer.risk_gates import entry_allowed_by_risk, risk_gate_snapshot
 from xsp_killer.lane_a_monitor import (
     DEFAULT_PAPER_LOG,
     DEFAULT_RULES,
@@ -122,6 +122,7 @@ class EntryDecision:
     bb_entry_ok: bool = False
     vol_shadow: dict[str, Any] | None = None
     premium_scale_used: float | None = None
+    risk_gate: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -425,6 +426,7 @@ def append_entry_log(
         "bb_entry_ok": decision.bb_entry_ok,
         "vol_shadow": decision.vol_shadow,
         "premium_scale_used": decision.premium_scale_used,
+        "risk_gate": decision.risk_gate,
         "position": decision.position,
         "errors": decision.errors,
     }
@@ -822,6 +824,7 @@ def run_paper_entry(
             return decision
 
     ok_risk, risk_reason = entry_allowed_by_risk(state, rules_path=rules_file)
+    decision.risk_gate = risk_gate_snapshot(state, rules_path=rules_file)
     if not ok_risk:
         decision.skip_reason = risk_reason
         _finalize_entry(
@@ -1115,6 +1118,7 @@ def _finalize_entry(
             "vol_shadow_reason": (decision.vol_shadow or {}).get("reason"),
             "prior_day_spy_return_pct": decision.prior_day_spy_return_pct,
             "prior_day_spy_session": decision.prior_day_spy_session,
+            "risk_gate": decision.risk_gate,
         }
     )
     state["entry_log"] = log[-200:]
