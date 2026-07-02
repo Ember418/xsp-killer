@@ -33,6 +33,36 @@ def test_shadow_blocks_large_prior_day_drop():
     assert "prior-day" in (reason or "")
 
 
+def test_shadow_allows_small_prior_day_drop():
+    ok, reason = shadow_review_entry(
+        regime="GREEN",
+        prior_day_spy_return_pct=-0.5,
+        ta_detail=None,
+        position={"dte": 28},
+    )
+    assert ok is True
+    assert reason is None
+
+
+def test_shadow_blocks_at_1_5_pct_threshold():
+    ok, _ = shadow_review_entry(
+        regime="GREEN",
+        prior_day_spy_return_pct=-1.51,
+        ta_detail=None,
+        position={"dte": 28},
+    )
+    assert ok is False
+
+    ok, reason = shadow_review_entry(
+        regime="GREEN",
+        prior_day_spy_return_pct=-1.5,
+        ta_detail=None,
+        position={"dte": 28},
+    )
+    assert ok is True
+    assert reason is None
+
+
 def test_shadow_passes_green_tape():
     ok, reason = shadow_review_entry(
         regime="GREEN",

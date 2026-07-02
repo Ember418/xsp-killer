@@ -8,6 +8,9 @@ from typing import Any
 
 logger = logging.getLogger("xsp_killer.conductor_shadow")
 
+# prior_day_spy_return_pct is in percent units (e.g. -2.0 = -2%).
+_PRIOR_DAY_SPY_BLOCK_PCT = -1.5
+
 
 def shadow_review_entry(
     *,
@@ -27,7 +30,10 @@ def shadow_review_entry(
     if regime == "RED":
         return False, "conductor_shadow: macro regime RED"
 
-    if prior_day_spy_return_pct is not None and prior_day_spy_return_pct < -0.015:
+    if (
+        prior_day_spy_return_pct is not None
+        and prior_day_spy_return_pct < _PRIOR_DAY_SPY_BLOCK_PCT
+    ):
         return False, "conductor_shadow: prior-day SPY down >1.5%"
 
     if position is not None:
