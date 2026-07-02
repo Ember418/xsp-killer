@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from xsp_killer.data_hazards import (
     classify_mcp_read_confidence,
     fusion_tier,
