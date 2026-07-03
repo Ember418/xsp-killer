@@ -352,6 +352,35 @@ def test_write_paper_pnl_brief_falls_back_to_rules_logic_version(tmp_path):
     assert payload["logic_version"] == "xsp_lane_a_v2"
 
 
+def test_write_paper_pnl_brief_computes_open_mtm_without_report(tmp_path, monkeypatch):
+    from xsp_killer.lane_a_monitor import (
+        compute_paper_open_mtm,
+        write_paper_pnl_brief,
+    )
+
+    monkeypatch.setenv("XSP_SPY_TO_XSP_PREMIUM_SCALE", "10")
+    state = {
+        "paper_positions": {
+            "paper:XSP:2026-07-17:7500": {
+                "position_id": "paper:XSP:2026-07-17:7500",
+                "status": "open",
+                "chain_symbol": "XSP",
+                "option_type": "call",
+                "strike": 7500.0,
+                "expiration_date": "2026-07-17",
+                "quantity": 1,
+                "average_price": 6.5,
+                "mark_price": 6.0,
+            }
+        }
+    }
+    expected_scaled, expected_1x = compute_paper_open_mtm(state)
+    out = write_paper_pnl_brief(state, report=None, out_path=tmp_path / "pnl.json")
+    payload = __import__("json").loads(out.read_text(encoding="utf-8"))
+    assert payload["open_positions_mtm_usd"] == expected_scaled
+    assert payload["open_positions_mtm_usd_1x"] == expected_1x
+
+
 def test_close_paper_positions_on_exit_stamps_spx_drift():
     state = {
         "paper_positions": {

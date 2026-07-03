@@ -138,3 +138,17 @@ Jul 2 research briefs → Fable plan → subagent batches. **Paper-loop + MCP co
 | MCP read wrapper `{result, confidence, signals, hazard_class}` | ✅ |
 | Fusion: LOW confidence blocks RH position reads | ✅ |
 | `rh_mcp_health.py` logs confidence tier | ✅ |
+
+---
+
+## Implementation addendum (2026-07-03)
+
+Jul 3 research (cognitive-heuristics / CI merge-gate hardening) + health soak anomaly fix.
+
+| Item | Status |
+|---|---|
+| Paper brief open MTM sync (`compute_paper_open_mtm` + scoreboard regen) | ✅ |
+| CI deterministic SAST layer (bandit `-ll` on `xsp_killer/`) | ✅ |
+| Ruff scope expanded (`data_hazards`, `test_rh_mcp_confidence`) | ✅ |
+
+**Ops note:** LLM review tools remain advisory; merge gate is pytest + ruff + bandit (Jul 3 brief: parallel deterministic scanner).

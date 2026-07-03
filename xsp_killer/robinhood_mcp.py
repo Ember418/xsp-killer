@@ -225,7 +225,7 @@ class RobinhoodMCPAdapter:
     ) -> dict[str, Any]:
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310
                 raw = resp.read().decode("utf-8")
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")

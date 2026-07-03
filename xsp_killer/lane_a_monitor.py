@@ -652,6 +652,31 @@ def paper_positions_to_lane(
     return out
 
 
+def compute_paper_open_mtm(
+    state: dict[str, Any],
+    *,
+    rules_path: Path | None = None,
+) -> tuple[float, float | None]:
+    """Scaled and 1× open-position MTM from persisted paper positions."""
+    open_positions = [
+        p
+        for p in (state.get("paper_positions") or {}).values()
+        if isinstance(p, dict) and p.get("status", "open") == "open"
+    ]
+    if not open_positions:
+        return 0.0, 0.0
+    rules = LaneRules.from_yaml(rules_path or DEFAULT_RULES)
+    classified = paper_positions_to_lane(
+        open_positions,
+        rules,
+        today=datetime.now(ET).date(),
+    )
+    mtm_scaled = round(sum(float(pos.pnl_usd or 0.0) for pos in classified), 2)
+    scale = load_premium_scale(rules_path or DEFAULT_RULES)
+    mtm_1x = round(mtm_scaled / scale, 2) if scale else None
+    return mtm_scaled, mtm_1x
+
+
 def refresh_paper_marks(positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Update mark_price on open paper positions via per-strike SPY chain proxy."""
     try:
@@ -918,14 +943,9 @@ def write_paper_pnl_brief(
     path = out_path or DEFAULT_PAPER_BRIEF
     scale = load_premium_scale()
     mtm_scaled = report.paper_mtm_usd if report else None
+    mtm_1x: float | None = None
     if mtm_scaled is None:
-        open_count = sum(
-            1
-            for pos in (state.get("paper_positions") or {}).values()
-            if isinstance(pos, dict) and str(pos.get("status") or "open") == "open"
-        )
-        if open_count == 0:
-            mtm_scaled = 0.0
+        mtm_scaled, mtm_1x = compute_paper_open_mtm(state)
     resolved_logic_version = (
         (report.logic_version if report else None)
         or logic_version
@@ -948,8 +968,8 @@ def write_paper_pnl_brief(
         "open_positions_mtm_usd": mtm_scaled,
         "open_positions_mtm_usd_1x": (
             round(mtm_scaled / scale, 2)
-            if mtm_scaled is not None and scale
-            else None
+            if mtm_1x is None and mtm_scaled is not None and scale
+            else mtm_1x
         ),
         "hypothetical_exits_n": len(events),
         "hypothetical_realized_pnl_usd": round(resolved_pnl, 2),

@@ -29,14 +29,12 @@ from xsp_killer.lane_a_monitor import (
     DEFAULT_RULES,
     ET,
     LaneRules,
+    compute_paper_open_mtm,
     load_state,
-    paper_positions_to_lane,
     run_monitor,
     save_state,
     write_paper_pnl_brief,
 )
-from xsp_killer.paper_economics import load_premium_scale
-
 logger = logging.getLogger("xsp_killer.lane_a_variants")
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -790,29 +788,10 @@ def _open_positions_metrics(
     *,
     rules_path: Path | None = None,
 ) -> dict[str, float]:
-    open_positions = [
-        p
-        for p in (state.get("paper_positions") or {}).values()
-        if isinstance(p, dict) and p.get("status", "open") == "open"
-    ]
-    if not open_positions:
-        return {
-            "open_positions_mtm_usd": 0.0,
-            "open_positions_mtm_usd_1x": 0.0,
-        }
-    rules = LaneRules.from_yaml(rules_path or DEFAULT_RULES)
-    classified = paper_positions_to_lane(
-        open_positions,
-        rules,
-        today=datetime.now(ET).date(),
-    )
-    mtm_scaled = round(sum(float(pos.pnl_usd or 0.0) for pos in classified), 2)
-    scale = load_premium_scale(rules_path or DEFAULT_RULES)
+    mtm_scaled, mtm_1x = compute_paper_open_mtm(state, rules_path=rules_path)
     return {
         "open_positions_mtm_usd": mtm_scaled,
-        "open_positions_mtm_usd_1x": (
-            round(mtm_scaled / scale, 2) if scale else None
-        ),
+        "open_positions_mtm_usd_1x": mtm_1x,
     }
 
 
@@ -1296,4 +1275,15 @@ def build_scoreboard(
     out = out_path or DEFAULT_SCOREBOARD
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+    if baseline_path.is_file():
+        try:
+            baseline_state = json.loads(baseline_path.read_text(encoding="utf-8"))
+            write_paper_pnl_brief(
+                baseline_state,
+                out_path=_baseline_brief_path(baseline_path, DEFAULT_PAPER_BRIEF),
+            )
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("paper brief regen after scoreboard failed: %s", exc)
+
     return out
