@@ -9,6 +9,7 @@ import pytest
 from xsp_killer.rh_broker import fetch_robinhood_option_positions, rh_read_enabled
 from xsp_killer.robinhood_mcp import (
     RhMcpConfig,
+    RhMcpError,
     RhMcpLiveExitsDisabled,
     RobinhoodMCPAdapter,
     live_exits_enabled,
@@ -126,8 +127,12 @@ def test_adapter_get_positions_mocked(tmp_path):
 def test_place_order_blocked_when_live_exits_off(tmp_path):
     token = tmp_path / "token.json"
     token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    audit = tmp_path / "audit.jsonl"
     cfg = RhMcpConfig(
-        token_path=token, agentic_account_id="agentic-1", live_exits=False
+        token_path=token,
+        audit_log=audit,
+        agentic_account_id="agentic-1",
+        live_exits=False,
     )
 
     def fake_http(url, body, headers):
@@ -136,6 +141,55 @@ def test_place_order_blocked_when_live_exits_off(tmp_path):
     adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
     with pytest.raises(RhMcpLiveExitsDisabled):
         adapter.place_option_order({"quantity": 1, "side": "sell"})
+    audit_rows = [json.loads(line) for line in audit.read_text().splitlines()]
+    deny = audit_rows[-1]
+    assert deny["event"] == "deny"
+    assert deny["invariant"] == "I7"
+    assert deny["principal"]["agentic_account_id"] == "agentic-1"
+
+
+def test_place_order_requires_matching_review_grant(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_EXITS", "true")
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    audit = tmp_path / "audit.jsonl"
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=audit,
+        agentic_account_id="agentic-1",
+        live_exits=True,
+        require_review_before_place=True,
+    )
+
+    def fake_http(url, body, headers):
+        return {"result": {"structuredContent": {"ok": True}}}
+
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
+    with pytest.raises(RhMcpError):
+        adapter.place_option_order({"quantity": 1, "side": "sell", "option_id": "x"})
+    deny = json.loads(audit.read_text().strip().splitlines()[-1])
+    assert deny["invariant"] == "I2"
+
+
+def test_review_grant_allows_matching_place(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_EXITS", "true")
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    cfg = RhMcpConfig(
+        token_path=token,
+        agentic_account_id="agentic-1",
+        live_exits=True,
+        require_review_before_place=True,
+    )
+    order = {"quantity": 1, "side": "sell", "option_id": "opt-1"}
+
+    def fake_http(url, body, headers):
+        return {"result": {"structuredContent": {"ok": True}}}
+
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
+    adapter.review_option_order(order)
+    result = adapter.place_option_order(dict(order))
+    assert result == {"ok": True}
 
 
 def test_rh_mcp_config_loads_yaml(tmp_path):

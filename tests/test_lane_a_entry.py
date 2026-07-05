@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timezone
 from zoneinfo import ZoneInfo
 
 from xsp_killer.lane_a_entry import (
@@ -16,6 +16,7 @@ from xsp_killer.lane_a_entry import (
     entry_logs_for_epoch,
     in_entry_window,
     is_et_trading_session,
+    scoreboard_entry_stale,
     open_paper_positions,
     pick_cheapest_atm_strike,
     reap_expired_paper_positions,
@@ -399,6 +400,18 @@ def test_is_et_trading_session_excludes_2026_nyse_holidays():
     assert is_et_trading_session(date(2026, 7, 2)) is True
     assert is_et_trading_session(date(2026, 7, 3)) is False
     assert is_et_trading_session(date(2026, 7, 4)) is False
+
+
+def test_scoreboard_entry_stale_false_over_holiday_weekend():
+    last_eval = datetime(2026, 7, 3, 23, 55, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 5, 17, 44, tzinfo=timezone.utc)
+    assert scoreboard_entry_stale(last_eval, now=now) is False
+
+
+def test_scoreboard_entry_stale_true_after_missed_trading_session():
+    last_eval = datetime(2026, 7, 2, 23, 55, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 7, 0, 0, tzinfo=timezone.utc)
+    assert scoreboard_entry_stale(last_eval, now=now) is True
 
 
 def test_entry_telemetry_dedupes_sessions_and_keeps_raw_eval_total():

@@ -317,7 +317,7 @@ def classify_position(
         quantity=qty,
         average_price=avg,
         mark_price=mark,
-        dte=compute_dte(exp),
+        dte=compute_dte(exp, today=today),
         entry_mid_premium=float(entry_mid)
         if entry_mid is not None
         else (avg if avg > 0 else None),

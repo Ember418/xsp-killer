@@ -9,7 +9,7 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -508,6 +508,32 @@ def is_et_trading_session(session_date: date) -> bool:
     if session_date.year == 2026 and session_date in NYSE_2026_HOLIDAYS:
         return False
     return True
+
+
+ENTRY_EVAL_WINDOW_END_ET = time(19, 55)
+
+
+def scoreboard_entry_stale(
+    latest_entry_eval: datetime | None,
+    *,
+    now: datetime | None = None,
+    window_end_et: time = ENTRY_EVAL_WINDOW_END_ET,
+) -> bool:
+    """Stale only when a trading session's entry window passed without a newer eval."""
+    if latest_entry_eval is None:
+        return True
+    reference = (now or datetime.now(timezone.utc)).astimezone(ET)
+    last_eval_et = latest_entry_eval.astimezone(ET)
+    last_session_date = last_eval_et.date()
+
+    d = last_session_date + timedelta(days=1)
+    while d <= reference.date():
+        if is_et_trading_session(d):
+            window_end = datetime.combine(d, window_end_et, tzinfo=ET)
+            if reference >= window_end and last_eval_et < window_end:
+                return True
+        d += timedelta(days=1)
+    return False
 
 
 def unique_et_sessions(entry_logs: list[dict[str, Any]]) -> list[str]:

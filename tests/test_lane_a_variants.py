@@ -431,11 +431,7 @@ def test_build_scoreboard_sets_liveness_from_latest_entry_eval(tmp_path):
         .replace(microsecond=0)
         .isoformat()
     )
-    backdated_eval = (
-        (datetime.now(timezone.utc) - timedelta(hours=40))
-        .replace(microsecond=0)
-        .isoformat()
-    )
+    backdated_eval = "2026-06-20T23:55:00+00:00"
 
     state = tmp_path / "variants-state.json"
     baseline = tmp_path / "baseline-state.json"

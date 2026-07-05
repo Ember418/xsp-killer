@@ -152,3 +152,17 @@ Jul 3 research (cognitive-heuristics / CI merge-gate hardening) + health soak an
 | Ruff scope expanded (`data_hazards`, `test_rh_mcp_confidence`) | ✅ |
 
 **Ops note:** LLM review tools remain advisory; merge gate is pytest + ruff + bandit (Jul 3 brief: parallel deterministic scanner).
+
+---
+
+## Implementation addendum (2026-07-05)
+
+No new cemini briefs Jul 5. Applied **Jul 4 HCP MCP execution-control** briefs + cleared weekend `scoreboard_stale` false positive.
+
+| Item | Status |
+|---|---|
+| Holiday/weekend-aware `scoreboard_entry_stale` (no false stale over Jul 4–6) | ✅ |
+| HCP I2 grant-backed review→place chain | ✅ |
+| HCP I4 principal binding on audit rows | ✅ |
+| HCP I7 deny-path audit (gates, allowlist, LOW-confidence read) | ✅ |
+| Fix `_last_mcp_fetch_wrap` module init | ✅ |

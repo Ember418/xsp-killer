@@ -21,6 +21,7 @@ from xsp_killer.lane_a_entry import (
     et_session_date,
     is_et_trading_session,
     run_paper_entry,
+    scoreboard_entry_stale,
     summarize_entry_telemetry_from_logs,
     unique_et_sessions,
 )
@@ -1240,9 +1241,7 @@ def build_scoreboard(
     updated_at_dt = datetime.now(timezone.utc)
     updated_at = updated_at_dt.isoformat()
     last_entry_eval_at = latest_entry_eval.isoformat() if latest_entry_eval else None
-    stale = latest_entry_eval is None or (
-        updated_at_dt - latest_entry_eval
-    ) > timedelta(hours=36)
+    stale = scoreboard_entry_stale(latest_entry_eval, now=updated_at_dt)
     payload = {
         "updated_at": updated_at,
         "soak_reset_at": soak_reset_at,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -30,6 +31,8 @@ logger = logging.getLogger("xsp_killer.robinhood_mcp")
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "rh_mcp.yaml"
+_last_mcp_fetch_wrap: dict[str, Any] | None = None
+MCP_JSONRPC_VERSION = "2.0"
 
 READ_TOOLS = frozenset(
     {
@@ -206,6 +209,29 @@ def normalize_mcp_position(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _review_grant_key(order: dict[str, Any]) -> str:
+    keys = ("side", "quantity", "option_id", "chain_symbol", "strike_price", "type")
+    payload = {key: order.get(key) for key in keys if order.get(key) is not None}
+    return json.dumps(payload, sort_keys=True, default=str)
+
+
+def _session_principal(
+    token_data: dict[str, Any] | None,
+    *,
+    config: RhMcpConfig,
+) -> dict[str, Any]:
+    account = (
+        os.getenv("RH_AGENTIC_ACCOUNT_ID", "").strip() or config.agentic_account_id
+    )
+    subject = None
+    if isinstance(token_data, dict):
+        subject = token_data.get("sub") or token_data.get("user_id")
+    return {
+        "agentic_account_id": account or None,
+        "token_subject": subject,
+    }
+
+
 class RobinhoodMCPAdapter:
     """HTTP MCP client with tool allowlist, audit log, and write gates."""
 
@@ -218,7 +244,9 @@ class RobinhoodMCPAdapter:
         self.config = config or RhMcpConfig.load()
         self._http_post = http_post or self._default_http_post
         self._last_review: dict[str, Any] | None = None
+        self._active_grant: dict[str, Any] | None = None
         self.last_read_wrap: dict[str, Any] | None = None
+        self._principal: dict[str, Any] = _session_principal(None, config=self.config)
 
     def _default_http_post(
         self, url: str, body: bytes, headers: dict[str, str]
@@ -248,16 +276,23 @@ class RobinhoodMCPAdapter:
         ok: bool,
         result: Any = None,
         error: str | None = None,
+        event: str = "allow",
+        invariant: str | None = None,
     ) -> None:
         path = self.config.audit_log
         path.parent.mkdir(parents=True, exist_ok=True)
-        row = {
+        row: dict[str, Any] = {
             "ts": datetime.now(timezone.utc).isoformat(),
+            "event": event,
             "tool": tool,
             "ok": ok,
             "arguments": arguments,
-            "error": error,
+            "principal": self._principal,
         }
+        if invariant:
+            row["invariant"] = invariant
+        if error:
+            row["error"] = error
         if ok and tool in READ_TOOLS:
             if isinstance(result, list):
                 row["result_count"] = len(result)
@@ -266,16 +301,41 @@ class RobinhoodMCPAdapter:
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(row, default=str) + "\n")
 
+    def _audit_deny(
+        self,
+        tool: str,
+        arguments: dict[str, Any],
+        *,
+        reason: str,
+        invariant: str,
+    ) -> None:
+        """HCP I7 — deny-path audit with principal + capability + reason."""
+        self._audit(
+            tool,
+            arguments,
+            ok=False,
+            error=reason,
+            event="deny",
+            invariant=invariant,
+        )
+
     def call_tool(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
         if name not in ALLOWED_TOOLS:
+            self._audit_deny(
+                name,
+                arguments or {},
+                reason=f"rh_mcp tool not allowlisted: {name}",
+                invariant="I5",
+            )
             raise RhMcpError(f"rh_mcp tool not allowlisted: {name}")
         args = arguments or {}
         if name in WRITE_TOOLS:
             self._enforce_write_gates(name, args)
         token_data = _load_token(self.config.token_path)
+        self._principal = _session_principal(token_data, config=self.config)
         bearer = _extract_bearer(token_data)
         payload = {
-            "jsonrpc": "2.0",
+            "jsonrpc": MCP_JSONRPC_VERSION,
             "id": 1,
             "method": "tools/call",
             "params": {"name": name, "arguments": args},
@@ -309,6 +369,13 @@ class RobinhoodMCPAdapter:
             self._audit(name, args, ok=True, result=result)
             if name == "review_option_order":
                 self._last_review = {"arguments": args, "result": result}
+                self._active_grant = {
+                    "grant_id": secrets.token_hex(8),
+                    "order_key": _review_grant_key(args),
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                }
+            if name == "place_option_order":
+                self._active_grant = None
             return result
         except Exception as exc:
             self._audit(name, args, ok=False, error=str(exc))
@@ -345,6 +412,16 @@ class RobinhoodMCPAdapter:
     def _enforce_write_gates(self, name: str, args: dict[str, Any]) -> None:
         if name == "place_option_order":
             if not live_exits_enabled(config=self.config):
+                self._audit_deny(
+                    name,
+                    args,
+                    reason=(
+                        "rh_mcp: place_option_order blocked — "
+                        "set XSP_LANE_A_LIVE_EXITS=true "
+                        "and RH_AGENTIC_ACCOUNT_ID after operator GO"
+                    ),
+                    invariant="I7",
+                )
                 raise RhMcpLiveExitsDisabled(
                     "rh_mcp: place_option_order blocked — "
                     "set XSP_LANE_A_LIVE_EXITS=true "
@@ -356,20 +433,45 @@ class RobinhoodMCPAdapter:
             except (TypeError, ValueError):
                 qty_n = 1.0
             if qty_n > self.config.max_contracts_per_order:
-                raise RhMcpError(
+                reason = (
                     f"rh_mcp: quantity {qty_n} exceeds max_contracts_per_order "
                     f"{self.config.max_contracts_per_order}"
                 )
+                self._audit_deny(name, args, reason=reason, invariant="I5")
+                raise RhMcpError(reason)
             account = str(args.get("account_id") or args.get("account") or "")
             pinned = self.config.agentic_account_id
             if pinned and account and account != pinned:
-                raise RhMcpAccountRejected(
+                reason = (
                     f"rh_mcp: order account {account!r} != pinned Agentic {pinned!r}"
                 )
-            if self.config.require_review_before_place and self._last_review is None:
-                raise RhMcpError(
-                    "rh_mcp: place_option_order requires prior review_option_order"
-                )
+                self._audit_deny(name, args, reason=reason, invariant="I3")
+                raise RhMcpAccountRejected(reason)
+            if self.config.require_review_before_place:
+                grant_key = _review_grant_key(args)
+                if self._active_grant is None:
+                    self._audit_deny(
+                        name,
+                        args,
+                        reason=(
+                            "rh_mcp: place_option_order requires "
+                            "prior review_option_order"
+                        ),
+                        invariant="I2",
+                    )
+                    raise RhMcpError(
+                        "rh_mcp: place_option_order requires prior review_option_order"
+                    )
+                if self._active_grant.get("order_key") != grant_key:
+                    self._audit_deny(
+                        name,
+                        args,
+                        reason="rh_mcp: place_option_order grant does not match review",
+                        invariant="I2",
+                    )
+                    raise RhMcpError(
+                        "rh_mcp: place_option_order grant does not match review"
+                    )
 
     def get_open_option_positions(
         self,
@@ -434,7 +536,23 @@ def fetch_option_positions_via_mcp() -> tuple[list[dict[str, Any]], str | None]:
         wrap = _last_mcp_fetch_wrap
         if wrap and not mcp_read_trusted(wrap):
             tier = fusion_tier(float(wrap.get("confidence") or 0.0))
-            return [], f"MCP read confidence {tier} ({wrap.get('confidence')})"
+            reason = f"MCP read confidence {tier} ({wrap.get('confidence')})"
+            deny_path = adapter.config.audit_log
+            deny_path.parent.mkdir(parents=True, exist_ok=True)
+            deny_row = {
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "event": "deny",
+                "tool": "get_option_positions",
+                "ok": False,
+                "invariant": "I6",
+                "error": reason,
+                "principal": adapter._principal,
+                "confidence": wrap.get("confidence"),
+                "hazard_class": wrap.get("hazard_class"),
+            }
+            with deny_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(deny_row, default=str) + "\n")
+            return [], reason
         return rows, None
     except RhMcpNotReady as exc:
         return [], str(exc)

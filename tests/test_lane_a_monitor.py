@@ -22,6 +22,7 @@ from xsp_killer.lane_a_monitor import (
 from xsp_killer.lane_a_ta import TaSignal
 
 ET = ZoneInfo("America/New_York")
+FIXED_TODAY = date(2026, 6, 20)
 
 RULES = LaneRules(
     lane="A",
@@ -63,30 +64,30 @@ def _raw(
 
 
 def test_lane_a_classify_call_dte_in_range():
-    pos = classify_position(_raw(), RULES)
+    pos = classify_position(_raw(), RULES, today=FIXED_TODAY)
     assert pos is not None
     assert pos.chain_symbol == "XSP"
     assert 14 <= pos.dte <= 60
 
 
 def test_lane_a_rejects_put():
-    assert classify_position(_raw(opt_type="put"), RULES) is None
+    assert classify_position(_raw(opt_type="put"), RULES, today=FIXED_TODAY) is None
 
 
 def test_lane_a_rejects_january_expiry():
-    assert classify_position(_raw(exp="2027-01-15"), RULES) is None
+    assert classify_position(_raw(exp="2027-01-15"), RULES, today=FIXED_TODAY) is None
 
 
 def test_lane_a_rejects_short_dte():
-    assert classify_position(_raw(exp="2026-06-20"), RULES) is None
+    assert classify_position(_raw(exp="2026-06-20"), RULES, today=FIXED_TODAY) is None
 
 
 def test_lane_a_rejects_non_spx_chain():
-    assert classify_position(_raw(chain="AAPL"), RULES) is None
+    assert classify_position(_raw(chain="AAPL"), RULES, today=FIXED_TODAY) is None
 
 
 def test_stop_loss_20pct_alert():
-    pos = classify_position(_raw(avg=2.00, mark=1.50), RULES)
+    pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     now = datetime(2026, 6, 14, 9, 45, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
@@ -94,7 +95,7 @@ def test_stop_loss_20pct_alert():
 
 
 def test_no_sell_during_830_930():
-    pos = classify_position(_raw(avg=2.00, mark=1.50), RULES)
+    pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     now = datetime(2026, 6, 14, 9, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
@@ -102,7 +103,7 @@ def test_no_sell_during_830_930():
 
 
 def test_take_profit_waits_without_upper_bb():
-    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES)
+    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     ta = TaSignal("none", None, None, False, False, False, "")
     now = datetime(2026, 6, 14, 9, 45, tzinfo=ET)
@@ -111,7 +112,7 @@ def test_take_profit_waits_without_upper_bb():
 
 
 def test_take_profit_fires_with_upper_bb_touch():
-    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES)
+    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     ta = TaSignal("upper_bb_exit", None, None, False, True, True, "upper touch")
     now = datetime(2026, 6, 14, 9, 45, tzinfo=ET)
@@ -120,7 +121,7 @@ def test_take_profit_fires_with_upper_bb_touch():
 
 
 def test_time_stop_at_deadline():
-    pos = classify_position(_raw(avg=2.00, mark=2.10), RULES)
+    pos = classify_position(_raw(avg=2.00, mark=2.10), RULES, today=FIXED_TODAY)
     assert pos is not None
     pos.entry_ts = "2026-06-13T19:45:00+00:00"
     now = datetime(2026, 6, 14, 10, 0, tzinfo=ET)
@@ -129,7 +130,7 @@ def test_time_stop_at_deadline():
 
 
 def test_time_stop_skips_same_entry_day():
-    pos = classify_position(_raw(avg=2.00, mark=2.10), RULES)
+    pos = classify_position(_raw(avg=2.00, mark=2.10), RULES, today=FIXED_TODAY)
     assert pos is not None
     pos.entry_ts = "2026-06-14T19:45:00+00:00"
     now = datetime(2026, 6, 14, 15, 45, tzinfo=ET)
@@ -138,7 +139,7 @@ def test_time_stop_skips_same_entry_day():
 
 
 def test_stop_loss_outside_tp_window():
-    pos = classify_position(_raw(avg=2.00, mark=1.50), RULES)
+    pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     now = datetime(2026, 6, 14, 10, 30, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
@@ -186,7 +187,7 @@ def test_paper_exit_dedup(tmp_path):
 
 
 def test_upper_bb_exit_in_sell_window():
-    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES)
+    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     ta = TaSignal(
         signal="upper_bb_exit",
