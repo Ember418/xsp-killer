@@ -721,7 +721,7 @@ def run_paper_entry(
     from xsp_killer.vol_monitor import evaluate_shadow_vol_gate
 
     rules_file = rules_path or DEFAULT_RULES
-    vol_shadow = evaluate_shadow_vol_gate().to_dict()
+    vol_shadow = evaluate_shadow_vol_gate(rules_path=rules_file).to_dict()
     decision = EntryDecision(
         entered=False,
         evaluated_at=evaluated_at,

@@ -88,3 +88,11 @@ paper_entry:
   enabled: true
   max_open_positions: 1
   quantity: 1
+
+# Shadow-only vol gates (never block paper entry unless operator enables enforce)
+vol_shadow:
+  lookback_days: 21
+  rv_threshold: 0.28
+  vix_median_lookback_days: 20
+  vix_spike_ratio_halve: 2.0
+  vix_trend_confirm_days: 5

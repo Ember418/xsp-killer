@@ -166,3 +166,19 @@ No new cemini briefs Jul 5. Applied **Jul 4 HCP MCP execution-control** briefs +
 | HCP I4 principal binding on audit rows | ✅ |
 | HCP I7 deny-path audit (gates, allowlist, LOW-confidence read) | ✅ |
 | Fix `_last_mcp_fetch_wrap` module init | ✅ |
+
+---
+
+## Implementation addendum (2026-07-06)
+
+Jul 6 Moontower VIX steal brief + live ops confirmation from Monday close.
+
+| Item | Status |
+|---|---|
+| Moontower VIX spike shadow (`vix_spike_ratio` vs 20d median) | ✅ shadow-only |
+| Halve-size signal when ≥2× median without downtrend confirm | ✅ `shadow_premium_scale_multiplier` |
+| `vol_shadow` config block in `lane_a_rules.yaml` | ✅ |
+| Scoreboard `vol_shadow_halve_size_sessions` telemetry | ✅ |
+| Live scale-aware risk gate on GREEN enter (Jul 6) | ✅ observed (`effective_cap_usd=5000`) |
+
+**Note:** Macro GREEN/YELLOW/RED remains `playbook_snapshot` — not naive VIX-spike = add exposure.

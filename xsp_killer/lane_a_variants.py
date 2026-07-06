@@ -726,6 +726,7 @@ def _vol_shadow_from_log_row(row: dict[str, Any]) -> dict[str, Any] | None:
 def _vol_shadow_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate shadow vol gate observations from epoch entry_log rows."""
     would_block_sessions = 0
+    halve_sessions = 0
     rvs: list[float] = []
     latest: dict[str, Any] | None = None
     for row in entry_logs:
@@ -735,6 +736,8 @@ def _vol_shadow_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, Any
         latest = vs
         if vs.get("shadow_would_block"):
             would_block_sessions += 1
+        if vs.get("shadow_would_halve_size"):
+            halve_sessions += 1
         rv = vs.get("spy_rv_annualized")
         if rv is not None:
             try:
@@ -743,8 +746,11 @@ def _vol_shadow_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, Any
                 pass
     return {
         "vol_shadow_would_block_sessions": would_block_sessions,
+        "vol_shadow_halve_size_sessions": halve_sessions,
         "vol_shadow_latest_spy_rv": (latest or {}).get("spy_rv_annualized"),
         "vol_shadow_latest_would_block": (latest or {}).get("shadow_would_block"),
+        "vol_shadow_latest_vix_spike_ratio": (latest or {}).get("vix_spike_ratio"),
+        "vol_shadow_latest_halve_size": (latest or {}).get("shadow_would_halve_size"),
         "vol_shadow_avg_spy_rv": round(sum(rvs) / len(rvs), 4) if rvs else None,
     }
 
