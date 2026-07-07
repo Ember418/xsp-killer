@@ -10,6 +10,7 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, time
 from pathlib import Path
+from time import monotonic as _monotonic
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
@@ -106,9 +107,21 @@ def _yf_interval(tf: Timeframe) -> str:
     return "15m" if tf == "15m" else "1h"
 
 
+_BAR_CACHE: dict[tuple[str, str, str], tuple[float, pd.DataFrame]] = {}
+_BAR_CACHE_TTL_S = 120.0
+
+
 def fetch_intraday_bars(
     symbol: str, timeframe: Timeframe, *, period: str = "10d"
 ) -> pd.DataFrame | None:
+    # Short in-process cache so a single cron cycle running many intraday
+    # variants shares one fetch per (symbol, timeframe) instead of hammering
+    # the data provider once per variant. Only successful fetches are cached
+    # (failures fall through and retry). TTL is well under the 15m bar cadence.
+    key = (symbol, str(timeframe), period)
+    hit = _BAR_CACHE.get(key)
+    if hit is not None and (_monotonic() - hit[0]) < _BAR_CACHE_TTL_S:
+        return hit[1]
     try:
         import yfinance as yf
 
@@ -119,7 +132,9 @@ def fetch_intraday_bars(
             return None
         df = df.copy()
         df.columns = [str(c).lower() for c in df.columns]
-        return df.dropna(subset=["close"])
+        result = df.dropna(subset=["close"])
+        _BAR_CACHE[key] = (_monotonic(), result)
+        return result
     except Exception as exc:
         logger.warning("intraday fetch failed %s %s: %s", symbol, timeframe, exc)
         return None
@@ -384,7 +399,10 @@ def evaluate_ta_signals(
         entry_ok=entry_ok,
         exit_ok=exit_ok,
         upper_bb_touched=upper_touched,
-        detail="; ".join(detail_parts) if entry_ok else exit_detail,
+        # Report the reason that matches the outcome: bounce detail for
+        # entries/no-signal (so "no BB bounce" skips explain the dip logic),
+        # exit detail only when an actual upper-BB exit fired.
+        detail=(exit_detail if (exit_ok and not entry_ok) else "; ".join(detail_parts)),
     )
 
 
