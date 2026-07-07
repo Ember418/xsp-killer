@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timezone
 from pathlib import Path
@@ -28,6 +29,8 @@ from xsp_killer.rh_broker import (
 from xsp_killer.robinhood_mcp import (
     RhMcpError,
     RobinhoodMCPAdapter,
+    kill_switch_engaged,
+    live_exits_enabled,
     rh_mcp_enabled,
 )
 
@@ -843,24 +846,62 @@ def _phase1_canary_enabled() -> bool:
     )
 
 
+# Fixed namespace so a logical exit (position + trading day + reason) maps to a
+# stable ref_id — the broker dedupes on it across the 4 morning monitor runs.
+_EXIT_REF_NAMESPACE = uuid.UUID("7d5a6c2e-3b41-4e0a-9c2d-000000000001")
+
+
+def _exit_ref_id(option_id: str, day: str, exit_reason: str) -> str:
+    return str(uuid.uuid5(_EXIT_REF_NAMESPACE, f"{option_id}:{day}:{exit_reason}"))
+
+
+def _build_close_order(option_id: str, pos: "LaneAPosition") -> dict[str, Any]:
+    """Sell-to-close legs[] order: limit at mark, market when no mark."""
+    qty_int = max(1, int(round(pos.quantity or 1)))
+    order: dict[str, Any] = {
+        "legs": [
+            {
+                "option_id": option_id,
+                "side": "sell",
+                "position_effect": "close",
+                "ratio_quantity": 1,
+            }
+        ],
+        "quantity": str(qty_int),
+        "time_in_force": "gfd",
+    }
+    if pos.mark_price is not None:
+        order["type"] = "limit"
+        order["price"] = f"{float(pos.mark_price):.2f}"
+    else:
+        order["type"] = "market"
+    return order
+
+
 def dry_run_exit_reviews_via_mcp(
     alerts: list["ExitAlert"],
     positions: list["LaneAPosition"],
 ) -> list[dict[str, Any]]:
-    """Phase 1: call review_option_order for exit alerts when MCP enabled (no place).
+    """Exit signal handoff to Robinhood MCP: always review, place when live.
 
     Invariants:
-    - Review only: never calls place_option_order — no order is placed here.
     - Paper synthetic positions (non-UUID ids) are skipped with a recorded
-      ``skipped`` note; only real Robinhood option UUIDs are reviewed live.
-    - When MCP is enabled but no real position is reviewable, a single
-      buy-to-open proof-of-life canary review runs (gated by
-      ``XSP_LANE_A_PHASE1_CANARY``) so the token/endpoint/schema stay verified.
+      ``skipped`` note; only real Robinhood option UUIDs are acted on.
+    - Every real exit reviews first (``review_option_order``) for an audited
+      preview, then places (``place_option_order``) ONLY when live exits are
+      enabled and the kill switch is clear; otherwise it stays review-only.
+    - Live placement uses a deterministic ``ref_id`` per (option, day, reason)
+      so the 4 morning monitor runs can't create duplicate exit orders.
+    - When nothing is reviewable, a single buy-to-open proof-of-life canary
+      review runs (gated by ``XSP_LANE_A_PHASE1_CANARY``); the canary never
+      places an order.
     """
     if not rh_mcp_enabled():
         return []
     pos_by_id = {p.position_id: p for p in positions}
     adapter = RobinhoodMCPAdapter()
+    live = live_exits_enabled(config=adapter.config) and not kill_switch_engaged()
+    day = datetime.now(ET).date().isoformat()
     reviews: list[dict[str, Any]] = []
     reviewable = 0
     for alert in alerts:
@@ -877,45 +918,25 @@ def dry_run_exit_reviews_via_mcp(
                 }
             )
             continue
-        # Real Robinhood MCP schema: legs[] + position_effect + top-level
-        # quantity/price. Sell-to-close a long at a limit near mark; fall back
-        # to market when no mark is available.
-        qty_int = max(1, int(round(pos.quantity or 1)))
-        order: dict[str, Any] = {
-            "legs": [
-                {
-                    "option_id": option_id,
-                    "side": "sell",
-                    "position_effect": "close",
-                    "ratio_quantity": 1,
-                }
-            ],
-            "quantity": str(qty_int),
-            "time_in_force": "gfd",
+        order = _build_close_order(option_id, pos)
+        entry: dict[str, Any] = {
+            "position_id": alert.position_id,
+            "exit_reason": alert.exit_reason,
+            "live": live,
         }
-        if pos.mark_price is not None:
-            order["type"] = "limit"
-            order["price"] = f"{float(pos.mark_price):.2f}"
-        else:
-            order["type"] = "market"
         try:
-            result = adapter.review_option_order(order)
-            reviews.append(
-                {
-                    "position_id": alert.position_id,
-                    "exit_reason": alert.exit_reason,
-                    "review": result,
-                }
-            )
+            entry["review"] = adapter.review_option_order(order)
             reviewable += 1
-        except (RhMcpError, Exception) as exc:
-            reviews.append(
-                {
-                    "position_id": alert.position_id,
-                    "exit_reason": alert.exit_reason,
-                    "error": str(exc),
+            if live:
+                place_order = {
+                    **order,
+                    "ref_id": _exit_ref_id(option_id, day, alert.exit_reason),
                 }
-            )
+                entry["placed"] = adapter.place_option_order(place_order)
+            reviews.append(entry)
+        except (RhMcpError, Exception) as exc:
+            entry["error"] = str(exc)
+            reviews.append(entry)
     if reviewable == 0 and _phase1_canary_enabled():
         try:
             canary = adapter.phase1_canary_review()

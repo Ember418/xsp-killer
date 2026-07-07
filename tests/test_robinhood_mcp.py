@@ -331,6 +331,49 @@ def test_ratio_quantity_counts_toward_max_contracts(tmp_path, monkeypatch):
     assert deny["invariant"] == "I5"
 
 
+def test_kill_switch_blocks_place_even_when_live(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_EXITS", "true")
+    monkeypatch.setenv("XSP_LANE_A_KILL_SWITCH", "true")
+    from xsp_killer.robinhood_mcp import RhMcpKillSwitch
+
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    audit = tmp_path / "audit.jsonl"
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=audit,
+        agentic_account_id="agentic-1",
+        live_exits=True,
+        require_review_before_place=False,
+    )
+
+    def fake_http(url, body, headers):
+        return {"result": {"structuredContent": {"ok": True}}}
+
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
+    order = {
+        "account_number": "agentic-1",
+        "legs": [{"option_id": "opt-1", "side": "sell", "position_effect": "close"}],
+        "type": "market",
+        "quantity": "1",
+    }
+    with pytest.raises(RhMcpKillSwitch):
+        adapter.place_option_order(order)
+    deny = json.loads(audit.read_text().strip().splitlines()[-1])
+    assert deny["invariant"] == "I8"
+
+
+def test_kill_switch_file_engages(tmp_path, monkeypatch):
+    from xsp_killer.robinhood_mcp import kill_switch_engaged
+
+    monkeypatch.delenv("XSP_LANE_A_KILL_SWITCH", raising=False)
+    kill_file = tmp_path / "KILL_SWITCH"
+    monkeypatch.setenv("XSP_LANE_A_KILL_FILE", str(kill_file))
+    assert kill_switch_engaged() is False
+    kill_file.write_text("halt", encoding="utf-8")
+    assert kill_switch_engaged() is True
+
+
 def test_phase1_canary_review_previews_without_placing(tmp_path):
     token = tmp_path / "token.json"
     token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")

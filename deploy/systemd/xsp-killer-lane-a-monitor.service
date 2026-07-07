@@ -7,8 +7,11 @@ Type=oneshot
 WorkingDirectory=/opt/xsp-killer
 Environment=PYTHONPATH=/opt/xsp-killer
 Environment=XSP_LANE_A_RH_POLL=false
-# Phase 1: MCP reads + review-only exit dry-runs (incl. proof-of-life canary).
-# LIVE_EXITS stays false — no orders placed until operator GO + funding + soak.
+# MCP reads + Phase 1 review dry-run (incl. proof-of-life canary).
+# Auto-exit place path exists but is gated OFF: LIVE_EXITS=false means the
+# monitor reviews exits but places no orders. Flip LIVE_EXITS=true only after
+# funding + paper soak + operator GO. Emergency halt: XSP_LANE_A_KILL_SWITCH=true
+# or `touch .local/KILL_SWITCH` (blocks all placement, cancels still allowed).
 Environment=XSP_LANE_A_RH_MCP=true
 Environment=XSP_LANE_A_LIVE_EXITS=false
 Environment=XSP_LANE_A_PHASE1_CANARY=true

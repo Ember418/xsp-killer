@@ -75,22 +75,28 @@ XSP_LANE_A_RH_MCP=true XSP_LANE_A_RH_POLL=true PYTHONPATH=. python3 scripts/rh_m
 
 ## Phase 1 — Review-only exit dry run
 
-Lane A monitor will call `review_option_order` on exit signals when MCP is enabled. **No** `place_option_order` until Phase 2.
+Lane A monitor calls `review_option_order` on exit signals when MCP is enabled, and (account empty) runs a review-only proof-of-life canary each run. **No** `place_option_order` while `XSP_LANE_A_LIVE_EXITS=false`.
 
 Gate: paper soak ≥1 entered+closed trade post-epoch (current regime blocker).
 
+Verified 2026-07-07: headless `place → cancel` works with no human approval (deep-OTM $0.01 order, unfilled, cancelled; see `config/rh_mcp_audit.md`).
+
 ## Phase 2 — Live exits (operator GO)
 
+When `XSP_LANE_A_LIVE_EXITS=true` and the kill switch is clear, the monitor **auto-places** a sell-to-close on real exit alerts (`review → place`, limit at mark). Placement is idempotent per (option, trading day, exit reason) via a deterministic `ref_id`, so the 4 morning runs cannot duplicate an exit.
+
 1. Fund **Agentic account only** (isolated from primary RH book).
-2. Set `XSP_LANE_A_LIVE_EXITS=true` and confirm `RH_AGENTIC_ACCOUNT_ID`.
-3. Single-contract test sell; confirm push notification.
+2. Set `XSP_LANE_A_LIVE_EXITS=true` in `deploy/systemd/xsp-killer-lane-a-monitor.service` (currently `false`), reinstall units (`scripts/install_systemd.sh`), `daemon-reload`.
+3. Confirm `RH_AGENTIC_ACCOUNT_ID`; single-contract test sell; confirm push notification.
 4. Rollback drill: set `XSP_LANE_A_LIVE_EXITS=false` **and** disconnect agent in Robinhood app (≤60s stop).
 
 ## Kill switches
 
 | Action | Effect |
 |--------|--------|
-| `XSP_LANE_A_LIVE_EXITS=false` | Adapter rejects all `place_option_order` |
+| `XSP_LANE_A_KILL_SWITCH=true` | **Emergency halt** — blocks all `place_option_order` (I8) even if live exits on; cancels still allowed |
+| `touch .local/KILL_SWITCH` (or `$XSP_LANE_A_KILL_FILE`) | Same as above via sentinel file — no restart needed |
+| `XSP_LANE_A_LIVE_EXITS=false` | Adapter rejects all `place_option_order` (I7) |
 | Robinhood app → disconnect agent | OAuth revoked; reads fail until re-auth |
 | systemd stop timers | No cron evaluation |
 

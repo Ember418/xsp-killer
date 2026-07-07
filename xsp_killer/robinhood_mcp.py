@@ -14,6 +14,9 @@ Invariants:
   position/monitor decisions.
 - No live exits without operator GO: ``place_option_order`` requires
   ``XSP_LANE_A_LIVE_EXITS`` + pinned account.
+- I8 kill switch: ``kill_switch_engaged`` (``XSP_LANE_A_KILL_SWITCH`` or a
+  sentinel file) blocks all ``place_option_order`` regardless of live-exits;
+  cancels are never blocked.
 """
 
 from __future__ import annotations
@@ -108,6 +111,32 @@ class RhMcpLiveExitsDisabled(RhMcpError):
 
 class RhMcpAccountRejected(RhMcpError):
     """Order target account is not the pinned Agentic account."""
+
+
+class RhMcpKillSwitch(RhMcpError):
+    """place_option_order blocked by the operator kill switch."""
+
+
+def kill_switch_engaged() -> bool:
+    """True when the operator kill switch is set (env flag or sentinel file).
+
+    Blocks all new order placement regardless of ``XSP_LANE_A_LIVE_EXITS``.
+    Cancels are never blocked so open orders can always be pulled.
+    """
+    if os.getenv("XSP_LANE_A_KILL_SWITCH", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        return True
+    kill_file = os.getenv("XSP_LANE_A_KILL_FILE", "").strip() or str(
+        ROOT / ".local" / "KILL_SWITCH"
+    )
+    try:
+        return Path(kill_file).exists()
+    except OSError:
+        return False
 
 
 def rh_mcp_enabled() -> bool:
@@ -481,6 +510,13 @@ class RobinhoodMCPAdapter:
 
     def _enforce_write_gates(self, name: str, args: dict[str, Any]) -> None:
         if name == "place_option_order":
+            if kill_switch_engaged():
+                reason = (
+                    "rh_mcp: place_option_order blocked — kill switch engaged "
+                    "(unset XSP_LANE_A_KILL_SWITCH / remove kill file to resume)"
+                )
+                self._audit_deny(name, args, reason=reason, invariant="I8")
+                raise RhMcpKillSwitch(reason)
             if not live_exits_enabled(config=self.config):
                 self._audit_deny(
                     name,

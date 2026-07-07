@@ -10,6 +10,7 @@ from xsp_killer.lane_a_monitor import (
     ExitAlert,
     LaneAPosition,
     LaneRules,
+    _exit_ref_id,
     _real_option_id,
     classify_position,
     close_paper_positions_on_exit,
@@ -609,6 +610,11 @@ def _mk_alert(position_id: str) -> ExitAlert:
     )
 
 
+def _force_live(monkeypatch, live: bool) -> None:
+    monkeypatch.setattr(lane_a_monitor, "live_exits_enabled", lambda **k: live)
+    monkeypatch.setattr(lane_a_monitor, "kill_switch_engaged", lambda: False)
+
+
 def test_real_option_id_distinguishes_paper_from_uuid():
     uid = "11111111-1111-1111-1111-111111111111"
     assert _real_option_id(_mk_position(uid)) == uid
@@ -618,8 +624,11 @@ def test_real_option_id_distinguishes_paper_from_uuid():
 def test_dry_run_skips_paper_and_runs_canary(monkeypatch):
     monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
     monkeypatch.setenv("XSP_LANE_A_PHASE1_CANARY", "true")
+    _force_live(monkeypatch, False)
 
     class FakeAdapter:
+        config = None
+
         def review_option_order(self, order):
             raise AssertionError("paper position must not be reviewed live")
 
@@ -640,14 +649,20 @@ def test_dry_run_skips_paper_and_runs_canary(monkeypatch):
     assert canary[0]["no_order_placed"] is True
 
 
-def test_dry_run_reviews_real_position_no_canary(monkeypatch):
+def test_dry_run_reviews_real_position_no_place_when_off(monkeypatch):
     monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
+    _force_live(monkeypatch, False)
     seen: dict[str, object] = {}
 
     class FakeAdapter:
+        config = None
+
         def review_option_order(self, order):
             seen["order"] = order
             return {"data": {"ok": True}}
+
+        def place_option_order(self, order):
+            raise AssertionError("must not place when live exits are off")
 
         def phase1_canary_review(self, **kwargs):
             raise AssertionError("canary must not run when a real position reviews")
@@ -662,14 +677,85 @@ def test_dry_run_reviews_real_position_no_canary(monkeypatch):
     assert order["quantity"] == "2"
     assert order["price"] == "4.50"
     assert not any(r.get("canary") for r in out)
-    assert any("review" in r for r in out)
+    assert out[0]["live"] is False
+    assert "placed" not in out[0]
+    assert "review" in out[0]
+
+
+def test_dry_run_places_real_exit_when_live(monkeypatch):
+    monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
+    _force_live(monkeypatch, True)
+    seen: dict[str, object] = {}
+
+    class FakeAdapter:
+        config = None
+
+        def review_option_order(self, order):
+            return {"data": {"ok": True}}
+
+        def place_option_order(self, order):
+            seen["place"] = order
+            return {"data": {"id": "order-123", "state": "unconfirmed"}}
+
+        def phase1_canary_review(self, **kwargs):
+            raise AssertionError("canary must not run with a real position")
+
+    monkeypatch.setattr(lane_a_monitor, "RobinhoodMCPAdapter", FakeAdapter)
+    uid = "11111111-1111-1111-1111-111111111111"
+    out = dry_run_exit_reviews_via_mcp([_mk_alert(uid)], [_mk_position(uid)])
+    place = seen["place"]
+    assert place["legs"][0]["side"] == "sell"
+    assert place["legs"][0]["position_effect"] == "close"
+    # Deterministic idempotency key for this (option, day, reason).
+    assert place["ref_id"] == _exit_ref_id(
+        uid, datetime.now(ET).date().isoformat(), "time_stop"
+    )
+    assert out[0]["live"] is True
+    assert out[0]["placed"]["data"]["id"] == "order-123"
+
+
+def test_dry_run_kill_switch_blocks_place(monkeypatch):
+    monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
+    monkeypatch.setattr(lane_a_monitor, "live_exits_enabled", lambda **k: True)
+    monkeypatch.setattr(lane_a_monitor, "kill_switch_engaged", lambda: True)
+
+    class FakeAdapter:
+        config = None
+
+        def review_option_order(self, order):
+            return {"data": {"ok": True}}
+
+        def place_option_order(self, order):
+            raise AssertionError("kill switch must block placement")
+
+        def phase1_canary_review(self, **kwargs):
+            raise AssertionError("canary must not run with a real position")
+
+    monkeypatch.setattr(lane_a_monitor, "RobinhoodMCPAdapter", FakeAdapter)
+    uid = "11111111-1111-1111-1111-111111111111"
+    out = dry_run_exit_reviews_via_mcp([_mk_alert(uid)], [_mk_position(uid)])
+    assert out[0]["live"] is False
+    assert "placed" not in out[0]
+    assert "review" in out[0]
+
+
+def test_exit_ref_id_is_deterministic():
+    uid = "11111111-1111-1111-1111-111111111111"
+    a = _exit_ref_id(uid, "2026-07-07", "time_stop")
+    b = _exit_ref_id(uid, "2026-07-07", "time_stop")
+    c = _exit_ref_id(uid, "2026-07-08", "time_stop")
+    assert a == b
+    assert a != c
 
 
 def test_dry_run_canary_runs_with_no_alerts(monkeypatch):
     monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
     monkeypatch.setenv("XSP_LANE_A_PHASE1_CANARY", "true")
+    _force_live(monkeypatch, False)
 
     class FakeAdapter:
+        config = None
+
         def review_option_order(self, order):
             raise AssertionError("no positions to review")
 
@@ -690,8 +776,11 @@ def test_dry_run_disabled_when_mcp_off(monkeypatch):
 def test_dry_run_canary_disabled_by_flag(monkeypatch):
     monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
     monkeypatch.setenv("XSP_LANE_A_PHASE1_CANARY", "false")
+    _force_live(monkeypatch, False)
 
     class FakeAdapter:
+        config = None
+
         def review_option_order(self, order):
             raise AssertionError("paper must not review")
 

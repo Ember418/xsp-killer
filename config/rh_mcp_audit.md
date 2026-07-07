@@ -126,3 +126,44 @@ min_ticks: above_tick 0.10, below_tick 0.05, cutoff_price 3.00
 - `get_option_positions` returns 0 — expected for empty account; read parity with `robin_stocks` not yet verifiable
 - **RH_USERNAME/RH_PASSWORD can be removed from .env once**: (a) ≥1 position exists to verify read parity, or (b) operator confirms MCP reads sufficient for Phase 0 go-live
 - `get_option_chains` → `underlying_symbol` param discovered; `rh_mcp.yaml` `allowed_chain_symbols` list needs matching call-site logic
+
+## Auto-order verification (2026-07-07)
+
+**Headless programmatic order placement CONFIRMED working with no human approval.**
+The `review → place → cancel` loop was exercised live on the Agentic account
+(8843) with a deliberately unfillable, minimal-exposure order:
+
+- Instrument: XSP 2026-07-14 800C (`dbd8ffeb-…`), deep OTM (bid $0.00 / ask $0.02)
+- Order: buy-to-open 1 @ limit **$0.01** (`legs[]` schema) → max exposure **$1**
+- `review_option_order` → `order_checks: OPTION_NO_BID_PRICE` (expected)
+- `place_option_order` → accepted, `state=unconfirmed`, id `6a4d23ce-…` — **placed
+  programmatically, no confirmation step**
+- `cancel_option_order` → `accepted=true`; final `state=cancelled`, **never filled**
+- Post-test: 0 open positions, buying power unchanged at $500
+
+Conclusion: the MCP "must get confirmation" guidance is an instruction to
+interactive LLM agents, not a server gate. A valid OAuth token on the
+agentic-enabled account authorizes headless `place_option_order`. `ref_id` is
+accepted on `place` only (not `review`).
+
+## Auto-exit wiring (Phase 2, gated OFF)
+
+`dry_run_exit_reviews_via_mcp` now: reviews every real exit, and **places a
+sell-to-close** order only when `XSP_LANE_A_LIVE_EXITS=true` AND the kill switch
+is clear. Safety rails:
+
+- **Master switch**: `XSP_LANE_A_LIVE_EXITS` (+ pinned account) — default false (I7).
+- **Kill switch (I8)**: `XSP_LANE_A_KILL_SWITCH=true` or a sentinel file
+  (`.local/KILL_SWITCH`, override `XSP_LANE_A_KILL_FILE`) blocks ALL
+  `place_option_order`; cancels stay allowed.
+- **Idempotency**: deterministic `ref_id = uuid5(option_id, trading_day,
+  exit_reason)` so the 4 morning monitor runs cannot duplicate an exit order.
+- **Contract cap**: `max_contracts_per_order` (I5); **account pin** (I3);
+  **review→place grant** (I2).
+
+### Sign-off (updated)
+
+- [x] Headless auto-placement verified (place + cancel, $1 exposure, unfilled)
+- [ ] **BLOCKER**: Fund Agentic account before live sizing (currently $500)
+- [ ] **GATE**: ≥1 clean paper entry→exit cycle logged before flipping `LIVE_EXITS`
+- [ ] Flip `XSP_LANE_A_LIVE_EXITS=true` in monitor unit only after operator GO
