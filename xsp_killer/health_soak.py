@@ -1,10 +1,14 @@
 """Helpers for health/soak reporting.
 
 Invariants:
-- ``detect_strict_anomalies`` returns a fixed taxonomy of anomaly codes (no ad-hoc strings).
-- Scoreboard staleness respects holiday/weekend via ``scoreboard_entry_stale`` (no false stale over closed sessions).
-- ``strict_anomalies`` in soak reports is the union of stale, grace, brief-consistency, and risk-gate checks.
-- Brief/telemetry cross-checks must flag epoch and counter mismatches before promotion.
+- ``detect_strict_anomalies`` returns a fixed taxonomy of anomaly codes
+  (no ad-hoc strings).
+- Scoreboard staleness respects holiday/weekend via ``scoreboard_entry_stale``
+  (no false stale over closed sessions).
+- ``strict_anomalies`` in soak reports is the union of stale, grace,
+  brief-consistency, and risk-gate checks.
+- Brief/telemetry cross-checks must flag epoch and counter mismatches before
+  promotion.
 """
 
 from __future__ import annotations

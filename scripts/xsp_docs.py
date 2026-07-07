@@ -65,7 +65,9 @@ def first_line_summary(docstring: str | None) -> str | None:
 def has_invariants_line(docstring: str | None) -> bool:
     if not docstring:
         return False
-    return any(line.strip().startswith("Invariants:") for line in docstring.splitlines())
+    return any(
+        line.strip().startswith("Invariants:") for line in docstring.splitlines()
+    )
 
 
 def top_level_symbols(tree: ast.Module) -> list[dict[str, Any]]:
@@ -142,7 +144,9 @@ def main(argv: list[str] | None = None) -> int:
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
 
-    parser = argparse.ArgumentParser(description="K138 substrate projection for xsp_killer")
+    parser = argparse.ArgumentParser(
+        description="K138 substrate projection for xsp_killer"
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_mod = sub.add_parser("module", help="JSON bundle for a module")
@@ -152,7 +156,10 @@ def main(argv: list[str] | None = None) -> int:
     p_sym.add_argument("dotted_path")
     p_sym.add_argument("name")
 
-    p_chk = sub.add_parser("check-invariants", help="Require Invariants: in module docstrings")
+    p_chk = sub.add_parser(
+        "check-invariants",
+        help="Require Invariants: in module docstrings",
+    )
     p_chk.add_argument("dotted_path", nargs="+")
 
     args = parser.parse_args(argv)

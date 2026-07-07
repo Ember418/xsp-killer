@@ -5,10 +5,14 @@ spike = buy). Moontower K147 (Jul 2026): naive VIX-spike sizing is shadow-only
 here — halve-size signal when VIX ≥2× 20d median without downtrend confirm.
 
 Invariants:
-- Shadow-only: ``shadow_would_block`` and halve-size signals never block entry unless ``enforcing=True``.
-- VIX spike halve (``shadow_premium_scale_multiplier``) is observability/telemetry — not entry enforcement.
-- Macro GREEN/YELLOW/RED regime gating is separate (``playbook_snapshot`` / ``regime_gate_allows``).
-- ``ShadowVolGate.enforcing`` defaults to False; prod path must not flip it without explicit review.
+- Shadow-only: ``shadow_would_block`` and halve-size signals never block
+  entry unless ``enforcing=True``.
+- VIX spike halve (``shadow_premium_scale_multiplier``) is observability/
+  telemetry — not entry enforcement.
+- Macro GREEN/YELLOW/RED regime gating is separate (``playbook_snapshot`` /
+  ``regime_gate_allows``).
+- ``ShadowVolGate.enforcing`` defaults to False; prod path must not flip it
+  without explicit review.
 """
 
 from __future__ import annotations

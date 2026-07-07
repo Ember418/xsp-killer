@@ -6,10 +6,14 @@ Headless bridge for systemd cron. Disabled by default; no network calls unless
 See ``docs/rh_mcp_runbook.md`` and ``config/rh_mcp.yaml``.
 
 Invariants:
-- Disabled by default (``XSP_LANE_A_RH_MCP`` false); no MCP network unless env + token file.
-- Write path enforces HCP I2 (review→place grant chain) and I7 (deny-path audit on blocks).
-- LOW-confidence MCP reads (``mcp_read_trusted``) must not drive position/monitor decisions.
-- No live exits without operator GO: ``place_option_order`` requires ``XSP_LANE_A_LIVE_EXITS`` + pinned account.
+- Disabled by default (``XSP_LANE_A_RH_MCP`` false); no MCP network unless
+  env + token file.
+- Write path enforces HCP I2 (review→place grant chain) and I7 (deny-path
+  audit on blocks).
+- LOW-confidence MCP reads (``mcp_read_trusted``) must not drive
+  position/monitor decisions.
+- No live exits without operator GO: ``place_option_order`` requires
+  ``XSP_LANE_A_LIVE_EXITS`` + pinned account.
 """
 
 from __future__ import annotations
