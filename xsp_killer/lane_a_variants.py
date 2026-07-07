@@ -1122,6 +1122,65 @@ def _build_promotion_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+DIP_SWING_VARIANT_PREFIX = "v2_dip_swing"
+
+
+def _build_dip_swing_cluster(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Isolate the dip-buy swing variants so the cluster can be watched as a
+    group, separate from the legacy close-window variants. Ranked within the
+    cluster by avg PnL per trade; a leader is only named once it clears the
+    low-sample gate (>=20 sessions and >=2 trades)."""
+    members = [
+        r
+        for r in rows
+        if str(r.get("variant_id") or "").startswith(DIP_SWING_VARIANT_PREFIX)
+    ]
+    fields = (
+        "variant_id",
+        "description",
+        "trades_closed",
+        "wins",
+        "losses",
+        "win_rate_pct",
+        "realized_pnl_usd",
+        "avg_pnl_per_trade_usd",
+        "open_positions",
+        "sessions_evaluated",
+        "sessions_to_gate",
+        "low_sample",
+    )
+    ranked = sorted(
+        members,
+        key=lambda r: (
+            r.get("avg_pnl_per_trade_usd") is not None,
+            r.get("avg_pnl_per_trade_usd") or -1e18,
+        ),
+        reverse=True,
+    )
+    trimmed = [{k: r.get(k) for k in fields} for r in ranked]
+    total_trades = sum(int(r.get("trades_closed") or 0) for r in members)
+    reliable = [r for r in members if not r.get("low_sample")]
+    leader = None
+    if reliable:
+        leader = max(
+            reliable,
+            key=lambda r: r.get("avg_pnl_per_trade_usd") or -1e18,
+        ).get("variant_id")
+    return {
+        "count": len(members),
+        "total_trades_closed": total_trades,
+        "ranked_by": "avg_pnl_per_trade_usd",
+        "leader": leader,
+        "leader_gate": "low_sample=false (>=20 sessions and >=2 trades)",
+        "variants": trimmed,
+        "note": (
+            "Dip-buy swing cluster: buy a confirmed dip-bounce, hold for the "
+            "recovery, sell into strength. Compare within this cluster; promote "
+            "the leader to base once low_sample clears."
+        ),
+    }
+
+
 def build_scoreboard(
     *,
     config_path: Path | None = None,
@@ -1305,6 +1364,7 @@ def build_scoreboard(
         "contract_clusters": contract_clusters,
         "regime_gate_comparison": _build_regime_gate_comparison(rows),
         "regime_skip_breakdown": _build_regime_skip_breakdown(rows),
+        "dip_swing_cluster": _build_dip_swing_cluster(shadow_rows),
         "promotion_summary": _build_promotion_summary(rows),
         "note": (
             "Per-variant comparison only. Need ≥20 post-epoch sessions per variant before promotion."

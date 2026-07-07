@@ -1279,3 +1279,58 @@ def test_dip_swing_variant_is_intraday_enabled():
     assert _variant_intraday_enabled(specs["v2_dip_swing_14dte"]) is True
     # ...while a close-window variant does not (stays on the 15:45 cadence).
     assert _variant_intraday_enabled(specs["v2_28dte_atm"]) is False
+
+
+def test_dip_swing_cluster_isolates_and_ranks():
+    from xsp_killer.lane_a_variants import _build_dip_swing_cluster
+
+    rows = [
+        {
+            "variant_id": "v2_close_window_baseline",
+            "avg_pnl_per_trade_usd": 5.0,
+            "trades_closed": 10,
+            "low_sample": False,
+        },
+        {
+            "variant_id": "v2_dip_swing_14dte",
+            "avg_pnl_per_trade_usd": 12.0,
+            "trades_closed": 4,
+            "low_sample": False,
+        },
+        {
+            "variant_id": "v2_dip_swing_21dte",
+            "avg_pnl_per_trade_usd": 30.0,
+            "trades_closed": 1,
+            "low_sample": True,
+        },
+        {
+            "variant_id": "v2_dip_swing_30dte",
+            "avg_pnl_per_trade_usd": 3.0,
+            "trades_closed": 6,
+            "low_sample": False,
+        },
+    ]
+    cluster = _build_dip_swing_cluster(rows)
+    ids = [v["variant_id"] for v in cluster["variants"]]
+    # Only dip-swing members, close-window variant excluded.
+    assert ids == ["v2_dip_swing_21dte", "v2_dip_swing_14dte", "v2_dip_swing_30dte"]
+    assert cluster["count"] == 3
+    assert cluster["total_trades_closed"] == 11
+    # Leader ignores the high-but-low-sample variant; picks best reliable one.
+    assert cluster["leader"] == "v2_dip_swing_14dte"
+
+
+def test_dip_swing_cluster_leader_none_without_reliable_sample():
+    from xsp_killer.lane_a_variants import _build_dip_swing_cluster
+
+    rows = [
+        {
+            "variant_id": "v2_dip_swing_14dte",
+            "avg_pnl_per_trade_usd": None,
+            "trades_closed": 0,
+            "low_sample": True,
+        },
+    ]
+    cluster = _build_dip_swing_cluster(rows)
+    assert cluster["count"] == 1
+    assert cluster["leader"] is None
