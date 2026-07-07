@@ -71,6 +71,8 @@ class LaneRules:
     regime_gate: str = "GREEN"
     regime_yellow_frac_min: float = 0.75
     regime_yellow_require_bounce: bool = True
+    swing_hold: bool = False
+    max_hold_dte: int = 0
 
     @classmethod
     def from_yaml(cls, path: Path) -> LaneRules:
@@ -114,6 +116,8 @@ class LaneRules:
             regime_yellow_require_bounce=bool(
                 entry.get("regime_yellow_require_bounce", True)
             ),
+            swing_hold=bool(exit_cfg.get("swing_hold", False)),
+            max_hold_dte=int(exit_cfg.get("max_hold_dte", 0)),
         )
 
 
@@ -398,6 +402,14 @@ def regime_gate_allows(
             return True, None
         return False, f"regime {regime} blocks new risk"
 
+    if gate == "DIP_BOUNCE":
+        # Dip-buy strategy: enter on a confirmed BB bounce regardless of regime.
+        # The bounce confirmation (ta_entry_ok) is the safety — we only buy
+        # weakness that has already turned up, never a free-falling knife.
+        if ta_entry_ok:
+            return True, None
+        return False, "DIP_BOUNCE: no confirmed BB bounce"
+
     if gate == "GREEN_OR_YELLOW_BOUNCE":
         if regime_ok:
             return True, None
@@ -530,7 +542,11 @@ def evaluate_exit_alerts(
 
     in_sell = in_sell_window(now, rules)
 
-    if in_sell and ret_pct >= rules.take_profit_pct:
+    # Swing-hold variants take profit on any evaluation (intraday too), not
+    # only in the morning sell window — the whole point is to sell into a
+    # recovery whenever it comes during the multi-day hold.
+    tp_window_ok = in_sell or rules.swing_hold
+    if tp_window_ok and ret_pct >= rules.take_profit_pct:
         can_take = True
         if rules.require_upper_bb_for_take_profit and ta_signal is not None:
             touched = getattr(ta_signal, "upper_bb_touched", False)
@@ -557,6 +573,24 @@ def evaluate_exit_alerts(
                 )
             )
             return alerts
+
+    if rules.swing_hold:
+        # Hold for the recovery: no daily morning cut. Only force-exit near
+        # expiry so the option is closed before it decays to nothing.
+        if pos.dte is not None and pos.dte <= rules.max_hold_dte:
+            alerts.append(
+                ExitAlert(
+                    position_id=pos.position_id,
+                    exit_reason="time_stop",
+                    message=(
+                        f"Near-expiry cut (DTE {pos.dte} <= {rules.max_hold_dte}, "
+                        f"return {ret_pct * 100:.1f}%)"
+                    ),
+                    pnl_usd=pnl,
+                    pnl_per_contract=pnl_c,
+                )
+            )
+        return alerts
 
     entry_day = _entry_date_et(pos.entry_ts)
     suppress_cut = (

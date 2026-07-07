@@ -374,7 +374,9 @@ def test_build_scoreboard_dedupes_weekday_sessions_and_excludes_weekends(tmp_pat
             out_path=tmp_path / "scoreboard.json",
         ).read_text(encoding="utf-8")
     )
-    row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
+    row = next(
+        r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm"
+    )
     assert row["sessions_evaluated"] == 2
     assert row["entry_evals_total"] == 4
     assert row["weekend_evals_excluded"] == 1
@@ -563,12 +565,16 @@ def test_build_scoreboard_includes_open_mtm_and_contract_clusters(tmp_path):
             out_path=tmp_path / "scoreboard-open.json",
         ).read_text(encoding="utf-8")
     )
-    row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
+    row = next(
+        r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm"
+    )
     assert row["open_positions"] == 1
     assert row["open_positions_mtm_usd"] == 74.7
     assert row["open_positions_mtm_usd_1x"] == 7.47
     assert row["contract_cluster_id"] == "XSP:call:2026-07-18:6010"
-    assert payload["contract_clusters"]["XSP:call:2026-07-18:6010"]["open_positions"] == 1
+    assert (
+        payload["contract_clusters"]["XSP:call:2026-07-18:6010"]["open_positions"] == 1
+    )
 
 
 def test_build_scoreboard_exit_shadow_summary(tmp_path):
@@ -640,11 +646,15 @@ def test_build_scoreboard_exit_shadow_summary(tmp_path):
             out_path=tmp_path / "scoreboard-shadow.json",
         ).read_text(encoding="utf-8")
     )
-    row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
+    row = next(
+        r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm"
+    )
     assert row["exit_shadow"]["events_evaluated"] == 2
     assert row["exit_shadow"]["brackets"]["prod"]["would_exit"] == 1
     assert row["exit_shadow"]["brackets"]["no_morning_cut_14dte"]["would_hold"] == 1
-    assert row["exit_shadow"]["brackets"]["no_morning_cut_14dte"]["would_hold_open"] == 1
+    assert (
+        row["exit_shadow"]["brackets"]["no_morning_cut_14dte"]["would_hold_open"] == 1
+    )
     assert (
         row["exit_shadow"]["brackets"]["no_morning_cut_14dte"][
             "would_hold_realized_pnl_usd"
@@ -671,8 +681,14 @@ def test_build_scoreboard_excludes_holiday_sessions(tmp_path):
                 "variants": {
                     "v2_28dte_atm": {
                         "entry_log": [
-                            {"evaluated_at": "2026-07-03T19:45:00+00:00", "entered": False},
-                            {"evaluated_at": "2026-07-06T19:45:00+00:00", "entered": True},
+                            {
+                                "evaluated_at": "2026-07-03T19:45:00+00:00",
+                                "entered": False,
+                            },
+                            {
+                                "evaluated_at": "2026-07-06T19:45:00+00:00",
+                                "entered": True,
+                            },
                         ],
                         "paper_events": [],
                         "paper_positions": {},
@@ -690,7 +706,9 @@ def test_build_scoreboard_excludes_holiday_sessions(tmp_path):
             out_path=tmp_path / "scoreboard-holiday.json",
         ).read_text(encoding="utf-8")
     )
-    row = next(r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm")
+    row = next(
+        r for r in payload["shadow_variants"] if r["variant_id"] == "v2_28dte_atm"
+    )
     assert row["sessions_evaluated"] == 1
     assert row["weekend_evals_excluded"] == 1
 
@@ -1083,7 +1101,9 @@ def test_build_scoreboard_regime_gate_comparison(tmp_path):
     )
 
     mid = next(
-        r for r in payload["shadow_variants"] if r["variant_id"] == "v2_yellow_mid_bounce"
+        r
+        for r in payload["shadow_variants"]
+        if r["variant_id"] == "v2_yellow_mid_bounce"
     )
     top = next(
         r
@@ -1248,3 +1268,14 @@ def test_build_scoreboard_includes_promotion_summary(tmp_path):
     assert row["promotion_status"] == "collecting"
     assert "regime_skip_breakdown" in payload
     assert "v2_28dte_atm" in payload["regime_skip_breakdown"]["variants"]
+
+
+def test_dip_swing_variant_is_intraday_enabled():
+    from xsp_killer.lane_a_variants import _variant_intraday_enabled
+
+    specs = {s.variant_id: s for s in load_variant_specs()}
+    assert "v2_dip_swing_14dte" in specs
+    # The dip-swing variant opts into intraday evaluation...
+    assert _variant_intraday_enabled(specs["v2_dip_swing_14dte"]) is True
+    # ...while a close-window variant does not (stays on the 15:45 cadence).
+    assert _variant_intraday_enabled(specs["v2_28dte_atm"]) is False

@@ -792,3 +792,111 @@ def test_dry_run_canary_disabled_by_flag(monkeypatch):
     out = dry_run_exit_reviews_via_mcp([_mk_alert(pid)], [_mk_position(pid)])
     assert any(r.get("skipped") for r in out)
     assert not any(r.get("canary") for r in out)
+
+
+# --- Dip-buy swing: DIP_BOUNCE gate + swing-hold exits -----------------------
+
+import dataclasses  # noqa: E402
+
+from xsp_killer.lane_a_monitor import regime_gate_allows  # noqa: E402
+
+SWING_RULES = LaneRules(
+    lane="A",
+    dte_min=14,
+    dte_max=60,
+    exclude_expiry_month=("01",),
+    chain_symbols=("SPX", "XSP"),
+    stop_loss_pct=0.50,
+    take_profit_pct=0.40,
+    sell_eval_start_et=time(9, 30),
+    sell_deadline_et=time(10, 0),
+    no_sell_start_et=time(8, 30),
+    no_sell_end_et=time(9, 30),
+    require_upper_bb_for_take_profit=False,
+    logic_version="xsp_lane_a_v2_dip_swing_14dte",
+    regime_gate="DIP_BOUNCE",
+    swing_hold=True,
+    max_hold_dte=1,
+)
+
+
+def _swing_pos(avg: float, mark: float, dte: int) -> LaneAPosition:
+    pos = LaneAPosition(
+        position_id="paper:XSP:2026-07-10:600",
+        chain_symbol="XSP",
+        option_type="call",
+        strike=600.0,
+        expiration_date=date(2026, 7, 10),
+        quantity=1.0,
+        average_price=avg,
+        mark_price=mark,
+        dte=dte,
+    )
+    pos.entry_ts = "2026-06-19T19:45:00+00:00"  # prior day
+    return pos
+
+
+def test_dip_bounce_gate_requires_confirmed_bounce():
+    # Buys weakness (RED/YELLOW) as long as the bounce is confirmed.
+    ok, _ = regime_gate_allows(
+        regime_gate="DIP_BOUNCE",
+        regime="RED",
+        regime_ok=False,
+        yellow_frac=None,
+        ta_entry_ok=True,
+    )
+    assert ok is True
+    # No bounce -> blocked even in a green tape.
+    ok, reason = regime_gate_allows(
+        regime_gate="DIP_BOUNCE",
+        regime="GREEN",
+        regime_ok=True,
+        yellow_frac=None,
+        ta_entry_ok=False,
+    )
+    assert ok is False
+    assert "bounce" in (reason or "").lower()
+
+
+def test_swing_hold_does_not_time_stop_across_days():
+    # Small green, far from expiry, day after entry, at the old 10:00 deadline.
+    pos = _swing_pos(avg=5.0, mark=5.1, dte=20)
+    now = datetime(2026, 6, 20, 10, 0, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
+    assert not any(a.exit_reason == "time_stop" for a in alerts)
+    # A non-swing config WOULD cut it at the morning deadline.
+    non_swing = dataclasses.replace(SWING_RULES, swing_hold=False)
+    alerts_ns = evaluate_exit_alerts(pos, non_swing, now_et=now)
+    assert any(a.exit_reason == "time_stop" for a in alerts_ns)
+
+
+def test_swing_hold_takes_profit_intraday_outside_window():
+    pos = _swing_pos(avg=5.0, mark=7.0, dte=20)  # +40%
+    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)  # outside 9:30-10:00
+    alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
+    assert any(a.exit_reason == "take_profit" for a in alerts)
+    # Without swing_hold, take-profit is gated to the morning sell window, so a
+    # 13:00 pop is NOT banked as profit (the non-swing config instead just
+    # time-stops the day-old position).
+    non_swing = dataclasses.replace(SWING_RULES, swing_hold=False)
+    alerts_ns = evaluate_exit_alerts(pos, non_swing, now_et=now)
+    assert not any(a.exit_reason == "take_profit" for a in alerts_ns)
+
+
+def test_swing_hold_stop_loss_fires_anytime():
+    pos = _swing_pos(avg=5.0, mark=2.5, dte=20)  # -50%
+    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
+    assert any(a.exit_reason == "stop_loss" for a in alerts)
+
+
+def test_swing_hold_near_expiry_cut():
+    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    # DTE at the cutoff -> force close.
+    near = _swing_pos(avg=5.0, mark=4.9, dte=1)
+    alerts = evaluate_exit_alerts(near, SWING_RULES, now_et=now)
+    assert any(a.exit_reason == "time_stop" for a in alerts)
+    # Still comfortably before expiry -> keep holding.
+    far = _swing_pos(avg=5.0, mark=4.9, dte=5)
+    alerts_far = evaluate_exit_alerts(far, SWING_RULES, now_et=now)
+    assert alerts_far == []

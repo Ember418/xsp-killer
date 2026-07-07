@@ -36,6 +36,7 @@ from xsp_killer.lane_a_monitor import (
     save_state,
     write_paper_pnl_brief,
 )
+
 logger = logging.getLogger("xsp_killer.lane_a_variants")
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -174,10 +175,22 @@ def ensure_variant_slices(
         if not spec.active:
             continue
         variants = root.setdefault("variants", {})
-        if spec.variant_id not in variants or not isinstance(variants[spec.variant_id], dict):
+        if spec.variant_id not in variants or not isinstance(
+            variants[spec.variant_id], dict
+        ):
             variant_state_slice(root, spec.variant_id)
             created.append(spec.variant_id)
     return created
+
+
+def _variant_intraday_enabled(spec: VariantSpec) -> bool:
+    """True when the variant's merged rules enable intraday BB-bounce entries."""
+    from xsp_killer.lane_a_ta import TaRules
+
+    try:
+        return TaRules.from_yaml(merged_rules_path(spec)).intraday_entry_enabled
+    except Exception:
+        return False
 
 
 def run_variant_entry(
@@ -187,6 +200,7 @@ def run_variant_entry(
     state_path: Path | None = None,
     now_et: datetime | None = None,
     force: bool = False,
+    intraday: bool = False,
 ) -> Any:
     root = root_state if root_state is not None else load_variants_state(state_path)
     slice_state = variant_state_slice(root, spec.variant_id)
@@ -201,6 +215,7 @@ def run_variant_entry(
         log_path=log_path,
         now_et=now_et,
         force=force,
+        intraday=intraday,
         publish_intel=False,
         brief_path=False,
     )
@@ -267,6 +282,8 @@ def run_all_variant_entries(
     now_et: datetime | None = None,
     exclude: set[str] | None = None,
     force: bool = False,
+    intraday: bool = False,
+    intraday_only: bool = False,
 ) -> list[tuple[VariantSpec, Any]]:
     from xsp_killer.chain_cache import clear_chain_cache
 
@@ -283,6 +300,10 @@ def run_all_variant_entries(
             continue
         if exclude and spec.variant_id in exclude:
             continue
+        # Intraday passes only run variants that opt into intraday entries
+        # (dip-bounce swings); close-window variants are left to the 15:45 run.
+        if intraday_only and not _variant_intraday_enabled(spec):
+            continue
         try:
             decision = run_variant_entry(
                 spec,
@@ -290,6 +311,7 @@ def run_all_variant_entries(
                 state_path=state_path,
                 now_et=now_et,
                 force=force,
+                intraday=intraday,
             )
             results.append((spec, decision))
             logger.info(
@@ -309,6 +331,7 @@ def run_all_variant_monitors(
     state_path: Path | None = None,
     now_et: datetime | None = None,
     exclude: set[str] | None = None,
+    intraday_only: bool = False,
 ) -> list[tuple[VariantSpec, Any]]:
     from xsp_killer.chain_cache import clear_chain_cache
 
@@ -323,6 +346,10 @@ def run_all_variant_monitors(
         if not spec.active:
             continue
         if exclude and spec.variant_id in exclude:
+            continue
+        # Intraday passes only monitor variants that hold across days
+        # (swing/dip-bounce); close-window variants exit in the morning run.
+        if intraday_only and not _variant_intraday_enabled(spec):
             continue
         try:
             report = run_variant_monitor(
@@ -690,7 +717,9 @@ def _entry_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, int]:
         1
         for rows in sessions
         if not any(row.get("entered") for row in rows)
-        and str(_session_outcome_row(rows).get("skip_reason") or "").startswith("regime ")
+        and str(_session_outcome_row(rows).get("skip_reason") or "").startswith(
+            "regime "
+        )
     )
     bounce_signal_sessions = sum(
         1 for rows in sessions if any(row.get("bb_entry_ok") for row in rows)
@@ -700,7 +729,9 @@ def _entry_session_stats(entry_logs: list[dict[str, Any]]) -> dict[str, int]:
         for rows in sessions
         if any(row.get("bb_entry_ok") for row in rows)
         and not any(row.get("entered") for row in rows)
-        and str(_session_outcome_row(rows).get("skip_reason") or "").startswith("regime ")
+        and str(_session_outcome_row(rows).get("skip_reason") or "").startswith(
+            "regime "
+        )
     )
     return {
         "entered_sessions": entered_sessions,
@@ -714,7 +745,10 @@ def _vol_shadow_from_log_row(row: dict[str, Any]) -> dict[str, Any] | None:
     raw = row.get("vol_shadow")
     if isinstance(raw, dict):
         return raw
-    if row.get("spy_rv_annualized") is not None or row.get("vol_shadow_would_block") is not None:
+    if (
+        row.get("spy_rv_annualized") is not None
+        or row.get("vol_shadow_would_block") is not None
+    ):
         return {
             "spy_rv_annualized": row.get("spy_rv_annualized"),
             "shadow_would_block": row.get("vol_shadow_would_block"),
@@ -968,7 +1002,8 @@ def _build_contract_clusters(rows: list[dict[str, Any]]) -> dict[str, Any]:
         cluster["open_positions"] += int(row.get("open_positions") or 0)
         cluster["trades_closed"] += int(row.get("trades_closed") or 0)
         cluster["realized_pnl_usd"] = round(
-            float(cluster["realized_pnl_usd"]) + float(row.get("realized_pnl_usd") or 0),
+            float(cluster["realized_pnl_usd"])
+            + float(row.get("realized_pnl_usd") or 0),
             2,
         )
     return clusters
@@ -1072,9 +1107,7 @@ def _build_promotion_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         for r in rows
         if r.get("promotion_ready") and r.get("variant_id") != "v2_baseline_prod"
     ]
-    collecting = sum(
-        1 for r in rows if r.get("promotion_status") == "collecting"
-    )
+    collecting = sum(1 for r in rows if r.get("promotion_status") == "collecting")
     return {
         "sessions_gate": PROMOTION_SESSIONS_GATE,
         "entered_sessions_gate": PROMOTION_ENTERED_SESSIONS_GATE,
@@ -1229,9 +1262,7 @@ def build_scoreboard(
         else:
             row["vs_baseline_avg_per_trade_usd"] = None
 
-    ranking_reliable = (
-        sum(1 for row in shadow_rows if not row.get("low_sample")) >= 2
-    )
+    ranking_reliable = sum(1 for row in shadow_rows if not row.get("low_sample")) >= 2
     if ranking_reliable:
         shadow_rows.sort(
             key=lambda r: (
@@ -1256,7 +1287,9 @@ def build_scoreboard(
         "pnl_epoch_commit": root.get("pnl_epoch_commit"),
         "active_variant_ids": [spec.variant_id for spec in active_specs],
         "state_variant_ids": sorted(
-            variant_id for variant_id, raw in state_variants.items() if isinstance(raw, dict)
+            variant_id
+            for variant_id, raw in state_variants.items()
+            if isinstance(raw, dict)
         ),
         "last_entry_eval_at": last_entry_eval_at,
         "stale": stale,

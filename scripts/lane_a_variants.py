@@ -54,11 +54,21 @@ def main() -> int:
     )
     p_entry.add_argument("--at-et", help="Override evaluation time (HH:MM or ISO)")
     p_entry.add_argument("--force", action="store_true")
+    p_entry.add_argument(
+        "--intraday",
+        action="store_true",
+        help="Intraday pass: only run intraday-enabled (dip-bounce) variants",
+    )
 
     p_mon = sub.add_parser(
         "monitor", help="Run morning monitor for all active variants"
     )
     p_mon.add_argument("--at-et", help="Override evaluation time (HH:MM or ISO)")
+    p_mon.add_argument(
+        "--intraday",
+        action="store_true",
+        help="Intraday pass: only monitor intraday-enabled (swing) variants",
+    )
 
     sub.add_parser("scoreboard", help="Rebuild variant comparison scoreboard")
     sub.add_parser(
@@ -96,7 +106,13 @@ def main() -> int:
     now_et = _parse_at_et(getattr(args, "at_et", None))
 
     if args.cmd == "entry":
-        results = run_all_variant_entries(now_et=now_et, force=bool(args.force))
+        intraday = bool(getattr(args, "intraday", False))
+        results = run_all_variant_entries(
+            now_et=now_et,
+            force=bool(args.force),
+            intraday=intraday,
+            intraday_only=intraday,
+        )
         for spec, decision in results:
             print(
                 f"{spec.variant_id}: entered={decision.entered} "
@@ -106,7 +122,9 @@ def main() -> int:
         return 0
 
     if args.cmd == "monitor":
-        results = run_all_variant_monitors(now_et=now_et)
+        results = run_all_variant_monitors(
+            now_et=now_et, intraday_only=bool(getattr(args, "intraday", False))
+        )
         for spec, report in results:
             print(
                 f"{spec.variant_id}: positions={len(report.positions)} "

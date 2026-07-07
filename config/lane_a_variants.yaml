@@ -239,3 +239,34 @@ variants:
       exit:
         require_upper_bb_for_take_profit: false
 
+  # --- Dip-buy swing (operator thesis, 2026-07-07) ---
+  # Buy the dip: enter on a confirmed BB bounce (price dumped to lower/mid band
+  # then turned up + reclaimed VWAP) in ANY regime, near-ATM ~14 DTE. Then HOLD
+  # for the recovery (up to expiry) instead of dumping next morning — sell into
+  # strength at +40% option profit, cut at -50%, force-close only near expiry.
+  # Runs intraday (every 15m RTH) so it catches dips + pops when they happen.
+  v2_dip_swing_14dte:
+    active: true
+    description: "Dip-bounce entry (any regime), near-ATM ~14 DTE, hold to recovery: TP +40% / SL -50% / near-expiry cut"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_dip_swing_14dte
+      entry:
+        dte_pick: min
+        strike_pick: atm_only
+        regime_gate: DIP_BOUNCE
+        prior_day_spy_positive: false
+      paper_entry:
+        max_open_positions: 2
+      ta:
+        entry:
+          mode: bb_bounce
+          intraday_enabled: true
+          require_vwap_reclaim: true
+      exit:
+        take_profit_pct: 0.40
+        stop_loss_pct: 0.50
+        require_upper_bb_for_take_profit: false
+        swing_hold: true
+        max_hold_dte: 1
+
