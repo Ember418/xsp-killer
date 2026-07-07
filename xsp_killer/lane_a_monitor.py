@@ -770,7 +770,9 @@ def close_paper_positions_on_exit(
             and spx_at_exit is not None
             and spx_at_exit > 0
         ):
-            raw["spy_drift_pct"] = round((spx_at_exit - entry_spx) / entry_spx * 100.0, 4)
+            raw["spy_drift_pct"] = round(
+                (spx_at_exit - entry_spx) / entry_spx * 100.0, 4
+            )
         paper[pos_id] = raw
         closed.append(raw)
         events = list(state.get("paper_events") or [])
@@ -814,7 +816,6 @@ def load_open_paper_positions(state: dict[str, Any]) -> list[dict[str, Any]]:
     return refresh_paper_marks(open_rows)
 
 
-
 def dry_run_exit_reviews_via_mcp(
     alerts: list["ExitAlert"],
     positions: list["LaneAPosition"],
@@ -829,17 +830,27 @@ def dry_run_exit_reviews_via_mcp(
         pos = pos_by_id.get(alert.position_id)
         if pos is None:
             continue
-        order = {
-            "side": "sell",
-            "position_effect": "close",
-            "quantity": pos.quantity,
-            "option_id": pos.position_id,
-            "chain_symbol": pos.chain_symbol,
-            "strike_price": pos.strike,
-            "expiration_date": pos.expiration_date.isoformat() if pos.expiration_date else None,
-            "type": pos.option_type,
-            "exit_reason": alert.exit_reason,
+        # Real Robinhood MCP schema: legs[] + position_effect + top-level
+        # quantity/price. Sell-to-close a long at a limit near mark; fall back
+        # to market when no mark is available.
+        qty_int = max(1, int(round(pos.quantity or 1)))
+        order: dict[str, Any] = {
+            "legs": [
+                {
+                    "option_id": pos.position_id,
+                    "side": "sell",
+                    "position_effect": "close",
+                    "ratio_quantity": 1,
+                }
+            ],
+            "quantity": str(qty_int),
+            "time_in_force": "gfd",
         }
+        if pos.mark_price is not None:
+            order["type"] = "limit"
+            order["price"] = f"{float(pos.mark_price):.2f}"
+        else:
+            order["type"] = "market"
         try:
             result = adapter.review_option_order(order)
             reviews.append(

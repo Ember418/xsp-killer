@@ -238,6 +238,99 @@ def test_review_grant_allows_matching_place(tmp_path, monkeypatch):
     assert result == {"ok": True}
 
 
+def test_review_grant_allows_matching_place_legs_schema(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_EXITS", "true")
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    cfg = RhMcpConfig(
+        token_path=token,
+        agentic_account_id="agentic-1",
+        live_exits=True,
+        require_review_before_place=True,
+    )
+    order = {
+        "account_number": "agentic-1",
+        "legs": [{"option_id": "opt-1", "side": "sell", "position_effect": "close"}],
+        "type": "limit",
+        "quantity": "1",
+        "price": "5.00",
+    }
+
+    def fake_http(url, body, headers):
+        return {"result": {"structuredContent": {"ok": True}}}
+
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
+    adapter.review_option_order(order)
+    result = adapter.place_option_order(dict(order))
+    assert result == {"ok": True}
+
+
+def test_place_order_account_number_pin_rejects_mismatch(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_EXITS", "true")
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    audit = tmp_path / "audit.jsonl"
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=audit,
+        agentic_account_id="agentic-1",
+        live_exits=True,
+        require_review_before_place=False,
+    )
+
+    def fake_http(url, body, headers):
+        return {"result": {"structuredContent": {"ok": True}}}
+
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
+    order = {
+        "account_number": "not-agentic",
+        "legs": [{"option_id": "opt-1", "side": "sell", "position_effect": "close"}],
+        "type": "market",
+        "quantity": "1",
+    }
+    with pytest.raises(Exception):
+        adapter.place_option_order(order)
+    deny = json.loads(audit.read_text().strip().splitlines()[-1])
+    assert deny["invariant"] == "I3"
+
+
+def test_ratio_quantity_counts_toward_max_contracts(tmp_path, monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_EXITS", "true")
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    audit = tmp_path / "audit.jsonl"
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=audit,
+        agentic_account_id="agentic-1",
+        live_exits=True,
+        require_review_before_place=False,
+        max_contracts_per_order=2,
+    )
+
+    def fake_http(url, body, headers):
+        return {"result": {"structuredContent": {"ok": True}}}
+
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
+    order = {
+        "account_number": "agentic-1",
+        "legs": [
+            {
+                "option_id": "opt-1",
+                "side": "sell",
+                "position_effect": "close",
+                "ratio_quantity": 3,
+            }
+        ],
+        "type": "market",
+        "quantity": "1",
+    }
+    with pytest.raises(RhMcpError):
+        adapter.place_option_order(order)
+    deny = json.loads(audit.read_text().strip().splitlines()[-1])
+    assert deny["invariant"] == "I5"
+
+
 def test_rh_mcp_config_loads_yaml(tmp_path, monkeypatch):
     monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)
     yaml_path = tmp_path / "rh_mcp.yaml"

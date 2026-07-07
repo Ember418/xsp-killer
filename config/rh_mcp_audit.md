@@ -10,14 +10,14 @@ No orders placed — read-only session.
 | Operator | c.barone |
 | MCP client used | Claude Code (headless Python adapter, `RobinhoodMCPAdapter`) |
 | Agentic account last-4 | 8843 |
-| Options approval level (Agentic) | **NONE** — `option_level: ""` (BLOCKER) |
+| Options approval level (Agentic) | **`option_level_2`** — approved 2026-07-07 (was `""`; blocker cleared) |
 | `place_option_order` in tool list? | yes |
 | `get_option_chains` works for XSP? | yes — param is `underlying_symbol` (single string, not list) |
 | `get_option_positions` (empty or redacted count) | 0 positions (Agentic account unfunded/empty) |
 | Portfolio value (Agentic) | $500 total; $0 equity, $0 options |
 | Adapter `max_contracts_per_order` | 1 |
 | Live exits enabled | false |
-| Notes | OAuth token valid. 44 tools total. MCP reads functional for all gated tools. **Options NOT yet approved on Agentic account** — `get_accounts` shows `option_level: ""` for Agentic (8843) while primary individual (9741) and Bot (9703) have `option_level_2`. Roth IRA (6964) also no options. Options approval must be requested before Phase 1/2. `get_option_chains` needs `underlying_symbol` param (not `chain_symbol`/`symbol`) — adapter call sites may need update. `get_indexes` returns XSP at id `b8ae3ed3-7f82-4c77-adb4-f25f2cab6a4e`. Token expires at epoch 1784230919866 (~Aug 2026). |
+| Notes | OAuth token valid. 44 tools total. MCP reads functional for all gated tools. **Options approved on Agentic (8843) as of 2026-07-07** — `get_accounts` now shows `option_level_2` for Agentic, matching individual (9741) and Bot (9703). Roth IRA (6964) still no options. **Phase 1 `review_option_order` validated live**: real schema uses `legs[]` (`option_id`/`side`/`position_effect`/`ratio_quantity`) + top-level `type`/`quantity`/`price`/`time_in_force`, NOT the flat `side`/`option_id` shape — adapter write path, grant-chain (`_review_grant_key`), write gates (`account_number` pin, per-leg `ratio_quantity` cap), and `dry_run_exit_reviews_via_mcp` updated accordingly. `get_option_chains` needs `underlying_symbol` param. `get_indexes` returns XSP at id `b8ae3ed3-7f82-4c77-adb4-f25f2cab6a4e`. Token expires at epoch 1784230919866 (~Aug 2026). |
 
 ## Account inventory (redacted)
 
@@ -26,7 +26,7 @@ No orders placed — read-only session.
 | 1 | individual (cash) | — | 9741 | no | option_level_2 |
 | 2 | individual (cash) | Bot | 9703 | no | option_level_2 |
 | 3 | ira_roth (cash) | — | 6964 | no | — |
-| 4 | individual (cash) | Agentic | 8843 | **yes** | **none** |
+| 4 | individual (cash) | Agentic | 8843 | **yes** | **option_level_2** (approved 2026-07-07) |
 
 ## Tool inventory (44 tools)
 
@@ -112,7 +112,8 @@ min_ticks: above_tick 0.10, below_tick 0.05, cutoff_price 3.00
 - [x] Read-only session only — no orders placed during audit
 - [x] `RH_AGENTIC_ACCOUNT_ID=652628843` set in xsp-killer `.env` (not committed)
 - [x] Token exported to `.local/robinhood_mcp_token.json` (mode 600)
-- [ ] **BLOCKER**: Options approval needed on Agentic account (8843) before Phase 1
+- [x] Options approval on Agentic account (8843) — `option_level_2` confirmed via `get_accounts` 2026-07-07
+- [x] Phase 1 `review_option_order` validated live against Agentic (8843): real schema is `legs[]` + `position_effect` + top-level `quantity`/`price`; preview returned quote/break-even/`order_checks` with no order placed. Adapter write path + grant-chain updated to match.
 - [ ] **BLOCKER**: Fund Agentic account before live trading
 - [ ] XSP chain + SPX instruments confirmed; Phase 0 reads functional
 - [ ] `robin_stocks` fallback still available for read parity comparison (`XSP_LANE_A_RH_POLL=false` currently)

@@ -244,9 +244,50 @@ def normalize_mcp_position(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _normalize_legs(order: dict[str, Any]) -> list[dict[str, Any]]:
+    """Canonical legs list for grant matching (real ``legs[]`` or flat fallback)."""
+    legs = order.get("legs")
+    if isinstance(legs, list) and legs:
+        out: list[dict[str, Any]] = []
+        for leg in legs:
+            if not isinstance(leg, dict):
+                continue
+            out.append(
+                {
+                    "option_id": leg.get("option_id") or leg.get("id"),
+                    "side": str(leg.get("side") or "").lower(),
+                    "position_effect": str(leg.get("position_effect") or "").lower(),
+                    "ratio_quantity": int(leg.get("ratio_quantity") or 1),
+                }
+            )
+        return out
+    # Backward-compatible flat single-leg shape.
+    if order.get("option_id") or order.get("side"):
+        return [
+            {
+                "option_id": order.get("option_id"),
+                "side": str(order.get("side") or "").lower(),
+                "position_effect": str(order.get("position_effect") or "").lower(),
+                "ratio_quantity": int(order.get("ratio_quantity") or 1),
+            }
+        ]
+    return []
+
+
 def _review_grant_key(order: dict[str, Any]) -> str:
-    keys = ("side", "quantity", "option_id", "chain_symbol", "strike_price", "type")
-    payload = {key: order.get(key) for key in keys if order.get(key) is not None}
+    payload = {
+        "account_number": order.get("account_number") or order.get("account_id"),
+        "type": order.get("type"),
+        "quantity": str(order.get("quantity"))
+        if order.get("quantity") is not None
+        else None,
+        "price": str(order.get("price")) if order.get("price") is not None else None,
+        "stop_price": str(order.get("stop_price"))
+        if order.get("stop_price") is not None
+        else None,
+        "legs": _normalize_legs(order),
+    }
+    payload = {k: v for k, v in payload.items() if v not in (None, [], "")}
     return json.dumps(payload, sort_keys=True, default=str)
 
 
@@ -461,14 +502,24 @@ class RobinhoodMCPAdapter:
                 qty_n = float(qty)
             except (TypeError, ValueError):
                 qty_n = 1.0
-            if qty_n > self.config.max_contracts_per_order:
+            # Effective contracts = order quantity * max leg ratio_quantity.
+            max_ratio = 1
+            for leg in _normalize_legs(args):
+                max_ratio = max(max_ratio, int(leg.get("ratio_quantity") or 1))
+            effective = qty_n * max_ratio
+            if effective > self.config.max_contracts_per_order:
                 reason = (
-                    f"rh_mcp: quantity {qty_n} exceeds max_contracts_per_order "
+                    f"rh_mcp: quantity {effective} exceeds max_contracts_per_order "
                     f"{self.config.max_contracts_per_order}"
                 )
                 self._audit_deny(name, args, reason=reason, invariant="I5")
                 raise RhMcpError(reason)
-            account = str(args.get("account_id") or args.get("account") or "")
+            account = str(
+                args.get("account_number")
+                or args.get("account_id")
+                or args.get("account")
+                or ""
+            )
             pinned = self.config.agentic_account_id
             if pinned and account and account != pinned:
                 reason = (
@@ -609,15 +660,20 @@ class RobinhoodMCPAdapter:
             return chains[0]
         return {}
 
+    def _inject_account(self, order: dict[str, Any]) -> dict[str, Any]:
+        patched = dict(order)
+        if self.config.agentic_account_id and not (
+            patched.get("account_number") or patched.get("account_id")
+        ):
+            patched["account_number"] = self.config.agentic_account_id
+        return patched
+
     def review_option_order(self, order: dict[str, Any]) -> dict[str, Any]:
-        result = self.call_tool("review_option_order", order)
+        result = self.call_tool("review_option_order", self._inject_account(order))
         return result if isinstance(result, dict) else {"result": result}
 
     def place_option_order(self, order: dict[str, Any]) -> dict[str, Any]:
-        patched = dict(order)
-        if self.config.agentic_account_id and not patched.get("account_id"):
-            patched["account_id"] = self.config.agentic_account_id
-        result = self.call_tool("place_option_order", patched)
+        result = self.call_tool("place_option_order", self._inject_account(order))
         return result if isinstance(result, dict) else {"result": result}
 
     def last_read_confidence(self) -> dict[str, Any] | None:
