@@ -37,3 +37,5 @@ def _isolate_runtime_artifacts(monkeypatch, tmp_path):
         monkeypatch.setattr(target, path, raising=False)
 
     monkeypatch.setenv("XSP_KILLER_TEST_ISOLATION", "1")
+    monkeypatch.delenv("XSP_LANE_A_RH_MCP", raising=False)
+    monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)

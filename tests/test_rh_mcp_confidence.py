@@ -62,7 +62,11 @@ def test_classify_mcp_read_confidence_positions():
 def test_adapter_read_wraps_confidence(tmp_path):
     token = tmp_path / "token.json"
     token.write_text(json.dumps({"access_token": "test-token"}), encoding="utf-8")
-    cfg = RhMcpConfig(token_path=token, audit_log=tmp_path / "audit.jsonl")
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=tmp_path / "audit.jsonl",
+        agentic_account_id="acct-test",
+    )
 
     def fake_http(url, body, headers):
         return {
@@ -81,7 +85,10 @@ def test_adapter_read_wraps_confidence(tmp_path):
         }
 
     adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
-    wrapped = adapter.call_tool("get_option_positions", {})
+    wrapped = adapter.call_tool(
+        "get_option_positions",
+        {"account_number": "acct-test"},
+    )
     assert wrapped["confidence"] >= 0.85
     rows = adapter.get_open_option_positions()
     assert len(rows) == 1
@@ -92,7 +99,11 @@ def test_fetch_rejects_low_confidence(monkeypatch, tmp_path):
     monkeypatch.setenv("XSP_LANE_A_RH_MCP", "true")
     token = tmp_path / "token.json"
     token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
-    cfg = RhMcpConfig(token_path=token, audit_log=tmp_path / "audit.jsonl")
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=tmp_path / "audit.jsonl",
+        agentic_account_id="acct-test",
+    )
     monkeypatch.setattr(
         "xsp_killer.robinhood_mcp.RhMcpConfig.load", lambda path=None: cfg
     )

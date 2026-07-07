@@ -43,6 +43,30 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / "config" / "rh_mcp.yaml"
 _last_mcp_fetch_wrap: dict[str, Any] | None = None
 MCP_JSONRPC_VERSION = "2.0"
+MCP_ACCEPT = "application/json, text/event-stream"
+
+
+def parse_mcp_http_response(raw: str) -> dict[str, Any]:
+    """Parse Streamable HTTP MCP body (JSON or SSE ``event: message`` frames)."""
+    text = raw.strip()
+    if not text:
+        raise RhMcpError("rh_mcp empty response")
+    if text.startswith("{"):
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise RhMcpError("rh_mcp expected JSON object response")
+        return parsed
+    if text.startswith("event:") or "\ndata:" in text:
+        for line in text.splitlines():
+            if line.startswith("data:"):
+                payload = line[5:].strip()
+                if not payload:
+                    continue
+                parsed = json.loads(payload)
+                if isinstance(parsed, dict):
+                    return parsed
+        raise RhMcpError("rh_mcp SSE response missing data frame")
+    raise RhMcpError(f"rh_mcp non-JSON response: {text[:200]}")
 
 READ_TOOLS = frozenset(
     {
@@ -270,13 +294,7 @@ class RobinhoodMCPAdapter:
             raise RhMcpError(f"rh_mcp HTTP {exc.code}: {detail[:500]}") from exc
         except urllib.error.URLError as exc:
             raise RhMcpError(f"rh_mcp network error: {exc}") from exc
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise RhMcpError(f"rh_mcp non-JSON response: {raw[:200]}") from exc
-        if not isinstance(parsed, dict):
-            raise RhMcpError("rh_mcp expected JSON object response")
-        return parsed
+        return parse_mcp_http_response(raw)
 
     def _audit(
         self,
@@ -352,7 +370,7 @@ class RobinhoodMCPAdapter:
         }
         headers = {
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "application/json, text/event-stream",
             "Authorization": f"Bearer {bearer}",
         }
         try:
@@ -483,12 +501,57 @@ class RobinhoodMCPAdapter:
                         "rh_mcp: place_option_order grant does not match review"
                     )
 
+    def get_accounts(self) -> list[dict[str, Any]]:
+        wrapped = self.call_tool("get_accounts", {})
+        raw = unwrap_tool_result(wrapped)
+        if isinstance(raw, dict):
+            accounts = raw.get("accounts") or raw.get("data", {}).get("accounts")
+            if isinstance(accounts, list):
+                return [a for a in accounts if isinstance(a, dict)]
+        if isinstance(raw, list):
+            return [a for a in raw if isinstance(a, dict)]
+        return []
+
+    def resolve_account_number(self) -> str:
+        pinned = (
+            os.getenv("RH_AGENTIC_ACCOUNT_ID", "").strip()
+            or self.config.agentic_account_id
+        )
+        if pinned:
+            return pinned
+        accounts = self.get_accounts()
+        for acct in accounts:
+            nickname = str(acct.get("nickname") or "").lower()
+            label = str(
+                acct.get("brokerage_account_type")
+                or acct.get("account_type")
+                or acct.get("type")
+                or ""
+            ).lower()
+            if "agentic" in nickname or "agentic" in label:
+                num = acct.get("account_number") or acct.get("rhs_account_number")
+                if num:
+                    return str(num)
+        if len(accounts) == 1:
+            num = accounts[0].get("account_number") or accounts[0].get(
+                "rhs_account_number"
+            )
+            if num:
+                return str(num)
+        raise RhMcpNotReady(
+            "rh_mcp: set RH_AGENTIC_ACCOUNT_ID — multiple accounts and no Agentic pin"
+        )
+
     def get_open_option_positions(
         self,
         *,
         chain_symbols: tuple[str, ...] | None = None,
     ) -> list[dict[str, Any]]:
-        raw = self.call_tool("get_option_positions", {})
+        account_number = self.resolve_account_number()
+        raw = self.call_tool(
+            "get_option_positions",
+            {"account_number": account_number},
+        )
         raw = unwrap_tool_result(raw)
         rows: list[Any]
         if isinstance(raw, list):

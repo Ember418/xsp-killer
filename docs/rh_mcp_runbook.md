@@ -28,6 +28,43 @@ cd /opt/xsp-killer
 PYTHONPATH=. python3 scripts/rh_mcp_health.py
 ```
 
+### VPS OAuth via Claude Code (headless prod)
+
+Robinhood MCP is pre-registered on this box (`claude mcp list` → `robinhood-trading`).
+
+1. From your **local machine**, SSH with port forward (OAuth callback listens on VPS `localhost:3118`):
+
+```bash
+ssh -L 3118:127.0.0.1:3118 YOUR_USER@YOUR_VPS
+```
+
+2. On the VPS, in an interactive session:
+
+```bash
+cd /opt/xsp-killer
+claude
+# then: /mcp → robinhood-trading → Authenticate
+# open the printed URL in your local browser (tunnel forwards :3118)
+```
+
+3. After OAuth succeeds, sync token into xsp-killer:
+
+```bash
+cd /opt/xsp-killer
+python3 scripts/rh_mcp_sync_claude_token.py
+```
+
+4. Set Agentic account id + enable MCP reads in `.env`:
+
+```bash
+# RH_AGENTIC_ACCOUNT_ID=<from get_accounts in MCP audit>
+# XSP_LANE_A_RH_MCP=true
+```
+
+5. Re-run `scripts/rh_mcp_health.py` — expect MCP positions read (or empty list).
+
+**Cursor desktop alternative:** Settings → Tools & MCPs → add `https://agent.robinhood.com/mcp/trading`, authenticate, then copy `access_token` into `.local/robinhood_mcp_token.json` manually (same JSON shape as sync script output).
+
 7. Compare MCP vs legacy poll (optional parallel week):
 
 ```bash

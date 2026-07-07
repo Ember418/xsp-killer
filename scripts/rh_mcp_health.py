@@ -12,6 +12,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env", override=False)
+except ImportError:
+    pass
+
 from xsp_killer.rh_broker import (  # noqa: E402
     fetch_robinhood_option_positions,
     rh_mcp_enabled,
@@ -21,6 +28,8 @@ from xsp_killer.rh_broker import (  # noqa: E402
 from xsp_killer.robinhood_mcp import (  # noqa: E402
     RhMcpConfig,
     live_exits_enabled,
+)
+from xsp_killer.robinhood_mcp import (
     rh_mcp_enabled as mcp_flag,
 )
 

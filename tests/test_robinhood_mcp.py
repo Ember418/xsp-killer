@@ -14,6 +14,7 @@ from xsp_killer.robinhood_mcp import (
     RobinhoodMCPAdapter,
     live_exits_enabled,
     normalize_mcp_position,
+    parse_mcp_http_response,
     rh_mcp_enabled,
 )
 
@@ -89,6 +90,16 @@ def test_normalize_mcp_position():
     assert row["_source"] == "rh_mcp"
 
 
+def test_parse_mcp_http_response_sse():
+    body = (
+        "event: message\n"
+        'data: {"jsonrpc":"2.0","id":1,'
+        '"result":{"content":[{"type":"text","text":"{}"}]}}\n'
+    )
+    parsed = parse_mcp_http_response(body)
+    assert parsed["id"] == 1
+
+
 def test_adapter_get_positions_mocked(tmp_path):
     token = tmp_path / "token.json"
     token.write_text(json.dumps({"access_token": "test-token"}), encoding="utf-8")
@@ -124,7 +135,8 @@ def test_adapter_get_positions_mocked(tmp_path):
     assert "get_option_positions" in audit.read_text(encoding="utf-8")
 
 
-def test_place_order_blocked_when_live_exits_off(tmp_path):
+def test_place_order_blocked_when_live_exits_off(tmp_path, monkeypatch):
+    monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)
     token = tmp_path / "token.json"
     token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
     audit = tmp_path / "audit.jsonl"
@@ -192,7 +204,8 @@ def test_review_grant_allows_matching_place(tmp_path, monkeypatch):
     assert result == {"ok": True}
 
 
-def test_rh_mcp_config_loads_yaml(tmp_path):
+def test_rh_mcp_config_loads_yaml(tmp_path, monkeypatch):
+    monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)
     yaml_path = tmp_path / "rh_mcp.yaml"
     yaml_path.write_text(
         "agentic_account_id: 'acct-99'\nmax_contracts_per_order: 2\n",
