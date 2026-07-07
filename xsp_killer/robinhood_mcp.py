@@ -77,9 +77,9 @@ READ_TOOLS = frozenset(
         "get_option_chains",
         "get_option_instruments",
         "get_option_quotes",
-        "get_equity-historicals",
+        "get_equity_historicals",
         "get_indexes",
-        "get_indexes_quotes",
+        "get_index_quotes",
         "search",
     }
 )
@@ -575,6 +575,38 @@ class RobinhoodMCPAdapter:
                 continue
             out.append(normalized)
         return out
+
+    def get_option_chains(self, underlying_symbol: str) -> dict[str, Any]:
+        """Chain metadata + expirations for one underlying.
+
+        MCP expects ``underlying_symbol`` (single string), not ``chain_symbol``.
+        Returns the matching chain dict (from ``data.chains[]``) or ``{}``.
+        """
+        symbol = str(underlying_symbol).upper()
+        wrapped = self.call_tool(
+            "get_option_chains",
+            {"underlying_symbol": symbol},
+        )
+        raw = unwrap_tool_result(wrapped)
+        chains: list[Any] = []
+        if isinstance(raw, dict):
+            data = raw.get("data")
+            if isinstance(data, dict) and isinstance(data.get("chains"), list):
+                chains = data["chains"]
+            elif isinstance(raw.get("chains"), list):
+                chains = raw["chains"]
+            elif raw.get("symbol") or raw.get("chain_id"):
+                return raw
+        elif isinstance(raw, list):
+            chains = raw
+        for chain in chains:
+            if not isinstance(chain, dict):
+                continue
+            if str(chain.get("symbol") or "").upper() == symbol:
+                return chain
+        if chains and isinstance(chains[0], dict):
+            return chains[0]
+        return {}
 
     def review_option_order(self, order: dict[str, Any]) -> dict[str, Any]:
         result = self.call_tool("review_option_order", order)

@@ -100,6 +100,40 @@ def test_parse_mcp_http_response_sse():
     assert parsed["id"] == 1
 
 
+def test_get_option_chains_uses_underlying_symbol(tmp_path):
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    cfg = RhMcpConfig(token_path=token, audit_log=tmp_path / "audit.jsonl")
+    seen: dict[str, object] = {}
+
+    def fake_http(url, body, headers):
+        payload = json.loads(body.decode("utf-8"))
+        seen.update(payload["params"]["arguments"])
+        return {
+            "result": {
+                "structuredContent": {
+                    "data": {
+                        "chains": [
+                            {
+                                "id": "chain-1",
+                                "symbol": "XSP",
+                                "can_open_position": True,
+                                "expiration_dates": ["2026-07-18"],
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
+    chain = adapter.get_option_chains("xsp")
+    assert seen == {"underlying_symbol": "XSP"}
+    assert "chain_symbol" not in seen
+    assert chain["symbol"] == "XSP"
+    assert chain["expiration_dates"] == ["2026-07-18"]
+
+
 def test_adapter_get_positions_mocked(tmp_path):
     token = tmp_path / "token.json"
     token.write_text(json.dumps({"access_token": "test-token"}), encoding="utf-8")

@@ -1,34 +1,126 @@
-# Robinhood MCP tool-surface audit (operator — desktop OAuth)
+# Robinhood MCP tool-surface audit (2026-07-07)
 
-Fill after Step C in `briefs/2026-06-29_xsp-robinhood-agentic-mcp-connection-cemini-prod.md`.
-Do **not** commit OAuth tokens or full account numbers.
+Audit executed via headless Python adapter (`xsp_killer/robinhood_mcp.py`) against
+`https://agent.robinhood.com/mcp/trading` with OAuth token from `.local/robinhood_mcp_token.json`.
+No orders placed — read-only session.
 
 | Field | Value |
 |-------|-------|
-| Audit date (UTC) | |
-| Operator | |
-| MCP client used (Cursor / Claude Code) | |
-| Agentic account last-4 | |
-| Options approval level (Agentic) | |
-| `place_option_order` in tool list? | yes / no / rolling |
-| `get_option_chains` works for XSP? | yes / no |
-| `get_option_positions` (empty or redacted count) | |
-| Notes | |
+| Audit date (UTC) | 2026-07-07 19:15Z |
+| Operator | c.barone |
+| MCP client used | Claude Code (headless Python adapter, `RobinhoodMCPAdapter`) |
+| Agentic account last-4 | 8843 |
+| Options approval level (Agentic) | **NONE** — `option_level: ""` (BLOCKER) |
+| `place_option_order` in tool list? | yes |
+| `get_option_chains` works for XSP? | yes — param is `underlying_symbol` (single string, not list) |
+| `get_option_positions` (empty or redacted count) | 0 positions (Agentic account unfunded/empty) |
+| Portfolio value (Agentic) | $500 total; $0 equity, $0 options |
+| Adapter `max_contracts_per_order` | 1 |
+| Live exits enabled | false |
+| Notes | OAuth token valid. 44 tools total. MCP reads functional for all gated tools. **Options NOT yet approved on Agentic account** — `get_accounts` shows `option_level: ""` for Agentic (8843) while primary individual (9741) and Bot (9703) have `option_level_2`. Roth IRA (6964) also no options. Options approval must be requested before Phase 1/2. `get_option_chains` needs `underlying_symbol` param (not `chain_symbol`/`symbol`) — adapter call sites may need update. `get_indexes` returns XSP at id `b8ae3ed3-7f82-4c77-adb4-f25f2cab6a4e`. Token expires at epoch 1784230919866 (~Aug 2026). |
 
-## Tool inventory (paste redacted list)
+## Account inventory (redacted)
+
+| # | Type | Nickname | Last-4 | Agentic? | Option Level |
+|---|------|----------|--------|----------|-------------|
+| 1 | individual (cash) | — | 9741 | no | option_level_2 |
+| 2 | individual (cash) | Bot | 9703 | no | option_level_2 |
+| 3 | ira_roth (cash) | — | 6964 | no | — |
+| 4 | individual (cash) | Agentic | 8843 | **yes** | **none** |
+
+## Tool inventory (44 tools)
+
+### Reads (all accounts)
+
+- `get_accounts` — list brokerage accounts
+- `get_portfolio` — market value breakdown + buying power
+- `get_equity_positions` — open equity positions per account
+- `get_equity_orders` — equity order history
+- `get_equity_quotes` — real-time stock quotes
+- `get_equity_historicals` — OHLCV bars
+- `get_equity_fundamentals` — valuation ratios, market cap
+- `get_equity_tradability` — per-symbol eligibility check
+- `get_option_positions` — open + closed option positions
+- `get_option_orders` — option order history
+- `get_option_chains` — expiration dates + contracts per underlying
+- `get_option_instruments` — option contracts by chain_symbol/chain_id/ids
+- `get_option_quotes` — real-time quotes by instrument UUID
+- `get_option_historicals` — OHLC bars for option contracts
+- `get_option_watchlist` — user's options watchlist
+- `get_indexes` — index data (XSP, SPX, NDX, DJX, etc.)
+- `get_index_quotes` — real-time index values
+- `search` — natural-language instrument/currency/index resolution
+- `get_pnl_trade_history` — per-trade realized P&L
+- `get_realized_pnl` — per-bucket realized gain
+- `get_watchlists` — user's watchlists
+- `get_watchlist_items` — items in a watchlist
+- `get_popular_watchlists` — Robinhood-curated lists
+- `get_earnings_calendar` — earnings reports by date range
+- `get_earnings_results` — earnings for one equity symbol
+- `get_scans` — saved scanners/screeners
+- `run_scan` — execute a saved scanner
+
+### Writes (Agentic account only)
+
+- `review_option_order` — simulated order with pre-trade alerts
+- `place_option_order` — real options order (Agentic account only)
+- `cancel_option_order` — cancel open option order
+- `review_equity_order` — simulated equity order
+- `place_equity_order` — real equity order
+- `cancel_equity_order` — cancel open equity order
+
+### Watchlist mutators (excluded from adapter allowlist)
+
+- `add_option_to_watchlist`, `add_to_watchlist`, `create_watchlist`
+- `follow_watchlist`, `unfollow_watchlist`, `update_watchlist`
+- `remove_from_watchlist`, `remove_option_from_watchlist`
+- `create_scan`, `update_scan_config`, `update_scan_filters`
+
+## Sample XSP chain (`get_option_chains` with `underlying_symbol: "XSP"`)
 
 ```
-(list every MCP tool name available in your session)
+chain_id: bf82fd28-ac40-46a0-aaf5-ccbb706f3072
+symbol: XSP
+can_open_position: true
+cash_component: none
+expiration_dates (first 15): 2026-07-07, 07-08, 07-09, 07-10, 07-13, 07-14,
+  07-15, 07-16, 07-17, 07-20, 07-21, 07-22, 07-23, 07-24, 07-27 ...
+  (continues through at least 2027-06)
 ```
 
-## Sample chain excerpt (redact balances)
+## Sample SPX instruments (`get_option_instruments` with `chain_symbol: "SPX"`)
 
 ```
-(paste one XSP chain snippet — strikes/DTE only)
+id: 20b0b061-96a6-46c7-8a51-607995f8754e
+chain_symbol: SPX, underlying_type: index
+expiration: 2026-07-17, strike: 200.0000, type: call
+state: active, tradability: tradable
+min_ticks: above_tick 0.10, below_tick 0.05, cutoff_price 3.00
 ```
+
+## Adapter param notes
+
+| Tool | Param | Issue |
+|------|-------|-------|
+| `get_option_chains` | `underlying_symbol` (string) | Adapter docs/tests may expect `chain_symbol`; update call sites |
+| `get_indexes` | no params or `symbol`/`ids` list | `get_indexes({})` returns all; `symbol` rejected as extra property — use `ids` or no-arg |
+| `get_index_quotes` | TBD | Not tested this session |
+| `get_option_instruments` | `chain_symbol` (string) | Works for SPX |
 
 ## Sign-off
 
-- [ ] Read-only session only — no orders placed during audit
-- [ ] `RH_AGENTIC_ACCOUNT_ID` set in prod `.env` (full ID, not in git)
-- [ ] Token exported to `.local/robinhood_mcp_token.json` on prod (mode 600)
+- [x] Read-only session only — no orders placed during audit
+- [x] `RH_AGENTIC_ACCOUNT_ID=652628843` set in xsp-killer `.env` (not committed)
+- [x] Token exported to `.local/robinhood_mcp_token.json` (mode 600)
+- [ ] **BLOCKER**: Options approval needed on Agentic account (8843) before Phase 1
+- [ ] **BLOCKER**: Fund Agentic account before live trading
+- [ ] XSP chain + SPX instruments confirmed; Phase 0 reads functional
+- [ ] `robin_stocks` fallback still available for read parity comparison (`XSP_LANE_A_RH_POLL=false` currently)
+
+## Post-audit notes (2026-07-07)
+
+- MCP token valid; adapter calls succeeding for all tested read tools
+- Account isolation verified: `resolve_account_number()` correctly identifies Agentic account by nickname
+- `get_option_positions` returns 0 — expected for empty account; read parity with `robin_stocks` not yet verifiable
+- **RH_USERNAME/RH_PASSWORD can be removed from .env once**: (a) ≥1 position exists to verify read parity, or (b) operator confirms MCP reads sufficient for Phase 0 go-live
+- `get_option_chains` → `underlying_symbol` param discovered; `rh_mcp.yaml` `allowed_chain_symbols` list needs matching call-site logic
