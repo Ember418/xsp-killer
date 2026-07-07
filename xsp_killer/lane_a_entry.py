@@ -22,14 +22,7 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
-from xsp_killer.paper_economics import load_premium_scale, scale_spy_premium
-from xsp_killer.spy_quote import (
-    fetch_spy_call_quote_legacy as fetch_spy_call_quote,
-    fetch_spy_call_quote as fetch_spy_call_mark,
-    xsp_strike_to_spy_chain_strike,
-)
 from xsp_killer.conductor_shadow import shadow_review_entry
-from xsp_killer.risk_gates import entry_allowed_by_risk, risk_gate_snapshot
 from xsp_killer.lane_a_monitor import (
     DEFAULT_PAPER_LOG,
     DEFAULT_RULES,
@@ -44,6 +37,17 @@ from xsp_killer.lane_a_monitor import (
     save_state,
 )
 from xsp_killer.lane_a_ta import TaRules, TaSignal, evaluate_ta_signals, in_rth
+from xsp_killer.paper_economics import load_premium_scale, scale_spy_premium
+from xsp_killer.risk_gates import entry_allowed_by_risk, risk_gate_snapshot
+from xsp_killer.spy_quote import (
+    fetch_spy_call_quote as fetch_spy_call_mark,
+)
+from xsp_killer.spy_quote import (
+    fetch_spy_call_quote_legacy as fetch_spy_call_quote,
+)
+from xsp_killer.spy_quote import (
+    xsp_strike_to_spy_chain_strike,
+)
 
 logger = logging.getLogger("xsp_killer.xsp_lane_a_entry")
 
@@ -281,6 +285,7 @@ def pick_cheapest_atm_strike(
     expiration: date,
     *,
     max_steps_from_atm: int = 1,
+    premium_scale: float | None = None,
 ) -> tuple[float, float | None, float | None]:
     """Cheapest near-ATM XSP strike (mentor: closest to money, lowest premium)."""
     atm = round_xsp_strike(spx_level)
@@ -297,7 +302,7 @@ def pick_cheapest_atm_strike(
         if prem is None or prem <= 0:
             continue
         dist = abs(xsp_strike - spx_level)
-        xsp_prem = scale_spy_premium(prem)
+        xsp_prem = scale_spy_premium(prem, premium_scale)
         if dist < best_dist or (
             dist == best_dist and (best_premium is None or xsp_prem < best_premium)
         ):
@@ -316,6 +321,7 @@ def pick_strike(
     *,
     strike_pick: str = "cheapest_near_atm",
     max_steps_from_atm: int = 1,
+    premium_scale: float | None = None,
 ) -> tuple[float, float | None, float | None]:
     """Select strike by mode: cheapest_near_atm | atm_only | otm_one."""
     mode = (strike_pick or "cheapest_near_atm").lower()
@@ -324,15 +330,18 @@ def pick_strike(
         prem, delta = fetch_spy_call_quote(atm / 10.0, expiration)
         if prem is None or prem <= 0:
             return atm, None, None
-        return atm, scale_spy_premium(prem), delta
+        return atm, scale_spy_premium(prem, premium_scale), delta
     if mode == "otm_one":
         otm = atm + 5.0
         prem, delta = fetch_spy_call_quote(otm / 10.0, expiration)
         if prem is None or prem <= 0:
             return otm, None, None
-        return otm, scale_spy_premium(prem), delta
+        return otm, scale_spy_premium(prem, premium_scale), delta
     return pick_cheapest_atm_strike(
-        spx_level, expiration, max_steps_from_atm=max_steps_from_atm
+        spx_level,
+        expiration,
+        max_steps_from_atm=max_steps_from_atm,
+        premium_scale=premium_scale,
     )
 
 
@@ -343,6 +352,7 @@ def estimate_fallback_premium(
     xsp_strike: float | None = None,
     spx_level: float | None = None,
     scale_to_xsp: bool = True,
+    premium_scale: float | None = None,
 ) -> float:
     """Strike-aware paper premium when live quote unavailable (XSP notional by default)."""
     base = max(0.35, spy_price * 0.012)
@@ -352,7 +362,7 @@ def estimate_fallback_premium(
         otm_steps = max(0.0, (xsp_strike - spx_level) / 5.0)
         prem *= max(0.55, 1.0 - 0.08 * otm_steps)
     if scale_to_xsp:
-        prem = scale_spy_premium(prem)
+        prem = scale_spy_premium(prem, premium_scale)
     return round(prem, 4)
 
 
@@ -724,10 +734,16 @@ def run_paper_entry(
         ta_signal = evaluate_ta_signals(ta_rules, now_et=now)
 
     regime, regime_ok, yellow_frac, _ = read_regime_detail()
-    from xsp_killer.vol_monitor import evaluate_shadow_vol_gate
+    from xsp_killer.vol_monitor import evaluate_shadow_vol_gate, session_premium_scale
 
     rules_file = rules_path or DEFAULT_RULES
     vol_shadow = evaluate_shadow_vol_gate(rules_path=rules_file).to_dict()
+    base_scale = load_premium_scale(rules_file)
+    session_scale = session_premium_scale(
+        base_scale=base_scale,
+        vol_shadow=vol_shadow,
+        rules_path=rules_file,
+    )
     decision = EntryDecision(
         entered=False,
         evaluated_at=evaluated_at,
@@ -743,7 +759,7 @@ def run_paper_entry(
         ta_snapshot=ta_signal.to_dict(),
         bb_entry_ok=ta_signal.entry_ok,
         vol_shadow=vol_shadow,
-        premium_scale_used=load_premium_scale(rules_file),
+        premium_scale_used=session_scale,
     )
 
     if not paper_entry_enabled():
@@ -855,8 +871,12 @@ def run_paper_entry(
             )
             return decision
 
-    ok_risk, risk_reason = entry_allowed_by_risk(state, rules_path=rules_file)
-    decision.risk_gate = risk_gate_snapshot(state, rules_path=rules_file)
+    ok_risk, risk_reason = entry_allowed_by_risk(
+        state, rules_path=rules_file, premium_scale=session_scale
+    )
+    decision.risk_gate = risk_gate_snapshot(
+        state, rules_path=rules_file, premium_scale=session_scale
+    )
     if not ok_risk:
         decision.skip_reason = risk_reason
         _finalize_entry(
@@ -906,6 +926,7 @@ def run_paper_entry(
         expiration,
         strike_pick=entry_rules.strike_pick,
         max_steps_from_atm=entry_rules.strike_max_steps_from_atm,
+        premium_scale=session_scale,
     )
     quote_source = f"SPY_chain_proxy_{entry_rules.strike_pick}"
     from xsp_killer.paper_economics import PaperEconomics, entry_fill_premium
@@ -919,6 +940,7 @@ def run_paper_entry(
             dte_actual,
             xsp_strike=strike,
             spx_level=spx,
+            premium_scale=session_scale,
         )
         quote_source = "fallback_estimate_strike_aware"
         decision.errors.append("quote_fallback_used")

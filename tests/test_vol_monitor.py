@@ -7,6 +7,7 @@ from pathlib import Path
 from xsp_killer.vol_monitor import (
     evaluate_shadow_vol_gate,
     evaluate_vix_spike_shadow,
+    session_premium_scale,
     spy_realized_vol_annualized,
 )
 
@@ -85,6 +86,30 @@ def test_vix_spike_ok_with_downtrend_confirm(monkeypatch):
     assert snap["vix_trending_down"] is True
     assert snap["shadow_would_halve_size"] is False
     assert snap["shadow_premium_scale_multiplier"] == 1.0
+
+
+def test_session_premium_scale_halve_when_enforced(tmp_path):
+    rules = tmp_path / "rules.yaml"
+    rules.write_text(
+        "vol_shadow:\n  enforce_vix_halve_on_sizing: true\n",
+        encoding="utf-8",
+    )
+    vol_shadow = {"shadow_premium_scale_multiplier": 0.5}
+    assert session_premium_scale(
+        base_scale=10.0, vol_shadow=vol_shadow, rules_path=rules
+    ) == 5.0
+
+
+def test_session_premium_scale_unchanged_when_not_enforced(tmp_path):
+    rules = tmp_path / "rules.yaml"
+    rules.write_text(
+        "vol_shadow:\n  enforce_vix_halve_on_sizing: false\n",
+        encoding="utf-8",
+    )
+    vol_shadow = {"shadow_premium_scale_multiplier": 0.5}
+    assert session_premium_scale(
+        base_scale=10.0, vol_shadow=vol_shadow, rules_path=rules
+    ) == 10.0
 
 
 def test_vol_shadow_config_from_rules_yaml(tmp_path, monkeypatch):

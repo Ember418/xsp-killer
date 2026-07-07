@@ -85,7 +85,10 @@ def realized_pnl_today(state: dict[str, Any], *, day: date | None = None) -> flo
 
 
 def risk_gate_snapshot(
-    state: dict[str, Any], *, rules_path: Path | None = None
+    state: dict[str, Any],
+    *,
+    rules_path: Path | None = None,
+    premium_scale: float | None = None,
 ) -> dict[str, Any]:
     """Structured risk-gate diagnostic for entry logs and health soak."""
     if os.getenv("XSP_LANE_A_RISK_GATE", "true").strip().lower() in (
@@ -95,7 +98,10 @@ def risk_gate_snapshot(
     ):
         return {"enabled": False, "allowed": True, "reason": None}
 
-    scale = load_premium_scale(rules_path)
+    if premium_scale is not None:
+        scale = premium_scale
+    else:
+        scale = load_premium_scale(rules_path)
     cap = _daily_loss_cap_usd()
     effective_cap = round(cap * scale, 2)
     pnl = realized_pnl_today(state)
@@ -126,9 +132,14 @@ def risk_gate_snapshot(
 
 
 def entry_allowed_by_risk(
-    state: dict[str, Any], *, rules_path: Path | None = None
+    state: dict[str, Any],
+    *,
+    rules_path: Path | None = None,
+    premium_scale: float | None = None,
 ) -> tuple[bool, str | None]:
-    snap = risk_gate_snapshot(state, rules_path=rules_path)
+    snap = risk_gate_snapshot(
+        state, rules_path=rules_path, premium_scale=premium_scale
+    )
     if not snap.get("enabled", True):
         return True, None
     if snap.get("allowed"):

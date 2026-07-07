@@ -159,6 +159,21 @@ def test_daily_loss_cap_reason_shows_scale(tmp_path, monkeypatch):
     assert "scale=2.00x" in (reason or "")
 
 
+def test_daily_loss_cap_respects_session_premium_scale_override(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_DAILY_LOSS_CAP_USD", "100")
+    state = {
+        "paper_events": [
+            {
+                "evaluated_at": datetime.now(ET).replace(hour=14).isoformat(),
+                "paper_pnl_usd": -510.0,
+            }
+        ]
+    }
+    ok, reason = entry_allowed_by_risk(state, premium_scale=5.0)
+    assert ok is False
+    assert "scale=5.00x" in (reason or "")
+
+
 def test_consecutive_losses_halt_entry(monkeypatch):
     monkeypatch.setenv("XSP_LANE_A_MAX_CONSECUTIVE_LOSSES", "3")
     state = {

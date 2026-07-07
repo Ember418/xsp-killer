@@ -7,8 +7,10 @@ here — halve-size signal when VIX ≥2× 20d median without downtrend confirm.
 Invariants:
 - Shadow-only: ``shadow_would_block`` and halve-size signals never block
   entry unless ``enforcing=True``.
-- VIX spike halve (``shadow_premium_scale_multiplier``) is observability/
-  telemetry — not entry enforcement.
+- VIX spike halve applies to ``premium_scale_used`` when
+  ``enforce_vix_halve_on_sizing`` is true in ``vol_shadow`` config.
+- RV block (``shadow_would_block``) remains shadow-only unless
+  ``enforcing=True``.
 - Macro GREEN/YELLOW/RED regime gating is separate (``playbook_snapshot`` /
   ``regime_gate_allows``).
 - ``ShadowVolGate.enforcing`` defaults to False; prod path must not flip it
@@ -60,6 +62,7 @@ def _load_vol_shadow_config(rules_path: Path | None) -> dict[str, Any]:
         "vix_median_lookback_days": DEFAULT_VIX_MEDIAN_LOOKBACK,
         "vix_spike_ratio_halve": DEFAULT_VIX_SPIKE_RATIO_HALVE,
         "vix_trend_confirm_days": DEFAULT_VIX_TREND_CONFIRM_DAYS,
+        "enforce_vix_halve_on_sizing": False,
     }
     if rules_path is None or not rules_path.is_file():
         return cfg
@@ -76,6 +79,23 @@ def _load_vol_shadow_config(rules_path: Path | None) -> dict[str, Any]:
     except Exception as exc:
         logger.warning("vol_shadow config load failed: %s", exc)
     return cfg
+
+
+def vol_halve_enforced(rules_path: Path | None = None) -> bool:
+    return bool(_load_vol_shadow_config(rules_path).get("enforce_vix_halve_on_sizing"))
+
+
+def session_premium_scale(
+    *,
+    base_scale: float,
+    vol_shadow: dict[str, Any] | None,
+    rules_path: Path | None = None,
+) -> float:
+    """Apply VIX halve multiplier to premium scale when enforcement is enabled."""
+    if not vol_shadow or not vol_halve_enforced(rules_path):
+        return base_scale
+    mult = float(vol_shadow.get("shadow_premium_scale_multiplier") or 1.0)
+    return round(base_scale * mult, 4)
 
 
 def _fetch_spy_closes(lookback_days: int) -> list[float]:

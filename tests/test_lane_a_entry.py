@@ -12,16 +12,16 @@ from xsp_killer.lane_a_entry import (
     _finalize_entry,
     _write_entry_telemetry_brief,
     already_entered_today,
-    et_session_date,
     entry_logs_for_epoch,
+    et_session_date,
     in_entry_window,
     is_et_trading_session,
-    scoreboard_entry_stale,
     open_paper_positions,
     pick_cheapest_atm_strike,
     reap_expired_paper_positions,
     round_xsp_strike,
     run_paper_entry,
+    scoreboard_entry_stale,
     summarize_entry_telemetry_from_logs,
     unique_et_sessions,
 )
@@ -157,7 +157,7 @@ def test_run_paper_entry_success_mocked(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_strike",
-        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (
+        lambda *args, **kwargs: (
             6010.0,
             2.45,
             0.52,
@@ -230,7 +230,7 @@ def test_spy_to_xsp_premium_scale_in_entry(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_strike",
-        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (
+        lambda *args, **kwargs: (
             6010.0,
             24.5,
             0.52,
@@ -276,7 +276,7 @@ def test_run_paper_entry_bb_bounce_reason(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.pick_strike",
-        lambda spx, exp, strike_pick="cheapest_near_atm", max_steps_from_atm=1: (
+        lambda *args, **kwargs: (
             6010.0,
             2.45,
             0.52,

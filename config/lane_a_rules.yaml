@@ -96,3 +96,4 @@ vol_shadow:
   vix_median_lookback_days: 20
   vix_spike_ratio_halve: 2.0
   vix_trend_confirm_days: 5
+  enforce_vix_halve_on_sizing: true
