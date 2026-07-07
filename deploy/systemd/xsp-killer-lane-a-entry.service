@@ -7,7 +7,13 @@ Type=oneshot
 WorkingDirectory=/opt/xsp-killer
 Environment=PYTHONPATH=/opt/xsp-killer
 Environment=XSP_LANE_A_RH_POLL=false
-Environment=XSP_LANE_A_RH_MCP=false
+# MCP on so the live buy-to-open path is exercised (review + buying-power),
+# but LIVE_ENTRIES=false keeps it a dry-run: no real buy is placed. Paper
+# entry continues as a shadow record. Flip LIVE_ENTRIES=true only after
+# funding + paper soak + operator GO. Emergency halt: XSP_LANE_A_KILL_SWITCH=true
+# or `touch .local/KILL_SWITCH` (blocks all placement).
+Environment=XSP_LANE_A_RH_MCP=true
+Environment=XSP_LANE_A_LIVE_ENTRIES=false
 Environment=XSP_LANE_A_LIVE_EXITS=false
 Environment=XSP_LANE_A_PAPER_ENTRY=true
 EnvironmentFile=-/opt/xsp-killer/.env

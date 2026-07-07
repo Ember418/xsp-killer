@@ -161,9 +161,35 @@ is clear. Safety rails:
 - **Contract cap**: `max_contracts_per_order` (I5); **account pin** (I3);
   **review→place grant** (I2).
 
+## Auto-entry wiring (Phase 2, gated OFF)
+
+For end-to-end automation the bot must also **open** positions, not just close
+them. `lane_a_entry._maybe_place_live_entry` runs after all paper-entry gates
+pass and, when authorized, places a real **buy-to-open**:
+
+- **Master switch**: `XSP_LANE_A_LIVE_ENTRIES` (+ pinned account) — default false.
+  Separate from `LIVE_EXITS`: opening risk and closing it are gated
+  independently. The write gate keys on `position_effect` (`open` →
+  `LIVE_ENTRIES`, `close` → `LIVE_EXITS`; ambiguous → exit-semantics).
+- **Contract selection**: `select_entry_contract` picks the real XSP contract
+  matching the Lane A rules (DTE window + `dte_pick`, near-ATM within
+  `strike_max_steps_from_atm`, `cheapest_near_atm`) from live chains/quotes.
+- **Buying-power fail-safe**: skips (does not error) if `ask*100*qty` exceeds
+  reported account buying power (most-conservative of buying_power /
+  unleveraged / cash). Prevents order-time failures on a thin account.
+- **Kill switch (I8)** and **idempotency** (`ref_id = uuid5(instrument, day)`)
+  apply exactly as for exits. Paper entry continues as an unaffected shadow
+  record; the exit path only ever acts on real broker positions.
+
+Entry/intraday systemd units run with `RH_MCP=true` + `LIVE_ENTRIES=false`, so
+the review + buying-power path is exercised as a dry-run with no real buy.
+
 ### Sign-off (updated)
 
 - [x] Headless auto-placement verified (place + cancel, $1 exposure, unfilled)
-- [ ] **BLOCKER**: Fund Agentic account before live sizing (currently $500)
-- [ ] **GATE**: ≥1 clean paper entry→exit cycle logged before flipping `LIVE_EXITS`
-- [ ] Flip `XSP_LANE_A_LIVE_EXITS=true` in monitor unit only after operator GO
+- [x] Agentic account funded — **$1,000** cash / $1,000 buying power (covers one
+      near-ATM 14-DTE contract; $1.5–2k recommended for headroom)
+- [x] Live buy-to-open path wired + unit-tested (gated OFF)
+- [ ] **GATE**: ≥1 clean paper entry→exit cycle logged before flipping any live flag
+- [ ] Flip `XSP_LANE_A_LIVE_ENTRIES=true` (entry/intraday units) after operator GO
+- [ ] Flip `XSP_LANE_A_LIVE_EXITS=true` (monitor unit) after operator GO

@@ -441,3 +441,180 @@ def test_rh_mcp_config_loads_yaml(tmp_path, monkeypatch):
     cfg = RhMcpConfig.load(yaml_path)
     assert cfg.agentic_account_id == "acct-99"
     assert cfg.max_contracts_per_order == 2
+
+
+# --- Live entries: separate gate from exits ---------------------------------
+
+
+def test_live_entries_disabled_by_default(monkeypatch):
+    from xsp_killer.robinhood_mcp import live_entries_enabled
+
+    monkeypatch.delenv("XSP_LANE_A_LIVE_ENTRIES", raising=False)
+    monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)
+    cfg = RhMcpConfig(agentic_account_id="", live_entries=False)
+    assert live_entries_enabled(config=cfg) is False
+
+
+def test_open_leg_blocked_when_only_exits_enabled(tmp_path, monkeypatch):
+    """A buy-to-open must be gated by LIVE_ENTRIES, not LIVE_EXITS."""
+    monkeypatch.delenv("XSP_LANE_A_LIVE_ENTRIES", raising=False)
+    monkeypatch.delenv("XSP_LANE_A_LIVE_EXITS", raising=False)
+    monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    audit = tmp_path / "audit.jsonl"
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=audit,
+        agentic_account_id="agentic-1",
+        live_exits=True,
+        live_entries=False,
+        require_review_before_place=False,
+    )
+    adapter = RobinhoodMCPAdapter(
+        config=cfg, http_post=lambda *a: {"result": {"structuredContent": {"ok": 1}}}
+    )
+    order = {
+        "account_number": "agentic-1",
+        "legs": [{"option_id": "o1", "side": "buy", "position_effect": "open"}],
+        "type": "limit",
+        "quantity": "1",
+        "price": "1.00",
+    }
+    with pytest.raises(RhMcpLiveExitsDisabled):
+        adapter.place_option_order(order)
+    deny = json.loads(audit.read_text().strip().splitlines()[-1])
+    assert deny["invariant"] == "I7"
+
+
+def test_close_leg_blocked_when_only_entries_enabled(tmp_path, monkeypatch):
+    """A sell-to-close must stay gated by LIVE_EXITS even if entries are on."""
+    monkeypatch.delenv("XSP_LANE_A_LIVE_ENTRIES", raising=False)
+    monkeypatch.delenv("XSP_LANE_A_LIVE_EXITS", raising=False)
+    monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    audit = tmp_path / "audit.jsonl"
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=audit,
+        agentic_account_id="agentic-1",
+        live_exits=False,
+        live_entries=True,
+        require_review_before_place=False,
+    )
+    adapter = RobinhoodMCPAdapter(
+        config=cfg, http_post=lambda *a: {"result": {"structuredContent": {"ok": 1}}}
+    )
+    order = {
+        "account_number": "agentic-1",
+        "legs": [{"option_id": "o1", "side": "sell", "position_effect": "close"}],
+        "type": "limit",
+        "quantity": "1",
+        "price": "1.00",
+    }
+    with pytest.raises(RhMcpLiveExitsDisabled):
+        adapter.place_option_order(order)
+    deny = json.loads(audit.read_text().strip().splitlines()[-1])
+    assert deny["invariant"] == "I7"
+
+
+def test_open_leg_allowed_when_live_entries_on(tmp_path, monkeypatch):
+    monkeypatch.delenv("XSP_LANE_A_LIVE_ENTRIES", raising=False)
+    monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    cfg = RhMcpConfig(
+        token_path=token,
+        agentic_account_id="agentic-1",
+        live_entries=True,
+        require_review_before_place=True,
+    )
+    adapter = RobinhoodMCPAdapter(
+        config=cfg,
+        http_post=lambda *a: {"result": {"structuredContent": {"ok": True}}},
+    )
+    out = adapter.buy_to_open(instrument_id="o1", limit_price=1.23, quantity=1)
+    assert out["placed"] == {"ok": True}
+
+
+def test_get_buying_power_takes_conservative_value(tmp_path):
+    cfg = RhMcpConfig(agentic_account_id="agentic-1")
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=lambda *a: {})
+    adapter.call_tool = lambda name, args: {  # type: ignore[method-assign]
+        "buying_power": "1200.00",
+        "unleveraged_buying_power": "1000.00",
+        "cash": "1000.00",
+    }
+    assert adapter.get_buying_power("agentic-1") == 1000.0
+
+
+def test_select_entry_contract_picks_cheapest_near_atm(tmp_path):
+    cfg = RhMcpConfig(agentic_account_id="agentic-1")
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=lambda *a: {})
+    routes = {
+        "get_option_chains": {
+            "symbol": "XSP",
+            "expiration_dates": ["2026-07-21", "2026-08-21"],
+        },
+        "get_index_quotes": {"results": [{"last_trade_price": "755.0"}]},
+        "get_option_instruments": {
+            "results": [
+                {"id": "inst-755", "strike_price": "755.0000", "type": "call"},
+            ]
+        },
+        "get_option_quotes": {
+            "results": [
+                {
+                    "instrument_id": "inst-750",
+                    "ask_price": "1.05",
+                    "bid_price": "0.95",
+                    "mark_price": "1.00",
+                },
+                {
+                    "instrument_id": "inst-755",
+                    "ask_price": "0.80",
+                    "bid_price": "0.70",
+                    "mark_price": "0.75",
+                },
+                {
+                    "instrument_id": "inst-760",
+                    "ask_price": "0.60",
+                    "bid_price": "0.50",
+                    "mark_price": "0.55",
+                },
+            ]
+        },
+    }
+    # Return all three strikes' instruments regardless of requested strike.
+    instruments = [
+        {"id": "inst-750", "strike_price": "750.0000", "type": "call"},
+        {"id": "inst-755", "strike_price": "755.0000", "type": "call"},
+        {"id": "inst-760", "strike_price": "760.0000", "type": "call"},
+    ]
+
+    def fake_call(name, args):
+        if name == "get_option_instruments":
+            return {"results": instruments}
+        return routes[name]
+
+    adapter.call_tool = fake_call  # type: ignore[method-assign]
+    from datetime import date as _date
+
+    chosen = adapter.select_entry_contract(today=_date(2026, 7, 1))
+    assert chosen["instrument_id"] == "inst-760"  # cheapest ask
+    assert chosen["expiration_date"] == "2026-07-21"  # min DTE
+    assert chosen["dte"] == 20
+
+
+def test_select_entry_contract_raises_when_no_expiration(tmp_path):
+    cfg = RhMcpConfig(agentic_account_id="agentic-1")
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=lambda *a: {})
+    adapter.call_tool = lambda name, args: {  # type: ignore[method-assign]
+        "symbol": "XSP",
+        "expiration_dates": ["2026-07-03"],  # 2 DTE, below window
+    }
+    from datetime import date as _date
+
+    with pytest.raises(RhMcpError):
+        adapter.select_entry_contract(today=_date(2026, 7, 1))

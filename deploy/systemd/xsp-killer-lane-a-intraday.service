@@ -7,7 +7,9 @@ Type=oneshot
 WorkingDirectory=/opt/xsp-killer
 Environment=PYTHONPATH=/opt/xsp-killer
 Environment=XSP_LANE_A_RH_POLL=false
-Environment=XSP_LANE_A_RH_MCP=false
+# See entry.service: live buy path is gated OFF (LIVE_ENTRIES=false); dry-run only.
+Environment=XSP_LANE_A_RH_MCP=true
+Environment=XSP_LANE_A_LIVE_ENTRIES=false
 Environment=XSP_LANE_A_LIVE_EXITS=false
 Environment=XSP_LANE_A_PAPER_ENTRY=true
 EnvironmentFile=-/opt/xsp-killer/.env

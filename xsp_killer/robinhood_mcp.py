@@ -12,8 +12,10 @@ Invariants:
   audit on blocks).
 - LOW-confidence MCP reads (``mcp_read_trusted``) must not drive
   position/monitor decisions.
-- No live exits without operator GO: ``place_option_order`` requires
-  ``XSP_LANE_A_LIVE_EXITS`` + pinned account.
+- No live orders without operator GO (I7): ``place_option_order`` requires a
+  pinned account plus ``XSP_LANE_A_LIVE_ENTRIES`` for opens (buy-to-open) and
+  ``XSP_LANE_A_LIVE_EXITS`` for closes (sell-to-close); ambiguous effect
+  defaults to exit-semantics.
 - I8 kill switch: ``kill_switch_engaged`` (``XSP_LANE_A_KILL_SWITCH`` or a
   sentinel file) blocks all ``place_option_order`` regardless of live-exits;
   cancels are never blocked.
@@ -28,7 +30,7 @@ import secrets
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -147,6 +149,21 @@ def rh_mcp_enabled() -> bool:
     )
 
 
+# XSP index instrument UUID (confirmed via get_indexes in the tool audit).
+XSP_INDEX_INSTRUMENT_ID = "b8ae3ed3-7f82-4c77-adb4-f25f2cab6a4e"
+# XSP listed strikes are $5 apart near the money.
+XSP_STRIKE_STEP = 5.0
+
+
+def _to_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 @dataclass
 class RhMcpConfig:
     agentic_account_id: str = ""
@@ -156,6 +173,7 @@ class RhMcpConfig:
     )
     allowed_chain_symbols: tuple[str, ...] = ("XSP", "SPX")
     live_exits: bool = False
+    live_entries: bool = False
     max_contracts_per_order: int = 1
     require_review_before_place: bool = True
     audit_log: Path = field(default_factory=lambda: ROOT / "logs/rh_mcp_audit.jsonl")
@@ -182,6 +200,7 @@ class RhMcpConfig:
             else Path(token_raw),
             allowed_chain_symbols=tuple(str(s).upper() for s in symbols),
             live_exits=bool(data.get("live_exits", False)),
+            live_entries=bool(data.get("live_entries", False)),
             max_contracts_per_order=int(data.get("max_contracts_per_order") or 1),
             require_review_before_place=bool(
                 data.get("require_review_before_place", True)
@@ -192,20 +211,33 @@ class RhMcpConfig:
         )
 
 
-def live_exits_enabled(*, config: RhMcpConfig | None = None) -> bool:
-    env = os.getenv("XSP_LANE_A_LIVE_EXITS", "").strip().lower()
+def _live_flag(env_name: str, cfg_value: bool, config: RhMcpConfig | None) -> bool:
+    env = os.getenv(env_name, "").strip().lower()
     if env in ("1", "true", "yes"):
         flag = True
     elif env in ("0", "false", "no"):
         flag = False
     else:
-        cfg = config or RhMcpConfig.load()
-        flag = cfg.live_exits
+        flag = cfg_value
     if not flag:
         return False
     cfg = config or RhMcpConfig.load()
     account = os.getenv("RH_AGENTIC_ACCOUNT_ID", "").strip() or cfg.agentic_account_id
     return bool(account)
+
+
+def live_exits_enabled(*, config: RhMcpConfig | None = None) -> bool:
+    cfg = config or RhMcpConfig.load()
+    return _live_flag("XSP_LANE_A_LIVE_EXITS", cfg.live_exits, cfg)
+
+
+def live_entries_enabled(*, config: RhMcpConfig | None = None) -> bool:
+    """True when live buy-to-open entries are authorized (separate from exits).
+
+    Requires ``XSP_LANE_A_LIVE_ENTRIES`` (or config) true AND a pinned account.
+    """
+    cfg = config or RhMcpConfig.load()
+    return _live_flag("XSP_LANE_A_LIVE_ENTRIES", cfg.live_entries, cfg)
 
 
 def _load_token(token_path: Path) -> dict[str, Any]:
@@ -517,22 +549,31 @@ class RobinhoodMCPAdapter:
                 )
                 self._audit_deny(name, args, reason=reason, invariant="I8")
                 raise RhMcpKillSwitch(reason)
-            if not live_exits_enabled(config=self.config):
-                self._audit_deny(
-                    name,
-                    args,
-                    reason=(
-                        "rh_mcp: place_option_order blocked — "
-                        "set XSP_LANE_A_LIVE_EXITS=true "
-                        "and RH_AGENTIC_ACCOUNT_ID after operator GO"
-                    ),
-                    invariant="I7",
+            # Entries (buy-to-open) and exits (sell-to-close) are gated by
+            # separate flags: initiating risk (open) is distinct from closing
+            # it (close). Missing/ambiguous effect defaults to exit-semantics.
+            effects = {
+                str(leg.get("position_effect") or "").lower()
+                for leg in _normalize_legs(args)
+            }
+            needs_entry = "open" in effects
+            needs_exit = ("close" in effects) or (not effects) or (effects == {""})
+            if needs_entry and not live_entries_enabled(config=self.config):
+                reason = (
+                    "rh_mcp: place_option_order (open) blocked — "
+                    "set XSP_LANE_A_LIVE_ENTRIES=true "
+                    "and RH_AGENTIC_ACCOUNT_ID after operator GO"
                 )
-                raise RhMcpLiveExitsDisabled(
-                    "rh_mcp: place_option_order blocked — "
+                self._audit_deny(name, args, reason=reason, invariant="I7")
+                raise RhMcpLiveExitsDisabled(reason)
+            if needs_exit and not live_exits_enabled(config=self.config):
+                reason = (
+                    "rh_mcp: place_option_order (close) blocked — "
                     "set XSP_LANE_A_LIVE_EXITS=true "
                     "and RH_AGENTIC_ACCOUNT_ID after operator GO"
                 )
+                self._audit_deny(name, args, reason=reason, invariant="I7")
+                raise RhMcpLiveExitsDisabled(reason)
             qty = args.get("quantity") or args.get("contracts") or 1
             try:
                 qty_n = float(qty)
@@ -717,6 +758,217 @@ class RobinhoodMCPAdapter:
 
         _collect(raw)
         return out
+
+    def index_level(self, underlying: str = "XSP") -> float | None:
+        """Current index level for ``underlying`` (XSP via known instrument id)."""
+        if underlying.upper() != "XSP":
+            return None
+        raw = unwrap_tool_result(
+            self.call_tool(
+                "get_index_quotes", {"instrument_ids": [XSP_INDEX_INSTRUMENT_ID]}
+            )
+        )
+        level: float | None = None
+
+        def _walk(node: Any) -> None:
+            nonlocal level
+            if isinstance(node, dict):
+                for key in ("last_trade_price", "price", "value", "mark_price"):
+                    got = _to_float(node.get(key))
+                    if got:
+                        level = got
+                for value in node.values():
+                    _walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item)
+
+        _walk(raw)
+        return level
+
+    def quote_options(self, instrument_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Map instrument_id -> quote dict (bid/ask/mark) for the given ids."""
+        if not instrument_ids:
+            return {}
+        raw = unwrap_tool_result(
+            self.call_tool("get_option_quotes", {"instrument_ids": instrument_ids})
+        )
+        quotes: dict[str, dict[str, Any]] = {}
+
+        def _walk(node: Any) -> None:
+            if isinstance(node, dict):
+                iid = node.get("instrument_id")
+                if iid and ("ask_price" in node or "bid_price" in node):
+                    quotes[str(iid)] = node
+                for value in node.values():
+                    _walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item)
+
+        _walk(raw)
+        return quotes
+
+    def instruments_for_strike(
+        self, underlying: str, expiration: str, option_type: str, strike: float
+    ) -> list[dict[str, Any]]:
+        raw = unwrap_tool_result(
+            self.call_tool(
+                "get_option_instruments",
+                {
+                    "chain_symbol": underlying.upper(),
+                    "expiration_dates": expiration,
+                    "type": option_type,
+                    "strike_price": f"{float(strike):.4f}",
+                    "tradability": "tradable",
+                },
+            )
+        )
+        out: list[dict[str, Any]] = []
+
+        def _collect(node: Any) -> None:
+            if isinstance(node, dict):
+                if node.get("id") and node.get("strike_price"):
+                    out.append(node)
+                for value in node.values():
+                    _collect(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _collect(item)
+
+        _collect(raw)
+        return out
+
+    def get_buying_power(self, account_number: str | None = None) -> float:
+        """Available options buying power (cash) for the pinned Agentic account."""
+        account = account_number or self.resolve_account_number()
+        raw = unwrap_tool_result(
+            self.call_tool("get_portfolio", {"account_number": account})
+        )
+        best: float | None = None
+
+        def _walk(node: Any) -> None:
+            nonlocal best
+            if isinstance(node, dict):
+                for key in ("buying_power", "unleveraged_buying_power", "cash"):
+                    got = _to_float(node.get(key))
+                    if got is not None and (best is None or got < best):
+                        # Take the most conservative (smallest) reported figure.
+                        best = got
+                for value in node.values():
+                    _walk(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _walk(item)
+
+        _walk(raw)
+        return best if best is not None else 0.0
+
+    def select_entry_contract(
+        self,
+        *,
+        underlying: str = "XSP",
+        option_type: str = "call",
+        dte_min: int = 14,
+        dte_max: int = 60,
+        dte_pick: str = "min",
+        atm_steps: int = 1,
+        strike_pick: str = "cheapest_near_atm",
+        today: date | None = None,
+    ) -> dict[str, Any]:
+        """Pick the real option contract matching the Lane A entry rules.
+
+        Returns ``{instrument_id, strike, expiration_date, dte, bid, ask,
+        mark}`` for the chosen contract. Raises ``RhMcpError`` if no tradable,
+        quotable contract fits the DTE/strike window.
+        """
+        today = today or datetime.now(timezone.utc).date()
+        chain = self.get_option_chains(underlying)
+        exps = chain.get("expiration_dates") or []
+        dated: list[tuple[int, str]] = []
+        for exp in exps:
+            try:
+                dte = (date.fromisoformat(str(exp)) - today).days
+            except ValueError:
+                continue
+            if dte_min <= dte <= dte_max:
+                dated.append((dte, str(exp)))
+        if not dated:
+            raise RhMcpError(
+                f"rh_mcp entry: no {underlying} expiration in DTE [{dte_min},{dte_max}]"
+            )
+        dated.sort()
+        dte, expiration = dated[0] if dte_pick == "min" else dated[-1]
+        level = self.index_level(underlying)
+        if not level:
+            raise RhMcpError(f"rh_mcp entry: no index level for {underlying}")
+        atm = round(level / XSP_STRIKE_STEP) * XSP_STRIKE_STEP
+        strikes = [atm + XSP_STRIKE_STEP * k for k in range(-atm_steps, atm_steps + 1)]
+        candidates: list[dict[str, Any]] = []
+        for strike in strikes:
+            candidates.extend(
+                self.instruments_for_strike(underlying, expiration, option_type, strike)
+            )
+        if not candidates:
+            raise RhMcpError(
+                f"rh_mcp entry: no tradable {underlying} {option_type} near {atm}"
+            )
+        quotes = self.quote_options([c["id"] for c in candidates])
+        enriched: list[dict[str, Any]] = []
+        for cand in candidates:
+            quote = quotes.get(str(cand["id"]), {})
+            ask = _to_float(quote.get("ask_price"))
+            if not ask or ask <= 0:
+                continue
+            enriched.append(
+                {
+                    "instrument_id": str(cand["id"]),
+                    "strike": _to_float(cand.get("strike_price")),
+                    "expiration_date": expiration,
+                    "dte": dte,
+                    "bid": _to_float(quote.get("bid_price")),
+                    "ask": ask,
+                    "mark": _to_float(quote.get("mark_price")),
+                }
+            )
+        if not enriched:
+            raise RhMcpError(
+                f"rh_mcp entry: no quotable {underlying} {option_type} near {atm}"
+            )
+        if strike_pick == "cheapest_near_atm":
+            return min(enriched, key=lambda c: c["ask"])
+        return min(enriched, key=lambda c: abs((c["strike"] or 0.0) - atm))
+
+    def buy_to_open(
+        self,
+        *,
+        instrument_id: str,
+        limit_price: float,
+        quantity: int = 1,
+        time_in_force: str = "gfd",
+        ref_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Review then place a buy-to-open limit order (gated by write gates)."""
+        base = {
+            "legs": [
+                {
+                    "option_id": instrument_id,
+                    "side": "buy",
+                    "position_effect": "open",
+                    "ratio_quantity": 1,
+                }
+            ],
+            "type": "limit",
+            "quantity": str(int(quantity)),
+            "price": f"{float(limit_price):.2f}",
+            "time_in_force": time_in_force,
+        }
+        review = self.review_option_order(base)
+        place_order = dict(base)
+        if ref_id:
+            place_order["ref_id"] = ref_id
+        placed = self.place_option_order(place_order)
+        return {"review": review, "placed": placed}
 
     def phase1_canary_review(
         self, *, underlying: str = "XSP", option_type: str = "call"

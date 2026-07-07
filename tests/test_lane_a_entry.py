@@ -302,16 +302,12 @@ def test_bucket_skip_reason_regime():
 
 def test_bucket_skip_reason_conductor_shadow():
     assert (
-        _bucket_skip_reason("conductor_shadow: macro regime RED")
-        == "conductor_shadow"
+        _bucket_skip_reason("conductor_shadow: macro regime RED") == "conductor_shadow"
     )
 
 
 def test_bucket_skip_reason_consecutive_losses_risk_gate():
-    assert (
-        _bucket_skip_reason("consecutive paper losses halt (3 >= 3)")
-        == "risk_gate"
-    )
+    assert _bucket_skip_reason("consecutive paper losses halt (3 >= 3)") == "risk_gate"
 
 
 def test_entry_telemetry_counts_skips_and_regime(tmp_path):
@@ -476,3 +472,136 @@ def test_reap_expired_paper_positions_closes_only_expired(tmp_path):
     assert state["paper_positions"]["expired"]["exit_reason"] == "expired"
     assert state["paper_positions"]["active"]["status"] == "open"
     assert state["paper_events"][-1]["position_id"] == "expired"
+
+
+# --- Live entry buy path (gated) --------------------------------------------
+
+import types  # noqa: E402
+
+from xsp_killer.lane_a_entry import (  # noqa: E402
+    _live_entry_ref_id,
+    _maybe_place_live_entry,
+)
+
+
+def _mk_decision() -> EntryDecision:
+    return EntryDecision(
+        entered=True,
+        evaluated_at="2026-07-07T20:00:00+00:00",
+        logic_version="xsp_lane_a_v1",
+        in_window=True,
+        regime="green",
+        regime_ok=True,
+        prior_day_spy_return_pct=0.5,
+        prior_day_ok=True,
+    )
+
+
+_LANE = types.SimpleNamespace(dte_min=14, dte_max=60)
+_ENTRY = types.SimpleNamespace(
+    chain_symbol="XSP",
+    dte_pick="min",
+    strike_max_steps_from_atm=1,
+    strike_pick="cheapest_near_atm",
+    quantity=1,
+)
+
+
+class _FakeEntryAdapter:
+    def __init__(self, *, ask=1.0, buying_power=1000.0):
+        self._ask = ask
+        self._bp = buying_power
+        self.placed = None
+
+    def select_entry_contract(self, **kw):
+        return {
+            "instrument_id": "inst-xyz",
+            "strike": 755.0,
+            "expiration_date": "2026-07-21",
+            "dte": 14,
+            "bid": self._ask - 0.1,
+            "ask": self._ask,
+            "mark": self._ask,
+        }
+
+    def get_buying_power(self, account_number=None):
+        return self._bp
+
+    def buy_to_open(self, *, instrument_id, limit_price, quantity, ref_id=None):
+        self.placed = {
+            "instrument_id": instrument_id,
+            "limit_price": limit_price,
+            "quantity": quantity,
+            "ref_id": ref_id,
+        }
+        return {"review": {"ok": 1}, "placed": {"id": "order-1"}}
+
+
+def _patch_mcp(monkeypatch, *, enabled, entries, kill, adapter):
+    import xsp_killer.robinhood_mcp as rhm
+
+    monkeypatch.setattr(rhm, "rh_mcp_enabled", lambda: enabled)
+    monkeypatch.setattr(rhm, "live_entries_enabled", lambda **k: entries)
+    monkeypatch.setattr(rhm, "kill_switch_engaged", lambda: kill)
+    monkeypatch.setattr(rhm, "RobinhoodMCPAdapter", lambda *a, **k: adapter)
+
+
+def test_live_entry_ref_id_is_deterministic():
+    a = _live_entry_ref_id("inst-xyz", "2026-07-07")
+    b = _live_entry_ref_id("inst-xyz", "2026-07-07")
+    c = _live_entry_ref_id("inst-xyz", "2026-07-08")
+    assert a == b
+    assert a != c
+
+
+def test_live_entry_noop_when_mcp_off(monkeypatch):
+    d = _mk_decision()
+    _patch_mcp(monkeypatch, enabled=False, entries=True, kill=False, adapter=None)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order is None
+
+
+def test_live_entry_skips_when_entries_disabled(monkeypatch):
+    d = _mk_decision()
+    _patch_mcp(monkeypatch, enabled=True, entries=False, kill=False, adapter=None)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert "disabled" in d.live_order["reason"]
+
+
+def test_live_entry_blocked_by_kill_switch(monkeypatch):
+    d = _mk_decision()
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=True, adapter=None)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert "kill switch" in d.live_order["reason"]
+
+
+def test_live_entry_fails_safe_on_insufficient_buying_power(monkeypatch):
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=2.0, buying_power=50.0)  # cost 200 > 50
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert "insufficient buying power" in d.live_order["reason"]
+    assert adapter.placed is None
+
+
+def test_live_entry_places_when_authorized_and_funded(monkeypatch):
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)  # cost 100 <= 1000
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is True
+    assert adapter.placed["instrument_id"] == "inst-xyz"
+    assert adapter.placed["ref_id"] == _live_entry_ref_id("inst-xyz", "2026-07-07")

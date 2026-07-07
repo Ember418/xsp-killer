@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -133,6 +134,7 @@ class EntryDecision:
     vol_shadow: dict[str, Any] | None = None
     premium_scale_used: float | None = None
     risk_gate: dict[str, Any] | None = None
+    live_order: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -636,7 +638,9 @@ def _update_entry_telemetry(state: dict[str, Any], decision: EntryDecision) -> N
     _sync_entry_telemetry(state)
 
 
-def _write_entry_telemetry_brief(state: dict[str, Any], out_path: Path | None = None) -> None:
+def _write_entry_telemetry_brief(
+    state: dict[str, Any], out_path: Path | None = None
+) -> None:
     path = out_path or DEFAULT_TELEMETRY_BRIEF
     tel = _sync_entry_telemetry(state)
     payload = {
@@ -704,7 +708,12 @@ def _resolve_entry_reason(
         return "bb_bounce_long_call"
     if ta_rules.entry_mode == "close_window_only":
         return "close_window_long_call"
-    if intraday and ta_rules.intraday_entry_enabled and ta_signal.entry_ok and in_rth(now):
+    if (
+        intraday
+        and ta_rules.intraday_entry_enabled
+        and ta_signal.entry_ok
+        and in_rth(now)
+    ):
         return "bb_bounce_long_call"
     if in_win:
         return "close_window_long_call"
@@ -1006,6 +1015,13 @@ def run_paper_entry(
     decision.position = position
     decision.skip_reason = None
 
+    _maybe_place_live_entry(
+        decision,
+        lane_rules=lane_rules,
+        entry_rules=entry_rules,
+        today=now.date(),
+    )
+
     _finalize_entry(
         state,
         state_path,
@@ -1015,6 +1031,91 @@ def run_paper_entry(
         brief_path=brief_path,
     )
     return decision
+
+
+_LIVE_ENTRY_REF_NAMESPACE = uuid.UUID("7d5a6c2e-3b41-4e0a-9c2d-000000000002")
+
+
+def _live_entry_ref_id(instrument_id: str, day: str) -> str:
+    """Deterministic idempotency key so retries can't duplicate the day's entry."""
+    return str(uuid.uuid5(_LIVE_ENTRY_REF_NAMESPACE, f"{instrument_id}:{day}"))
+
+
+def _maybe_place_live_entry(
+    decision: "EntryDecision",
+    *,
+    lane_rules: "LaneRules",
+    entry_rules: "EntryRules",
+    today: date,
+) -> None:
+    """Place a real buy-to-open when live entries are authorized; else no-op.
+
+    Fail-safe: skips (does not raise) when MCP is off, live entries are
+    disabled, the kill switch is engaged, or account buying power is below the
+    contract cost. Records the outcome on ``decision.live_order``. The paper
+    position is unaffected (it continues as a shadow record).
+    """
+    from xsp_killer.robinhood_mcp import (
+        RobinhoodMCPAdapter,
+        kill_switch_engaged,
+        live_entries_enabled,
+        rh_mcp_enabled,
+    )
+
+    if not rh_mcp_enabled():
+        return
+    if not live_entries_enabled():
+        decision.live_order = {"placed": False, "reason": "live entries disabled"}
+        return
+    if kill_switch_engaged():
+        decision.live_order = {"placed": False, "reason": "kill switch engaged"}
+        return
+    try:
+        adapter = RobinhoodMCPAdapter()
+        contract = adapter.select_entry_contract(
+            underlying=entry_rules.chain_symbol or "XSP",
+            option_type="call",
+            dte_min=lane_rules.dte_min,
+            dte_max=lane_rules.dte_max,
+            dte_pick=entry_rules.dte_pick,
+            atm_steps=entry_rules.strike_max_steps_from_atm,
+            strike_pick=entry_rules.strike_pick,
+            today=today,
+        )
+        qty = max(1, int(round(entry_rules.quantity or 1)))
+        limit = float(contract["ask"])
+        cost = limit * 100.0 * qty
+        buying_power = adapter.get_buying_power()
+        if cost > buying_power:
+            decision.live_order = {
+                "placed": False,
+                "reason": (
+                    f"insufficient buying power ${buying_power:,.0f} "
+                    f"< est cost ${cost:,.0f}"
+                ),
+                "contract": contract,
+                "buying_power": buying_power,
+            }
+            return
+        ref_id = _live_entry_ref_id(contract["instrument_id"], today.isoformat())
+        result = adapter.buy_to_open(
+            instrument_id=contract["instrument_id"],
+            limit_price=limit,
+            quantity=qty,
+            ref_id=ref_id,
+        )
+        decision.live_order = {
+            "placed": True,
+            "contract": contract,
+            "quantity": qty,
+            "limit_price": round(limit, 2),
+            "cost_estimate": round(cost, 2),
+            "buying_power": buying_power,
+            "result": result,
+        }
+    except Exception as exc:
+        decision.live_order = {"placed": False, "error": str(exc)}
+        decision.errors.append(f"live_entry_error: {exc}")
 
 
 def close_open_paper_positions(

@@ -10,9 +10,10 @@ Canonical plan: `briefs/2026-06-29_xsp-robinhood-agentic-mcp-connection-cemini-p
 |-----|---------|---------|
 | `XSP_LANE_A_RH_POLL` | `false` | Legacy `robin_stocks` read poll |
 | `XSP_LANE_A_RH_MCP` | `false` | Official Agentic MCP read adapter |
-| `XSP_LANE_A_LIVE_EXITS` | `false` | Blocks `place_option_order` even if MCP connected |
+| `XSP_LANE_A_LIVE_ENTRIES` | `false` | Authorizes live buy-to-open (opens). Gates `place_option_order` legs with `position_effect=open` |
+| `XSP_LANE_A_LIVE_EXITS` | `false` | Authorizes live sell-to-close (closes). Gates `place_option_order` legs with `position_effect=close` |
 
-Reads require **either** `XSP_LANE_A_RH_MCP=true` (preferred) **or** `XSP_LANE_A_RH_POLL=true` (legacy). Writes always require MCP + explicit live-exits flag.
+Reads require **either** `XSP_LANE_A_RH_MCP=true` (preferred) **or** `XSP_LANE_A_RH_POLL=true` (legacy). Writes always require MCP + the matching live flag: **opens** need `LIVE_ENTRIES`, **closes** need `LIVE_EXITS` (ambiguous effect defaults to exit-semantics). Opening and closing risk are gated independently on purpose.
 
 ## Phase 0 — Read-only MCP (operator + server)
 
@@ -90,13 +91,23 @@ When `XSP_LANE_A_LIVE_EXITS=true` and the kill switch is clear, the monitor **au
 3. Confirm `RH_AGENTIC_ACCOUNT_ID`; single-contract test sell; confirm push notification.
 4. Rollback drill: set `XSP_LANE_A_LIVE_EXITS=false` **and** disconnect agent in Robinhood app (≤60s stop).
 
+## Phase 2 — Live entries (operator GO)
+
+When `XSP_LANE_A_LIVE_ENTRIES=true` and the kill switch is clear, the entry cron **auto-places** a buy-to-open after all paper-entry gates pass. It selects the real XSP contract per the Lane A rules (`select_entry_contract`), checks account buying power, and **skips (fail-safe) rather than errors** if the contract costs more than available cash. Idempotent per (instrument, trading day) via a deterministic `ref_id`. Paper entry keeps running as a shadow record; exits act only on the resulting real broker position.
+
+1. Fund the Agentic account (≥ one contract's cost; currently $1,000).
+2. Set `XSP_LANE_A_LIVE_ENTRIES=true` in `deploy/systemd/xsp-killer-lane-a-entry.service` **and** `…-intraday.service` (currently `false`), reinstall units, `daemon-reload`.
+3. Confirm one clean auto entry (`decision.live_order.placed=true`) then let the monitor auto-exit it next morning.
+4. Rollback: set `XSP_LANE_A_LIVE_ENTRIES=false` (opens stop; any open position can still be closed via `LIVE_EXITS`).
+
 ## Kill switches
 
 | Action | Effect |
 |--------|--------|
 | `XSP_LANE_A_KILL_SWITCH=true` | **Emergency halt** — blocks all `place_option_order` (I8) even if live exits on; cancels still allowed |
 | `touch .local/KILL_SWITCH` (or `$XSP_LANE_A_KILL_FILE`) | Same as above via sentinel file — no restart needed |
-| `XSP_LANE_A_LIVE_EXITS=false` | Adapter rejects all `place_option_order` (I7) |
+| `XSP_LANE_A_LIVE_ENTRIES=false` | Adapter rejects buy-to-open (open) placements (I7) |
+| `XSP_LANE_A_LIVE_EXITS=false` | Adapter rejects sell-to-close (close) placements (I7) |
 | Robinhood app → disconnect agent | OAuth revoked; reads fail until re-auth |
 | systemd stop timers | No cron evaluation |
 
