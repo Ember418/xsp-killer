@@ -68,6 +68,7 @@ def parse_mcp_http_response(raw: str) -> dict[str, Any]:
         raise RhMcpError("rh_mcp SSE response missing data frame")
     raise RhMcpError(f"rh_mcp non-JSON response: {text[:200]}")
 
+
 READ_TOOLS = frozenset(
     {
         "get_accounts",
