@@ -114,7 +114,8 @@ min_ticks: above_tick 0.10, below_tick 0.05, cutoff_price 3.00
 - [x] Token exported to `.local/robinhood_mcp_token.json` (mode 600)
 - [x] Options approval on Agentic account (8843) — `option_level_2` confirmed via `get_accounts` 2026-07-07
 - [x] Phase 1 `review_option_order` validated live against Agentic (8843): real schema is `legs[]` + `position_effect` + top-level `quantity`/`price`; preview returned quote/break-even/`order_checks` with no order placed. Adapter write path + grant-chain updated to match.
-- [ ] **BLOCKER**: Fund Agentic account before live trading
+- [x] **Scheduled Phase 1 dry-run live**: `xsp-killer-lane-a-monitor.service` now runs with `XSP_LANE_A_RH_MCP=true` / `XSP_LANE_A_LIVE_EXITS=false` (sell window 09:30/09:35/09:45/10:00 ET, Mon–Fri). `dry_run_exit_reviews_via_mcp` reviews real option-UUID positions on exit alerts, skips synthetic `paper:` positions, and (account empty) runs a `phase1_canary_review` proof-of-life buy-to-open preview each run (`XSP_LANE_A_PHASE1_CANARY=true`). Verified: `rh_mcp_reviews` captured in `briefs/xsp-lane-a-monitor-latest.json` with `no_order_placed=True`. Auto-upgrades to real exit previews once a live position exists.
+- [ ] **BLOCKER**: Fund Agentic account before live trading (currently $500 — enough to validate, not size)
 - [ ] XSP chain + SPX instruments confirmed; Phase 0 reads functional
 - [ ] `robin_stocks` fallback still available for read parity comparison (`XSP_LANE_A_RH_POLL=false` currently)
 

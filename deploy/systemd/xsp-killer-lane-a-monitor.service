@@ -7,8 +7,11 @@ Type=oneshot
 WorkingDirectory=/opt/xsp-killer
 Environment=PYTHONPATH=/opt/xsp-killer
 Environment=XSP_LANE_A_RH_POLL=false
-Environment=XSP_LANE_A_RH_MCP=false
+# Phase 1: MCP reads + review-only exit dry-runs (incl. proof-of-life canary).
+# LIVE_EXITS stays false — no orders placed until operator GO + funding + soak.
+Environment=XSP_LANE_A_RH_MCP=true
 Environment=XSP_LANE_A_LIVE_EXITS=false
+Environment=XSP_LANE_A_PHASE1_CANARY=true
 EnvironmentFile=-/opt/xsp-killer/.env
 ExecStart=/opt/xsp-killer/scripts/lane_a_monitor_cron.sh
 StandardOutput=journal

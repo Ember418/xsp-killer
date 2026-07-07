@@ -5,12 +5,16 @@ from __future__ import annotations
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
+import xsp_killer.lane_a_monitor as lane_a_monitor
 from xsp_killer.lane_a_monitor import (
     ExitAlert,
+    LaneAPosition,
     LaneRules,
+    _real_option_id,
     classify_position,
     close_paper_positions_on_exit,
     compute_dte,
+    dry_run_exit_reviews_via_mcp,
     evaluate_exit_alerts,
     is_lane_a_contract,
     load_state,
@@ -461,7 +465,9 @@ def test_run_monitor_closes_paper_positions_with_spx_drift(tmp_path, monkeypatch
         }
     }
     save_state(tmp_path / "state.json", state)
-    monkeypatch.setattr("xsp_killer.lane_a_monitor.refresh_paper_marks", lambda rows: rows)
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_monitor.refresh_paper_marks", lambda rows: rows
+    )
     monkeypatch.setattr(
         "xsp_killer.lane_a_monitor.evaluate_exit_alerts",
         lambda pos, rules, now_et=None, ta_signal=None, suppress_morning_cut_dte=None: [
@@ -504,7 +510,9 @@ def test_run_monitor_opens_shadow_virtual_holds(tmp_path, monkeypatch):
         }
     }
     save_state(tmp_path / "state.json", state)
-    monkeypatch.setattr("xsp_killer.lane_a_monitor.refresh_paper_marks", lambda rows: rows)
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_monitor.refresh_paper_marks", lambda rows: rows
+    )
     report = run_monitor(
         state_path=tmp_path / "state.json",
         now_et=datetime(2026, 6, 16, 9, 45, tzinfo=ET),
@@ -575,3 +583,123 @@ def test_run_monitor_closes_shadow_virtual_holds_on_future_cycle(tmp_path, monke
     assert close_evt["event_type"] == "virtual_hold_closed"
     assert close_evt["bracket_id"] == "wide_sl_30"
     assert close_evt["exit_reason"] == "stop_loss"
+
+
+def _mk_position(position_id: str, mark: float | None = 4.5) -> LaneAPosition:
+    return LaneAPosition(
+        position_id=position_id,
+        chain_symbol="XSP",
+        option_type="call",
+        strike=600.0,
+        expiration_date=date(2026, 7, 10),
+        quantity=2.0,
+        average_price=5.0,
+        mark_price=mark,
+        dte=3,
+    )
+
+
+def _mk_alert(position_id: str) -> ExitAlert:
+    return ExitAlert(
+        position_id=position_id,
+        exit_reason="time_stop",
+        message="time stop",
+        pnl_usd=-10.0,
+        pnl_per_contract=-5.0,
+    )
+
+
+def test_real_option_id_distinguishes_paper_from_uuid():
+    uid = "11111111-1111-1111-1111-111111111111"
+    assert _real_option_id(_mk_position(uid)) == uid
+    assert _real_option_id(_mk_position("paper:XSP:2026-07-24:7550")) is None
+
+
+def test_dry_run_skips_paper_and_runs_canary(monkeypatch):
+    monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
+    monkeypatch.setenv("XSP_LANE_A_PHASE1_CANARY", "true")
+
+    class FakeAdapter:
+        def review_option_order(self, order):
+            raise AssertionError("paper position must not be reviewed live")
+
+        def phase1_canary_review(self, **kwargs):
+            return {
+                "instrument_id": "aaaa",
+                "expiration_date": "2026-07-10",
+                "strike_price": "600",
+                "review": {"data": {"ok": True}},
+            }
+
+    monkeypatch.setattr(lane_a_monitor, "RobinhoodMCPAdapter", FakeAdapter)
+    pid = "paper:XSP:2026-07-24:7550"
+    out = dry_run_exit_reviews_via_mcp([_mk_alert(pid)], [_mk_position(pid)])
+    assert any(r.get("skipped") for r in out)
+    canary = [r for r in out if r.get("canary")]
+    assert len(canary) == 1
+    assert canary[0]["no_order_placed"] is True
+
+
+def test_dry_run_reviews_real_position_no_canary(monkeypatch):
+    monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
+    seen: dict[str, object] = {}
+
+    class FakeAdapter:
+        def review_option_order(self, order):
+            seen["order"] = order
+            return {"data": {"ok": True}}
+
+        def phase1_canary_review(self, **kwargs):
+            raise AssertionError("canary must not run when a real position reviews")
+
+    monkeypatch.setattr(lane_a_monitor, "RobinhoodMCPAdapter", FakeAdapter)
+    uid = "11111111-1111-1111-1111-111111111111"
+    out = dry_run_exit_reviews_via_mcp([_mk_alert(uid)], [_mk_position(uid)])
+    order = seen["order"]
+    assert order["legs"][0]["option_id"] == uid
+    assert order["legs"][0]["side"] == "sell"
+    assert order["legs"][0]["position_effect"] == "close"
+    assert order["quantity"] == "2"
+    assert order["price"] == "4.50"
+    assert not any(r.get("canary") for r in out)
+    assert any("review" in r for r in out)
+
+
+def test_dry_run_canary_runs_with_no_alerts(monkeypatch):
+    monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
+    monkeypatch.setenv("XSP_LANE_A_PHASE1_CANARY", "true")
+
+    class FakeAdapter:
+        def review_option_order(self, order):
+            raise AssertionError("no positions to review")
+
+        def phase1_canary_review(self, **kwargs):
+            return {"instrument_id": "aaaa", "review": {"data": {"ok": True}}}
+
+    monkeypatch.setattr(lane_a_monitor, "RobinhoodMCPAdapter", FakeAdapter)
+    out = dry_run_exit_reviews_via_mcp([], [])
+    assert len(out) == 1
+    assert out[0]["canary"] is True
+
+
+def test_dry_run_disabled_when_mcp_off(monkeypatch):
+    monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: False)
+    assert dry_run_exit_reviews_via_mcp([], []) == []
+
+
+def test_dry_run_canary_disabled_by_flag(monkeypatch):
+    monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
+    monkeypatch.setenv("XSP_LANE_A_PHASE1_CANARY", "false")
+
+    class FakeAdapter:
+        def review_option_order(self, order):
+            raise AssertionError("paper must not review")
+
+        def phase1_canary_review(self, **kwargs):
+            raise AssertionError("canary disabled")
+
+    monkeypatch.setattr(lane_a_monitor, "RobinhoodMCPAdapter", FakeAdapter)
+    pid = "paper:XSP:2026-07-24:7550"
+    out = dry_run_exit_reviews_via_mcp([_mk_alert(pid)], [_mk_position(pid)])
+    assert any(r.get("skipped") for r in out)
+    assert not any(r.get("canary") for r in out)

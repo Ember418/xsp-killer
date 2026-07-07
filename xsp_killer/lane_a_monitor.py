@@ -9,6 +9,8 @@ from __future__ import annotations
 import fcntl
 import json
 import logging
+import os
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timezone
 from pathlib import Path
@@ -816,19 +818,64 @@ def load_open_paper_positions(state: dict[str, Any]) -> list[dict[str, Any]]:
     return refresh_paper_marks(open_rows)
 
 
+_OPTION_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _real_option_id(pos: "LaneAPosition") -> str | None:
+    """Return the Robinhood option UUID for a position, or None for paper.
+
+    Paper positions carry synthetic ids (``paper:XSP:...``) with SPX-scaled
+    strikes that do not map to a tradeable XSP instrument, so they cannot be
+    reviewed against the live endpoint.
+    """
+    pid = str(pos.position_id or "")
+    return pid if _OPTION_UUID_RE.match(pid) else None
+
+
+def _phase1_canary_enabled() -> bool:
+    return os.getenv("XSP_LANE_A_PHASE1_CANARY", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 def dry_run_exit_reviews_via_mcp(
     alerts: list["ExitAlert"],
     positions: list["LaneAPosition"],
 ) -> list[dict[str, Any]]:
-    """Phase 1: call review_option_order for exit alerts when MCP enabled (no place)."""
-    if not rh_mcp_enabled() or not alerts:
+    """Phase 1: call review_option_order for exit alerts when MCP enabled (no place).
+
+    Invariants:
+    - Review only: never calls place_option_order — no order is placed here.
+    - Paper synthetic positions (non-UUID ids) are skipped with a recorded
+      ``skipped`` note; only real Robinhood option UUIDs are reviewed live.
+    - When MCP is enabled but no real position is reviewable, a single
+      buy-to-open proof-of-life canary review runs (gated by
+      ``XSP_LANE_A_PHASE1_CANARY``) so the token/endpoint/schema stay verified.
+    """
+    if not rh_mcp_enabled():
         return []
     pos_by_id = {p.position_id: p for p in positions}
     adapter = RobinhoodMCPAdapter()
     reviews: list[dict[str, Any]] = []
+    reviewable = 0
     for alert in alerts:
         pos = pos_by_id.get(alert.position_id)
         if pos is None:
+            continue
+        option_id = _real_option_id(pos)
+        if option_id is None:
+            reviews.append(
+                {
+                    "position_id": alert.position_id,
+                    "exit_reason": alert.exit_reason,
+                    "skipped": "paper synthetic position — no live instrument",
+                }
+            )
             continue
         # Real Robinhood MCP schema: legs[] + position_effect + top-level
         # quantity/price. Sell-to-close a long at a limit near mark; fall back
@@ -837,7 +884,7 @@ def dry_run_exit_reviews_via_mcp(
         order: dict[str, Any] = {
             "legs": [
                 {
-                    "option_id": pos.position_id,
+                    "option_id": option_id,
                     "side": "sell",
                     "position_effect": "close",
                     "ratio_quantity": 1,
@@ -860,6 +907,7 @@ def dry_run_exit_reviews_via_mcp(
                     "review": result,
                 }
             )
+            reviewable += 1
         except (RhMcpError, Exception) as exc:
             reviews.append(
                 {
@@ -868,6 +916,12 @@ def dry_run_exit_reviews_via_mcp(
                     "error": str(exc),
                 }
             )
+    if reviewable == 0 and _phase1_canary_enabled():
+        try:
+            canary = adapter.phase1_canary_review()
+            reviews.append({"canary": True, "no_order_placed": True, **canary})
+        except Exception as exc:
+            reviews.append({"canary": True, "error": str(exc)})
     return reviews
 
 

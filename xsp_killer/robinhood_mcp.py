@@ -660,6 +660,78 @@ class RobinhoodMCPAdapter:
             return chains[0]
         return {}
 
+    def list_option_instruments(self, chain_symbol: str) -> list[dict[str, Any]]:
+        """Flat list of option instrument dicts for ``chain_symbol``."""
+        wrapped = self.call_tool(
+            "get_option_instruments",
+            {"chain_symbol": str(chain_symbol).upper()},
+        )
+        raw = unwrap_tool_result(wrapped)
+        out: list[dict[str, Any]] = []
+
+        def _collect(node: Any) -> None:
+            if isinstance(node, dict):
+                if node.get("id") and node.get("strike_price") and node.get("type"):
+                    out.append(node)
+                for value in node.values():
+                    _collect(value)
+            elif isinstance(node, list):
+                for item in node:
+                    _collect(item)
+
+        _collect(raw)
+        return out
+
+    def phase1_canary_review(
+        self, *, underlying: str = "XSP", option_type: str = "call"
+    ) -> dict[str, Any]:
+        """Live ``review_option_order`` proof-of-life — never places an order.
+
+        Previews a 1-contract buy-to-open on the soonest-expiry tradable
+        option at a far-below-market limit. Validates the OAuth token, the MCP
+        endpoint and the ``legs[]`` order schema continuously while the account
+        holds no positions to review. No order is placed (review only).
+        """
+        instruments = self.list_option_instruments(underlying)
+        tradable = [
+            it
+            for it in instruments
+            if str(it.get("type")) == option_type
+            and str(it.get("tradability")) == "tradable"
+        ]
+        tradable.sort(
+            key=lambda it: (
+                str(it.get("expiration_date") or "9999-12-31"),
+                float(it.get("strike_price") or 0.0),
+            )
+        )
+        if not tradable:
+            raise RhMcpError(
+                f"rh_mcp phase1 canary: no tradable {underlying} {option_type}"
+            )
+        inst = tradable[0]
+        order = {
+            "legs": [
+                {
+                    "option_id": inst["id"],
+                    "side": "buy",
+                    "position_effect": "open",
+                    "ratio_quantity": 1,
+                }
+            ],
+            "type": "limit",
+            "quantity": "1",
+            "price": "0.05",
+            "time_in_force": "gfd",
+        }
+        review = self.review_option_order(order)
+        return {
+            "instrument_id": inst["id"],
+            "expiration_date": inst.get("expiration_date"),
+            "strike_price": inst.get("strike_price"),
+            "review": review,
+        }
+
     def _inject_account(self, order: dict[str, Any]) -> dict[str, Any]:
         patched = dict(order)
         if self.config.agentic_account_id and not (

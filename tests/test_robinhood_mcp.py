@@ -331,6 +331,63 @@ def test_ratio_quantity_counts_toward_max_contracts(tmp_path, monkeypatch):
     assert deny["invariant"] == "I5"
 
 
+def test_phase1_canary_review_previews_without_placing(tmp_path):
+    token = tmp_path / "token.json"
+    token.write_text(json.dumps({"access_token": "t"}), encoding="utf-8")
+    cfg = RhMcpConfig(
+        token_path=token,
+        audit_log=tmp_path / "audit.jsonl",
+        agentic_account_id="agentic-1",
+    )
+    calls: list[str] = []
+
+    def fake_http(url, body, headers):
+        payload = json.loads(body.decode("utf-8"))
+        name = payload["params"]["name"]
+        calls.append(name)
+        if name == "get_option_instruments":
+            return {
+                "result": {
+                    "structuredContent": {
+                        "data": {
+                            "results": [
+                                {
+                                    "id": "11111111-1111-1111-1111-111111111111",
+                                    "type": "call",
+                                    "tradability": "tradable",
+                                    "strike_price": "610",
+                                    "expiration_date": "2026-07-10",
+                                },
+                                {
+                                    "id": "22222222-2222-2222-2222-222222222222",
+                                    "type": "call",
+                                    "tradability": "tradable",
+                                    "strike_price": "605",
+                                    "expiration_date": "2026-07-08",
+                                },
+                            ]
+                        }
+                    }
+                }
+            }
+        if name == "review_option_order":
+            args = payload["params"]["arguments"]
+            return {
+                "result": {
+                    "structuredContent": {"data": {"ok": True, "legs": args["legs"]}}
+                }
+            }
+        return {"result": {"structuredContent": {}}}
+
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=fake_http)
+    out = adapter.phase1_canary_review()
+    assert "review_option_order" in calls
+    assert "place_option_order" not in calls
+    # Soonest expiry wins.
+    assert out["expiration_date"] == "2026-07-08"
+    assert out["instrument_id"] == "22222222-2222-2222-2222-222222222222"
+
+
 def test_rh_mcp_config_loads_yaml(tmp_path, monkeypatch):
     monkeypatch.delenv("RH_AGENTIC_ACCOUNT_ID", raising=False)
     yaml_path = tmp_path / "rh_mcp.yaml"
