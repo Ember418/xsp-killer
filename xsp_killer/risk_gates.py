@@ -137,9 +137,7 @@ def entry_allowed_by_risk(
     rules_path: Path | None = None,
     premium_scale: float | None = None,
 ) -> tuple[bool, str | None]:
-    snap = risk_gate_snapshot(
-        state, rules_path=rules_path, premium_scale=premium_scale
-    )
+    snap = risk_gate_snapshot(state, rules_path=rules_path, premium_scale=premium_scale)
     if not snap.get("enabled", True):
         return True, None
     if snap.get("allowed"):

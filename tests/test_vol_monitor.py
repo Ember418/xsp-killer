@@ -95,9 +95,10 @@ def test_session_premium_scale_halve_when_enforced(tmp_path):
         encoding="utf-8",
     )
     vol_shadow = {"shadow_premium_scale_multiplier": 0.5}
-    assert session_premium_scale(
-        base_scale=10.0, vol_shadow=vol_shadow, rules_path=rules
-    ) == 5.0
+    assert (
+        session_premium_scale(base_scale=10.0, vol_shadow=vol_shadow, rules_path=rules)
+        == 5.0
+    )
 
 
 def test_session_premium_scale_unchanged_when_not_enforced(tmp_path):
@@ -107,9 +108,10 @@ def test_session_premium_scale_unchanged_when_not_enforced(tmp_path):
         encoding="utf-8",
     )
     vol_shadow = {"shadow_premium_scale_multiplier": 0.5}
-    assert session_premium_scale(
-        base_scale=10.0, vol_shadow=vol_shadow, rules_path=rules
-    ) == 10.0
+    assert (
+        session_premium_scale(base_scale=10.0, vol_shadow=vol_shadow, rules_path=rules)
+        == 10.0
+    )
 
 
 def test_vol_shadow_config_from_rules_yaml(tmp_path, monkeypatch):
