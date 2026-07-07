@@ -60,7 +60,7 @@ variants:
         require_upper_bb_for_take_profit: false
 
   v2_35dte_atm:
-    active: true
+    active: false  # pruned 2026-07-07: net-negative in soak (0% win, long-DTE theta)
     description: "35 DTE target, ATM — mid-range theta"
     overrides:
       logging:
@@ -73,7 +73,7 @@ variants:
         require_upper_bb_for_take_profit: false
 
   v2_45dte_atm:
-    active: true
+    active: false  # pruned 2026-07-07: net-negative in soak (33% win, -$457/1ct)
     description: "45 DTE target, ATM — compare vs OTM at same DTE"
     overrides:
       logging:
@@ -86,7 +86,7 @@ variants:
         require_upper_bb_for_take_profit: false
 
   v2_60dte_atm:
-    active: true
+    active: false  # pruned 2026-07-07: net-negative in soak (33% win, -$281/1ct)
     description: "Max DTE (60), ATM — slowest theta"
     overrides:
       logging:
@@ -101,7 +101,7 @@ variants:
 
   # --- Strike axis (28 DTE) ---
   v2_28dte_otm:
-    active: true
+    active: false  # pruned 2026-07-07: net-negative in soak (40% win, OTM decay)
     description: "28 DTE, 1-step OTM — cheaper premium vs ATM"
     overrides:
       logging:
@@ -187,7 +187,7 @@ variants:
 
   # --- OTM far DTE ---
   v2_45dte_otm:
-    active: true
+    active: false  # pruned 2026-07-07: worst in soak (0% win, -$845/1ct)
     description: "45 DTE OTM, 25% SL / 15% TP — cheap convexity bet"
     overrides:
       logging:
