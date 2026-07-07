@@ -1,4 +1,11 @@
-"""Paper-trading risk gates — daily loss cap before new entries."""
+"""Paper-trading risk gates — daily loss cap before new entries.
+
+Invariants:
+- Daily paper loss cap is scale-aware via ``load_premium_scale`` (effective_cap = cap × scale).
+- Gates paper entries only — never places or routes live Robinhood orders.
+- Consecutive losing paper exits halt new entries (streak ≥ max_consecutive_losses).
+- Risk snapshot must include scale in cap-hit reason strings for soak diagnostics.
+"""
 
 from __future__ import annotations
 

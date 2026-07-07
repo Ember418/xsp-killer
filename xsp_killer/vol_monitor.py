@@ -3,6 +3,12 @@
 GREEN/YELLOW/RED macro regime comes from ``intel:playbook_snapshot`` (not VIX
 spike = buy). Moontower K147 (Jul 2026): naive VIX-spike sizing is shadow-only
 here — halve-size signal when VIX ≥2× 20d median without downtrend confirm.
+
+Invariants:
+- Shadow-only: ``shadow_would_block`` and halve-size signals never block entry unless ``enforcing=True``.
+- VIX spike halve (``shadow_premium_scale_multiplier``) is observability/telemetry — not entry enforcement.
+- Macro GREEN/YELLOW/RED regime gating is separate (``playbook_snapshot`` / ``regime_gate_allows``).
+- ``ShadowVolGate.enforcing`` defaults to False; prod path must not flip it without explicit review.
 """
 
 from __future__ import annotations
@@ -98,7 +104,9 @@ def _fetch_vix_closes(lookback_days: int) -> list[float]:
         return []
 
 
-def spy_realized_vol_annualized(*, lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> float | None:
+def spy_realized_vol_annualized(
+    *, lookback_days: int = DEFAULT_LOOKBACK_DAYS
+) -> float | None:
     """Close-to-close log-return realized vol, annualized."""
     closes = _fetch_spy_closes(lookback_days)
     if len(closes) < lookback_days + 1:
@@ -141,26 +149,19 @@ def evaluate_vix_spike_shadow(
     ratio = round(current / median_vix, 3) if median_vix > 0 else None
     trend_ref_idx = -(trend_confirm_days + 1)
     trend_ref = closes[trend_ref_idx] if len(closes) > trend_confirm_days else None
-    trending_down = (
-        bool(current < trend_ref) if trend_ref is not None else None
-    )
+    trending_down = bool(current < trend_ref) if trend_ref is not None else None
 
     would_halve = (
-        ratio is not None
-        and ratio >= spike_ratio_halve
-        and trending_down is not True
+        ratio is not None and ratio >= spike_ratio_halve and trending_down is not True
     )
     if ratio is None:
         vix_reason = "vix_median_unavailable"
     elif would_halve:
         vix_reason = (
-            f"vix_spike_{ratio:.2f}x_gte_{spike_ratio_halve:.2f}x"
-            "_no_downtrend_confirm"
+            f"vix_spike_{ratio:.2f}x_gte_{spike_ratio_halve:.2f}x_no_downtrend_confirm"
         )
     elif ratio >= spike_ratio_halve and trending_down:
-        vix_reason = (
-            f"vix_spike_{ratio:.2f}x_with_downtrend_confirm_ok"
-        )
+        vix_reason = f"vix_spike_{ratio:.2f}x_with_downtrend_confirm_ok"
     else:
         vix_reason = f"vix_spike_{ratio:.2f}x_below_halve_threshold"
 
@@ -184,9 +185,7 @@ def evaluate_shadow_vol_gate(
     """Shadow IV/VIX gates — records whether entry *would* block or halve size."""
     cfg = _load_vol_shadow_config(rules_path)
     lb = int(lookback_days if lookback_days is not None else cfg["lookback_days"])
-    threshold = float(
-        rv_threshold if rv_threshold is not None else cfg["rv_threshold"]
-    )
+    threshold = float(rv_threshold if rv_threshold is not None else cfg["rv_threshold"])
 
     rv = spy_realized_vol_annualized(lookback_days=lb)
     if rv is None:

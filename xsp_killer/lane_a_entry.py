@@ -1,6 +1,12 @@
 """XSP Lane A paper entry — automated log-only entries in 15:45–16:00 ET window.
 
 No Robinhood orders. Uses SPY option chain as XSP premium proxy for paper marks.
+
+Invariants:
+- Paper log only (``paper_mode: automated_log_only``) — no Robinhood order placement from this module.
+- At most one paper entry per ET session (``already_entered_today`` dedupe unless ``force``).
+- Macro regime gate (``regime_gate_allows``) must pass before any paper entry is recorded.
+- Entry window is 15:45–16:00 ET RTH; skips outside window are logged, not silently dropped.
 """
 
 from __future__ import annotations

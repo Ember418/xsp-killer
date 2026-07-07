@@ -182,3 +182,17 @@ Jul 6 Moontower VIX steal brief + live ops confirmation from Monday close.
 | Live scale-aware risk gate on GREEN enter (Jul 6) | ✅ observed (`effective_cap_usd=5000`) |
 
 **Note:** Macro GREEN/YELLOW/RED remains `playbook_snapshot` — not naive VIX-spike = add exposure.
+
+---
+
+## Implementation addendum (2026-07-07)
+
+K138 substrate constraints (Jul 7 brief): module-level `Invariants:` docstrings + CI gate.
+
+| Item | Status |
+|---|---|
+| `Invariants:` blocks in `risk_gates`, `vol_monitor`, `robinhood_mcp`, `health_soak`, `lane_a_entry` | ✅ |
+| CI `scripts/xsp_docs.py check-invariants` step after Bandit | ✅ |
+| Ruff scope: `vol_monitor.py`, `test_vol_monitor.py` | ✅ |
+
+**Invariant themes:** scale-aware paper loss cap + streak halt; vol shadow-only unless enforcing; RH MCP disabled-by-default + I2/I7 + LOW-confidence read block; health soak strict anomaly taxonomy + weekend-aware stale; lane A paper-log-only + session dedupe + regime gate.
