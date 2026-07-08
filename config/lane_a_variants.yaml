@@ -268,7 +268,7 @@ variants:
         stop_loss_pct: 0.50
         require_upper_bb_for_take_profit: false
         swing_hold: true
-        max_hold_dte: 1
+        max_hold_dte: 2
 
   # Dip-swing grid — aggressive paper exploration of the levers that matter
   # (runway/DTE, profit target, stop, strike, entry looseness). All share the
@@ -299,7 +299,7 @@ variants:
         stop_loss_pct: 0.50
         require_upper_bb_for_take_profit: false
         swing_hold: true
-        max_hold_dte: 1
+        max_hold_dte: 2
 
   # Max runway / low theta: ~30 DTE ATM.
   v2_dip_swing_30dte:
@@ -326,7 +326,7 @@ variants:
         stop_loss_pct: 0.50
         require_upper_bb_for_take_profit: false
         swing_hold: true
-        max_hold_dte: 1
+        max_hold_dte: 2
 
   # Fast scalp: bank quick pops at +25%, higher turnover.
   v2_dip_swing_14dte_tp25:
@@ -341,7 +341,7 @@ variants:
         regime_gate: DIP_BOUNCE
         prior_day_spy_positive: false
       paper_entry:
-        max_open_positions: 4
+        max_open_positions: 3
       ta:
         entry:
           mode: bb_bounce
@@ -352,7 +352,7 @@ variants:
         stop_loss_pct: 0.50
         require_upper_bb_for_take_profit: false
         swing_hold: true
-        max_hold_dte: 1
+        max_hold_dte: 2
 
   # Let winners run: +60% target, wider -60% stop.
   v2_dip_swing_14dte_tp60:
@@ -375,10 +375,10 @@ variants:
           require_vwap_reclaim: true
       exit:
         take_profit_pct: 0.60
-        stop_loss_pct: 0.60
+        stop_loss_pct: 0.50
         require_upper_bb_for_take_profit: false
         swing_hold: true
-        max_hold_dte: 1
+        max_hold_dte: 2
 
   # Looser entry: no VWAP-reclaim requirement -> more dip trades, more sample.
   v2_dip_swing_14dte_loose:
@@ -393,7 +393,7 @@ variants:
         regime_gate: DIP_BOUNCE
         prior_day_spy_positive: false
       paper_entry:
-        max_open_positions: 4
+        max_open_positions: 3
       ta:
         entry:
           mode: bb_bounce
@@ -404,7 +404,7 @@ variants:
         stop_loss_pct: 0.50
         require_upper_bb_for_take_profit: false
         swing_hold: true
-        max_hold_dte: 1
+        max_hold_dte: 2
 
   # Cheap leverage: one strike OTM, ~21 DTE, wider targets for the bigger swing.
   v2_dip_swing_21dte_otm:
@@ -431,5 +431,37 @@ variants:
         stop_loss_pct: 0.60
         require_upper_bb_for_take_profit: false
         swing_hold: true
-        max_hold_dte: 1
+        max_hold_dte: 2
+
+  # Debit-spread prototype (audit Phase D / fusion): same dip-bounce entry as the
+  # 14dte flagship, but logs debit_spread_shadow economics (net debit, capped
+  # payoff, est. theta/vega drag reduction vs the naked call) on every entry.
+  # The traded position is still the naked long call today — the shadow measures
+  # whether the spread is worth wiring into the full multi-leg lifecycle.
+  v2_dip_swing_14dte_spread:
+    active: true
+    description: "Dip-swing ~14 DTE ATM + debit-spread shadow (2-strike width); measures spread economics"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_dip_swing_14dte_spread
+      entry:
+        dte_pick: min
+        strike_pick: atm_only
+        regime_gate: DIP_BOUNCE
+        prior_day_spy_positive: false
+        debit_spread_shadow: true
+        debit_spread_width_strikes: 2
+      paper_entry:
+        max_open_positions: 3
+      ta:
+        entry:
+          mode: bb_bounce
+          intraday_enabled: true
+          require_vwap_reclaim: true
+      exit:
+        take_profit_pct: 0.40
+        stop_loss_pct: 0.50
+        require_upper_bb_for_take_profit: false
+        swing_hold: true
+        max_hold_dte: 2
 

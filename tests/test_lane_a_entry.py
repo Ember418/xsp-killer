@@ -497,10 +497,16 @@ def _mk_decision() -> EntryDecision:
     )
 
 
-_LANE = types.SimpleNamespace(dte_min=14, dte_max=60)
+_LANE = types.SimpleNamespace(
+    dte_min=14,
+    dte_max=60,
+    stop_loss_pct=0.20,
+    logic_version="xsp_lane_a_v2",
+)
 _ENTRY = types.SimpleNamespace(
     chain_symbol="XSP",
     dte_pick="min",
+    dte_target=None,
     strike_max_steps_from_atm=1,
     strike_pick="cheapest_near_atm",
     quantity=1,
@@ -546,6 +552,13 @@ def _patch_mcp(monkeypatch, *, enabled, entries, kill, adapter):
     monkeypatch.setattr(rhm, "RobinhoodMCPAdapter", lambda *a, **k: adapter)
 
 
+def _patch_green_regime(monkeypatch):
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.read_regime_detail",
+        lambda: ("GREEN", True, None, None),
+    )
+
+
 def test_live_entry_ref_id_is_deterministic():
     a = _live_entry_ref_id("inst-xyz", "2026-07-07")
     b = _live_entry_ref_id("inst-xyz", "2026-07-07")
@@ -583,7 +596,56 @@ def test_live_entry_blocked_by_kill_switch(monkeypatch):
     assert "kill switch" in d.live_order["reason"]
 
 
+def test_live_entry_skips_when_variant_allowlist_unset(monkeypatch):
+    monkeypatch.delenv("XSP_LANE_A_LIVE_VARIANT_ID", raising=False)
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order == {
+        "placed": False,
+        "reason": "variant not in live allowlist",
+    }
+    assert adapter.placed is None
+
+
+def test_live_entry_skips_when_variant_allowlist_differs(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "different_variant")
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert d.live_order["reason"] == "variant not in live allowlist"
+    assert adapter.placed is None
+
+
+def test_live_entry_skips_red_regime(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+    monkeypatch.setattr(
+        "xsp_killer.lane_a_entry.read_regime_detail",
+        lambda: ("RED", False, None, None),
+    )
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order == {
+        "placed": False,
+        "reason": "live skipped: RED regime (shadow only)",
+    }
+    assert adapter.placed is None
+
+
 def test_live_entry_fails_safe_on_insufficient_buying_power(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+    _patch_green_regime(monkeypatch)
     d = _mk_decision()
     adapter = _FakeEntryAdapter(ask=2.0, buying_power=50.0)  # cost 200 > 50
     _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
@@ -595,7 +657,24 @@ def test_live_entry_fails_safe_on_insufficient_buying_power(monkeypatch):
     assert adapter.placed is None
 
 
+def test_live_entry_skips_when_est_max_loss_exceeds_cap(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+    _patch_green_regime(monkeypatch)
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=1000.0, buying_power=1_000_000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert "est max loss" in d.live_order["reason"]
+    assert d.live_order["est_max_loss"] == 20000.0
+    assert adapter.placed is None
+
+
 def test_live_entry_places_when_authorized_and_funded(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+    _patch_green_regime(monkeypatch)
     d = _mk_decision()
     adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)  # cost 100 <= 1000
     _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
@@ -605,3 +684,42 @@ def test_live_entry_places_when_authorized_and_funded(monkeypatch):
     assert d.live_order["placed"] is True
     assert adapter.placed["instrument_id"] == "inst-xyz"
     assert adapter.placed["ref_id"] == _live_entry_ref_id("inst-xyz", "2026-07-07")
+    assert d.live_order["reviewer"]["decision"] == "approve"
+
+
+class _WideSpreadAdapter(_FakeEntryAdapter):
+    def select_entry_contract(self, **kw):
+        c = super().select_entry_contract(**kw)
+        c["bid"] = 0.5  # ask 1.0 vs bid 0.5 -> ~67% spread
+        return c
+
+
+def test_live_entry_vetoed_by_reviewer_on_wide_spread(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+    monkeypatch.delenv("XSP_LANE_A_LIVE_REVIEWER", raising=False)
+    _patch_green_regime(monkeypatch)
+    d = _mk_decision()
+    adapter = _WideSpreadAdapter(ask=1.0, buying_power=1000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert "spread" in d.live_order["reason"]
+    assert d.live_order["reviewer"]["decision"] == "veto"
+    assert adapter.placed is None
+
+
+def test_live_entry_reviewer_can_be_disabled(monkeypatch):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+    monkeypatch.setenv("XSP_LANE_A_LIVE_REVIEWER", "false")
+    _patch_green_regime(monkeypatch)
+    d = _mk_decision()
+    adapter = _WideSpreadAdapter(ask=1.0, buying_power=1000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    # Reviewer off -> the wide-spread order is no longer vetoed by it.
+    assert d.live_order["placed"] is True
+    assert d.live_order["reviewer"] is None

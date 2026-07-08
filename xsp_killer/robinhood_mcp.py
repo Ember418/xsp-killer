@@ -872,6 +872,7 @@ class RobinhoodMCPAdapter:
         dte_min: int = 14,
         dte_max: int = 60,
         dte_pick: str = "min",
+        dte_target: int | None = None,
         atm_steps: int = 1,
         strike_pick: str = "cheapest_near_atm",
         today: date | None = None,
@@ -898,11 +899,19 @@ class RobinhoodMCPAdapter:
                 f"rh_mcp entry: no {underlying} expiration in DTE [{dte_min},{dte_max}]"
             )
         dated.sort()
-        dte, expiration = dated[0] if dte_pick == "min" else dated[-1]
+        dte_mode = (dte_pick or "min").strip().lower()
+        if dte_mode == "max":
+            dte, expiration = dated[-1]
+        elif dte_mode == "target" and dte_target is not None:
+            dte, expiration = min(dated, key=lambda x: abs(x[0] - dte_target))
+        else:
+            dte, expiration = dated[0]
         level = self.index_level(underlying)
         if not level:
             raise RhMcpError(f"rh_mcp entry: no index level for {underlying}")
         atm = round(level / XSP_STRIKE_STEP) * XSP_STRIKE_STEP
+        strike_mode = (strike_pick or "cheapest_near_atm").strip().lower()
+        otm_target = atm + XSP_STRIKE_STEP * max(1, int(atm_steps))
         strikes = [atm + XSP_STRIKE_STEP * k for k in range(-atm_steps, atm_steps + 1)]
         candidates: list[dict[str, Any]] = []
         for strike in strikes:
@@ -935,8 +944,10 @@ class RobinhoodMCPAdapter:
             raise RhMcpError(
                 f"rh_mcp entry: no quotable {underlying} {option_type} near {atm}"
             )
-        if strike_pick == "cheapest_near_atm":
+        if strike_mode == "cheapest_near_atm":
             return min(enriched, key=lambda c: c["ask"])
+        if strike_mode == "otm_one" and option_type.strip().lower() == "call":
+            return min(enriched, key=lambda c: abs((c["strike"] or 0.0) - otm_target))
         return min(enriched, key=lambda c: abs((c["strike"] or 0.0) - atm))
 
     def buy_to_open(

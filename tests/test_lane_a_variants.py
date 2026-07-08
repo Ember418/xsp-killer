@@ -13,9 +13,9 @@ from xsp_killer.lane_a_variants import (
     clear_pnl_epoch,
     load_variant_specs,
     merged_rules_path,
+    reset_soak,
     resync_epoch_briefs,
     resync_epoch_briefs_if_needed,
-    reset_soak,
     run_variant_entry,
 )
 
@@ -744,10 +744,7 @@ def test_build_scoreboard_ranking_reliable_only_after_multi_variant_samples(tmp_
                             {"evaluated_at": ts, "entered": True}
                             for ts in weekday_sessions
                         ],
-                        "paper_events": [
-                            {"paper_pnl_usd": 10.0},
-                            {"paper_pnl_usd": 14.0},
-                        ],
+                        "paper_events": [{"paper_pnl_usd": 12.0} for _ in range(20)],
                         "paper_positions": {},
                     },
                     "v2_beta": {
@@ -755,10 +752,7 @@ def test_build_scoreboard_ranking_reliable_only_after_multi_variant_samples(tmp_
                             {"evaluated_at": ts, "entered": True}
                             for ts in weekday_sessions
                         ],
-                        "paper_events": [
-                            {"paper_pnl_usd": 8.0},
-                            {"paper_pnl_usd": 10.0},
-                        ],
+                        "paper_events": [{"paper_pnl_usd": 9.0} for _ in range(20)],
                         "paper_positions": {},
                     },
                 }
@@ -1289,25 +1283,33 @@ def test_dip_swing_cluster_isolates_and_ranks():
             "variant_id": "v2_close_window_baseline",
             "avg_pnl_per_trade_usd": 5.0,
             "trades_closed": 10,
+            "sessions_evaluated": 22,
             "low_sample": False,
         },
         {
             "variant_id": "v2_dip_swing_14dte",
             "avg_pnl_per_trade_usd": 12.0,
-            "trades_closed": 4,
+            "trades_closed": 25,
+            "sessions_evaluated": 22,
             "low_sample": False,
+            "edge_confirmed": True,
         },
         {
             "variant_id": "v2_dip_swing_21dte",
             "avg_pnl_per_trade_usd": 30.0,
             "trades_closed": 1,
+            "sessions_evaluated": 22,
             "low_sample": True,
+            "edge_confirmed": False,
         },
         {
             "variant_id": "v2_dip_swing_30dte",
             "avg_pnl_per_trade_usd": 3.0,
-            "trades_closed": 6,
+            "trades_closed": 22,
+            "sessions_evaluated": 22,
             "low_sample": False,
+            # sample gate cleared but no statistical separation -> not a leader.
+            "edge_confirmed": False,
         },
     ]
     cluster = _build_dip_swing_cluster(rows)
@@ -1315,9 +1317,40 @@ def test_dip_swing_cluster_isolates_and_ranks():
     # Only dip-swing members, close-window variant excluded.
     assert ids == ["v2_dip_swing_21dte", "v2_dip_swing_14dte", "v2_dip_swing_30dte"]
     assert cluster["count"] == 3
-    assert cluster["total_trades_closed"] == 11
-    # Leader ignores the high-but-low-sample variant; picks best reliable one.
+    assert cluster["total_trades_closed"] == 48
+    # Leader needs statistical separation (edge_confirmed): the high-avg 21dte is
+    # low_sample and 30dte lacks a confirmed edge, so 14dte wins.
     assert cluster["leader"] == "v2_dip_swing_14dte"
+    assert "edge_confirmed=true" in cluster["leader_gate"]
+
+
+def test_wilson_lower_bound_is_small_n_honest():
+    from xsp_killer.lane_a_variants import wilson_lower_bound
+
+    assert wilson_lower_bound(0, 0) is None
+    # A perfect but tiny record is heavily discounted.
+    lb_5 = wilson_lower_bound(5, 5)
+    lb_20 = wilson_lower_bound(20, 20)
+    assert lb_5 is not None and lb_20 is not None
+    assert 0.0 <= lb_5 < lb_20 <= 1.0
+    # More wins at fixed n raises the bound; it never exceeds the point estimate.
+    assert wilson_lower_bound(15, 20) < wilson_lower_bound(18, 20) <= 18 / 20
+
+
+def test_variant_breakeven_win_rate_from_tp_sl(tmp_path):
+    from xsp_killer.lane_a_variants import _variant_breakeven_win_rate
+
+    rules = tmp_path / "rules.yaml"
+    rules.write_text(
+        "exit:\n  take_profit_pct: 0.40\n  stop_loss_pct: 0.50\n",
+        encoding="utf-8",
+    )
+    be = _variant_breakeven_win_rate(rules)
+    assert be is not None
+    assert round(be, 4) == round(0.50 / 0.90, 4)
+    missing = tmp_path / "no_exit.yaml"
+    missing.write_text("entry: {}\n", encoding="utf-8")
+    assert _variant_breakeven_win_rate(missing) is None
 
 
 def test_dip_swing_cluster_leader_none_without_reliable_sample():
@@ -1327,10 +1360,90 @@ def test_dip_swing_cluster_leader_none_without_reliable_sample():
         {
             "variant_id": "v2_dip_swing_14dte",
             "avg_pnl_per_trade_usd": None,
-            "trades_closed": 0,
+            "trades_closed": 5,
+            "sessions_evaluated": 22,
             "low_sample": True,
         },
     ]
     cluster = _build_dip_swing_cluster(rows)
     assert cluster["count"] == 1
     assert cluster["leader"] is None
+
+
+def test_dip_swing_cluster_leader_none_when_sessions_met_but_trades_under_gate(
+    tmp_path,
+):
+    """A dip-swing member with >=20 sessions but <20 trades is low_sample and
+    yields leader=None end-to-end through build_scoreboard."""
+    _write_variants_config(
+        tmp_path,
+        {
+            "v2_dip_swing_14dte": {
+                "active": True,
+                "description": "dip-swing sessions-met trades-short",
+                "overrides": {},
+            }
+        },
+    )
+    weekday_sessions = [
+        f"2026-06-{day:02d}T19:45:00+00:00"
+        for day in range(1, 29)
+        if datetime(2026, 6, day, tzinfo=timezone.utc).weekday() < 5
+    ][:22]
+    state = tmp_path / "variants-state.json"
+    state.write_text(
+        json.dumps(
+            {
+                "variants": {
+                    "v2_dip_swing_14dte": {
+                        "entry_log": [
+                            {"evaluated_at": ts, "entered": True}
+                            for ts in weekday_sessions
+                        ],
+                        "paper_events": [
+                            {"paper_pnl_usd": 10.0},
+                            {"paper_pnl_usd": -5.0},
+                            {"paper_pnl_usd": 8.0},
+                            {"paper_pnl_usd": -3.0},
+                            {"paper_pnl_usd": 6.0},
+                        ],
+                        "paper_positions": {},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    payload = json.loads(
+        build_scoreboard(
+            config_path=tmp_path / "lane_a_variants.yaml",
+            state_path=state,
+            baseline_state_path=tmp_path / "missing-baseline.json",
+            out_path=tmp_path / "scoreboard-dip-swing.json",
+        ).read_text(encoding="utf-8")
+    )
+    row = next(
+        r for r in payload["shadow_variants"] if r["variant_id"] == "v2_dip_swing_14dte"
+    )
+    assert row["sessions_evaluated"] == 20
+    assert row["trades_closed"] == 5
+    # >=20 sessions but <20 trades -> still low_sample under the tightened gate.
+    assert row["low_sample"] is True
+    # Dual-log: real-dollar (1x) approximation = paper_$ / premium_scale.
+    scale = row["premium_scale"]
+    assert scale and scale > 0
+    assert row["realized_pnl_usd"] == 16.0
+    assert row["realized_pnl_usd_1x_approx"] == round(16.0 / scale, 2)
+    assert row["avg_pnl_per_trade_usd_1x_approx"] == round(
+        row["avg_pnl_per_trade_usd"] / scale, 2
+    )
+    # Statistical-separation fields are present; low-sample => no confirmed edge.
+    assert row["edge_confirmed"] is False
+    assert row["win_rate_wilson_lb_pct"] is not None
+    assert row["breakeven_win_rate_pct"] is not None
+    cluster = payload["dip_swing_cluster"]
+    assert cluster["count"] == 1
+    assert cluster["leader"] is None
+    assert "edge_confirmed=true" in cluster["leader_gate"]
+    assert "realized_pnl_usd_1x_approx" in cluster["variants"][0]
+    assert "edge_confirmed" in cluster["variants"][0]

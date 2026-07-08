@@ -9,6 +9,8 @@ from xsp_killer.vol_monitor import (
     evaluate_vix_spike_shadow,
     session_premium_scale,
     spy_realized_vol_annualized,
+    vix_spike_entry_veto,
+    vix_spike_veto_enabled,
 )
 
 
@@ -143,3 +145,41 @@ def test_vol_shadow_config_from_rules_yaml(tmp_path, monkeypatch):
     )
     gate = evaluate_shadow_vol_gate(rules_path=Path(rules))
     assert gate.rv_threshold == 0.35
+
+
+def _veto_rules(tmp_path, enabled: bool) -> Path:
+    rules = tmp_path / "rules.yaml"
+    rules.write_text(
+        f"vol_shadow:\n  veto_entry_on_vix_spike: {str(enabled).lower()}\n",
+        encoding="utf-8",
+    )
+    return rules
+
+
+def test_vix_spike_veto_disabled_by_default(tmp_path):
+    rules = tmp_path / "rules.yaml"
+    rules.write_text("vol_shadow: {}\n", encoding="utf-8")
+    assert vix_spike_veto_enabled(rules_path=rules) is False
+    spiking = {"shadow_would_halve_size": True, "vix_spike_ratio": 2.4}
+    assert vix_spike_entry_veto(spiking, rules_path=rules) is None
+
+
+def test_vix_spike_veto_blocks_when_enabled_and_spiking(tmp_path):
+    rules = _veto_rules(tmp_path, True)
+    assert vix_spike_veto_enabled(rules_path=rules) is True
+    spiking = {
+        "shadow_would_halve_size": True,
+        "vix_spike_ratio": 2.4,
+        "vix_shadow_reason": "vix_spike_2.40x_gte_2.00x_no_downtrend_confirm",
+    }
+    reason = vix_spike_entry_veto(spiking, rules_path=rules)
+    assert reason is not None
+    assert reason.startswith("vix_spike_veto:")
+    assert "2.40x" in reason
+
+
+def test_vix_spike_veto_allows_when_no_spike(tmp_path):
+    rules = _veto_rules(tmp_path, True)
+    calm = {"shadow_would_halve_size": False, "vix_spike_ratio": 1.1}
+    assert vix_spike_entry_veto(calm, rules_path=rules) is None
+    assert vix_spike_entry_veto(None, rules_path=rules) is None

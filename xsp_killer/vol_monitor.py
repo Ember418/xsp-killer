@@ -11,6 +11,10 @@ Invariants:
   ``enforce_vix_halve_on_sizing`` is true in ``vol_shadow`` config.
 - RV block (``shadow_would_block``) remains shadow-only unless
   ``enforcing=True``.
+- VIX-spike entry veto (``vix_spike_entry_veto``) blocks a new entry only when
+  ``veto_entry_on_vix_spike`` is true in ``vol_shadow`` config (default off);
+  it fires on the same confirmed spike as ``shadow_would_halve_size`` — a
+  falling-knife overlay for the regime-bypassing DIP_BOUNCE path.
 - Macro GREEN/YELLOW/RED regime gating is separate (``playbook_snapshot`` /
   ``regime_gate_allows``).
 - ``ShadowVolGate.enforcing`` defaults to False; prod path must not flip it
@@ -33,6 +37,7 @@ DEFAULT_RV_BLOCK_THRESHOLD = 0.28  # annualized; shadow-only
 DEFAULT_VIX_MEDIAN_LOOKBACK = 20
 DEFAULT_VIX_SPIKE_RATIO_HALVE = 2.0
 DEFAULT_VIX_TREND_CONFIRM_DAYS = 5
+DEFAULT_VETO_ENTRY_ON_VIX_SPIKE = False
 
 
 @dataclass
@@ -63,6 +68,7 @@ def _load_vol_shadow_config(rules_path: Path | None) -> dict[str, Any]:
         "vix_spike_ratio_halve": DEFAULT_VIX_SPIKE_RATIO_HALVE,
         "vix_trend_confirm_days": DEFAULT_VIX_TREND_CONFIRM_DAYS,
         "enforce_vix_halve_on_sizing": False,
+        "veto_entry_on_vix_spike": DEFAULT_VETO_ENTRY_ON_VIX_SPIKE,
     }
     if rules_path is None or not rules_path.is_file():
         return cfg
@@ -83,6 +89,36 @@ def _load_vol_shadow_config(rules_path: Path | None) -> dict[str, Any]:
 
 def vol_halve_enforced(rules_path: Path | None = None) -> bool:
     return bool(_load_vol_shadow_config(rules_path).get("enforce_vix_halve_on_sizing"))
+
+
+def vix_spike_veto_enabled(rules_path: Path | None = None) -> bool:
+    """True when a confirmed VIX spike should hard-block new entries."""
+    return bool(_load_vol_shadow_config(rules_path).get("veto_entry_on_vix_spike"))
+
+
+def vix_spike_entry_veto(
+    vol_shadow: dict[str, Any] | None,
+    *,
+    rules_path: Path | None = None,
+) -> str | None:
+    """Falling-knife overlay: veto reason string when a confirmed VIX spike
+    should block a new entry, else ``None``.
+
+    Fires on the same signal as ``shadow_would_halve_size`` (VIX >= the spike
+    ratio vs its 20d median with no downtrend confirm), but only when
+    ``veto_entry_on_vix_spike`` is enabled in ``vol_shadow`` config. This lets
+    the regime-bypassing DIP_BOUNCE gate keep buying ordinary dips while
+    refusing to catch a dead-cat bounce inside an accelerating vol spike.
+    """
+    if not vol_shadow or not vix_spike_veto_enabled(rules_path):
+        return None
+    if not bool(vol_shadow.get("shadow_would_halve_size")):
+        return None
+    ratio = vol_shadow.get("vix_spike_ratio")
+    detail = vol_shadow.get("vix_shadow_reason") or (
+        f"vix_spike_ratio={ratio}" if ratio is not None else "vix_spike"
+    )
+    return f"vix_spike_veto: {detail}"
 
 
 def session_premium_scale(

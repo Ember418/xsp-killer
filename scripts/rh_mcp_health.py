@@ -28,8 +28,6 @@ from xsp_killer.rh_broker import (  # noqa: E402
 from xsp_killer.robinhood_mcp import (  # noqa: E402
     RhMcpConfig,
     live_exits_enabled,
-)
-from xsp_killer.robinhood_mcp import (
     rh_mcp_enabled as mcp_flag,
 )
 

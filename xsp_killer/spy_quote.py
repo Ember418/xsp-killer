@@ -128,22 +128,21 @@ def fetch_spy_call_quote(
         scale = load_premium_scale()
         dual = dual_notional_from_spy_mid(mid, scale) if mid is not None else {}
         mark_xsp = dual.get("mark_xsp_scaled")
-        exit_xsp = (
-            round(exit_spy * scale, 4) if exit_spy is not None else None
-        )
+        exit_xsp = round(exit_spy * scale, 4) if exit_spy is not None else None
 
         stale = False
         reason: str | None = None
         if exit_xsp is not None and entry_mid_xsp is not None and entry_mid_xsp > 0:
             ret = (exit_xsp - entry_mid_xsp) / entry_mid_xsp
-            if ret > 0.35:
+            # These thresholds must stay beyond the strategy's max TP/SL.
+            if ret > 0.90:
                 stale = True
                 reason = f"exit_mark_implied_gain_{ret * 100:.1f}pct_on_red_day_guard"
-                exit_xsp = min(exit_xsp, entry_mid_xsp * 1.05)
-            elif ret < -0.45:
+                exit_xsp = min(exit_xsp, entry_mid_xsp * 1.90)
+            elif ret < -0.80:
                 stale = True
                 reason = f"exit_mark_implied_loss_{ret * 100:.1f}pct_exceeds_sanity"
-                exit_xsp = max(exit_xsp, entry_mid_xsp * 0.55)
+                exit_xsp = max(exit_xsp, entry_mid_xsp * 0.15)
 
         if (
             not stale

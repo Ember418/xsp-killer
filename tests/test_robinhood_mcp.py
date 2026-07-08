@@ -607,6 +607,93 @@ def test_select_entry_contract_picks_cheapest_near_atm(tmp_path):
     assert chosen["dte"] == 20
 
 
+def test_select_entry_contract_picks_nearest_target_dte(tmp_path):
+    cfg = RhMcpConfig(agentic_account_id="agentic-1")
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=lambda *a: {})
+
+    def fake_call(name, args):
+        if name == "get_option_chains":
+            return {
+                "symbol": "XSP",
+                "expiration_dates": ["2026-07-15", "2026-08-05", "2026-08-30"],
+            }
+        if name == "get_index_quotes":
+            return {"results": [{"last_trade_price": "755.0"}]}
+        if name == "get_option_instruments":
+            return {
+                "results": [
+                    {
+                        "id": f"inst-{args['expiration_dates']}",
+                        "strike_price": args["strike_price"],
+                        "type": "call",
+                    }
+                ]
+            }
+        if name == "get_option_quotes":
+            return {
+                "results": [
+                    {
+                        "instrument_id": iid,
+                        "ask_price": "1.00",
+                        "bid_price": "0.90",
+                        "mark_price": "0.95",
+                    }
+                    for iid in args["instrument_ids"]
+                ]
+            }
+        raise AssertionError(name)
+
+    adapter.call_tool = fake_call  # type: ignore[method-assign]
+    from datetime import date as _date
+
+    chosen = adapter.select_entry_contract(
+        dte_pick="target", dte_target=35, today=_date(2026, 7, 1)
+    )
+    assert chosen["expiration_date"] == "2026-08-05"
+    assert chosen["dte"] == 35
+
+
+def test_select_entry_contract_picks_otm_one_strike(tmp_path):
+    cfg = RhMcpConfig(agentic_account_id="agentic-1")
+    adapter = RobinhoodMCPAdapter(config=cfg, http_post=lambda *a: {})
+
+    instruments = [
+        {"id": "inst-750", "strike_price": "750.0000", "type": "call"},
+        {"id": "inst-755", "strike_price": "755.0000", "type": "call"},
+        {"id": "inst-760", "strike_price": "760.0000", "type": "call"},
+    ]
+
+    def fake_call(name, args):
+        if name == "get_option_chains":
+            return {"symbol": "XSP", "expiration_dates": ["2026-07-21"]}
+        if name == "get_index_quotes":
+            return {"results": [{"last_trade_price": "755.0"}]}
+        if name == "get_option_instruments":
+            return {"results": instruments}
+        if name == "get_option_quotes":
+            return {
+                "results": [
+                    {
+                        "instrument_id": iid,
+                        "ask_price": "1.00",
+                        "bid_price": "0.90",
+                        "mark_price": "0.95",
+                    }
+                    for iid in args["instrument_ids"]
+                ]
+            }
+        raise AssertionError(name)
+
+    adapter.call_tool = fake_call  # type: ignore[method-assign]
+    from datetime import date as _date
+
+    chosen = adapter.select_entry_contract(
+        strike_pick="otm_one", atm_steps=1, today=_date(2026, 7, 1)
+    )
+    assert chosen["strike"] == 760.0
+    assert chosen["instrument_id"] == "inst-760"
+
+
 def test_select_entry_contract_raises_when_no_expiration(tmp_path):
     cfg = RhMcpConfig(agentic_account_id="agentic-1")
     adapter = RobinhoodMCPAdapter(config=cfg, http_post=lambda *a: {})

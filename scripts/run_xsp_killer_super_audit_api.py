@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_PACK = ROOT / "reports/gap-audit/pack-xsp-killer-v4"
-OUT_DIR = ROOT / "reports/gap-audit/premium-xsp-killer-v4"
+DEFAULT_PACK = ROOT / "reports/gap-audit/pack-xsp-killer-v7"
+OUT_DIR = ROOT / "reports/gap-audit/premium-xsp-killer-v7"
 
 
 def _load_env() -> None:

@@ -284,9 +284,11 @@ def test_open_paper_position_monitored_below_entry_dte_min(tmp_path):
     assert classified[0].dte == 13
 
 
-def test_stale_mark_skips_exit_alerts():
+def test_stale_mark_suppresses_take_profit_not_risk_exits():
     from xsp_killer.lane_a_monitor import LaneAPosition, evaluate_exit_alerts
 
+    # A stale/suspect mark must NOT bank a take-profit, but risk exits are not
+    # blocked by staleness (see the swing-hold stale-mark SL test below).
     pos = LaneAPosition(
         position_id="paper:XSP:2026-07-17:7505",
         chain_symbol="XSP",
@@ -295,17 +297,21 @@ def test_stale_mark_skips_exit_alerts():
         expiration_date=date(2026, 7, 17),
         quantity=1.0,
         average_price=6.0,
-        mark_price=5.5,
+        mark_price=7.5,
         dte=28,
-        entry_ts="2026-06-16T19:45:00+00:00",
-        entry_mid_premium=5.8,
+        entry_ts="2026-06-17T13:40:00+00:00",  # same ET day as `now` -> no time_stop
+        entry_mid_premium=6.0,
         mark_quote_stale=True,
     )
-    pos.pnl_per_contract = -50.0
-    pos.pnl_usd = -50.0
-    now = datetime(2026, 6, 17, 10, 0, tzinfo=ET)
+    pos.pnl_per_contract = 150.0
+    pos.pnl_usd = 150.0
+    now = datetime(2026, 6, 17, 9, 45, tzinfo=ET)
+    # ret = +25% >= TP 20%, in the sell window, but the stale mark suppresses TP.
+    assert evaluate_exit_alerts(pos, RULES, now_et=now) == []
+    # A fresh mark on the identical setup DOES take profit.
+    pos.mark_quote_stale = False
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
-    assert alerts == []
+    assert [a.exit_reason for a in alerts] == ["take_profit"]
 
 
 def test_suppress_morning_cut_for_long_dte():
@@ -816,7 +822,7 @@ SWING_RULES = LaneRules(
     logic_version="xsp_lane_a_v2_dip_swing_14dte",
     regime_gate="DIP_BOUNCE",
     swing_hold=True,
-    max_hold_dte=1,
+    max_hold_dte=2,
 )
 
 
@@ -893,10 +899,50 @@ def test_swing_hold_stop_loss_fires_anytime():
 def test_swing_hold_near_expiry_cut():
     now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
     # DTE at the cutoff -> force close.
-    near = _swing_pos(avg=5.0, mark=4.9, dte=1)
+    near = _swing_pos(avg=5.0, mark=4.9, dte=2)
     alerts = evaluate_exit_alerts(near, SWING_RULES, now_et=now)
     assert any(a.exit_reason == "time_stop" for a in alerts)
     # Still comfortably before expiry -> keep holding.
     far = _swing_pos(avg=5.0, mark=4.9, dte=5)
     alerts_far = evaluate_exit_alerts(far, SWING_RULES, now_et=now)
     assert alerts_far == []
+
+
+def test_swing_hold_stop_loss_fires_when_mark_stale():
+    pos = _swing_pos(avg=5.0, mark=2.5, dte=20)  # -50% SL hit
+    pos.mark_quote_stale = True
+    pos.pnl_per_contract = -250.0
+    pos.pnl_usd = -250.0
+    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
+    assert any(a.exit_reason == "stop_loss" for a in alerts)
+
+
+def test_swing_hold_stop_loss_fires_inside_no_sell_window():
+    pos = _swing_pos(avg=5.0, mark=2.5, dte=20)  # -50% SL hit
+    pos.pnl_per_contract = -250.0
+    pos.pnl_usd = -250.0
+    now = datetime(2026, 6, 20, 9, 0, tzinfo=ET)  # inside 08:30-09:30
+    alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
+    assert any(a.exit_reason == "stop_loss" for a in alerts)
+
+
+def test_swing_hold_take_profit_suppressed_when_mark_stale():
+    pos = _swing_pos(avg=5.0, mark=7.0, dte=20)  # +40% TP hit
+    pos.mark_quote_stale = True
+    pos.pnl_per_contract = 200.0
+    pos.pnl_usd = 200.0
+    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
+    assert not any(
+        a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts
+    )
+
+
+def test_swing_hold_near_expiry_cut_still_fires():
+    pos = _swing_pos(avg=5.0, mark=4.9, dte=2)  # dte == max_hold_dte
+    pos.pnl_per_contract = -10.0
+    pos.pnl_usd = -10.0
+    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
+    assert any(a.exit_reason == "time_stop" for a in alerts)

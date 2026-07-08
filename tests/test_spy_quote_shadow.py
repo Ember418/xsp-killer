@@ -58,10 +58,13 @@ def test_fetch_spy_call_quote_caps_implausible_overnight_gain(monkeypatch):
     monkeypatch.setattr(
         "xsp_killer.chain_cache.get_spy_option_chain", lambda _e: Calls()
     )
-    q = fetch_spy_call_quote(746.0, date(2026, 7, 17), entry_mid_xsp=87.55)
+    # Guards must sit beyond the strategy's max TP/SL; a legit +36% move is not
+    # "implausible" anymore. Use a genuinely absurd implied gain (>90%) so the
+    # sanity clamp still trips. exit mark = bid 11.9 x 10 (scale) = 119.0.
+    q = fetch_spy_call_quote(746.0, date(2026, 7, 17), entry_mid_xsp=55.0)
     assert q.stale is True
     assert q.exit_mark_xsp is not None
-    assert q.exit_mark_xsp <= 87.55 * 1.05
+    assert q.exit_mark_xsp <= 55.0 * 1.90
 
 
 def test_shadow_brackets_show_wide_sl_would_hold():

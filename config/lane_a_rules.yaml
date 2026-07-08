@@ -35,7 +35,11 @@ paper_economics:
   slippage_usd_per_share: 0.12
   slippage_pct_of_premium: 0.005
   slippage_max_pct_of_premium: 0.015
-  premium_scale: 10.0  # SPY chain mid → XSP notional; dual-log 1× in quotes for validation
+  # NOTE: XSP index ≈ SPY level, so a real XSP contract premium ≈ the SPY
+  # contract premium (~1×). 10× overstates paper $ ~10× vs a live $1k account;
+  # % TP/SL are scale-invariant, and the scoreboard dual-logs a 1× real-dollar
+  # approximation. The live path prices off real RH quotes (true 1×).
+  premium_scale: 10.0
 
 ta:
   symbol: SPY
@@ -89,6 +93,16 @@ paper_entry:
   max_open_positions: 1
   quantity: 1
 
+live:
+  # XSP_LANE_A_LIVE_VARIANT_ID selects the single promoted variant; unset fails closed.
+  max_loss_usd: 150.0
+  max_cost_frac: 0.5
+  veto_red: true
+  # Deterministic pre-trade order reviewer (fail-closed second opinion before
+  # buy-to-open). Disable via XSP_LANE_A_LIVE_REVIEWER=false (not recommended).
+  reviewer_max_spread_frac: 0.25   # veto if (ask-bid)/mid exceeds this
+  reviewer_max_contracts: 5        # veto quantity outside [1, N]
+
 # Shadow-only vol gates (never block paper entry unless operator enables enforce)
 vol_shadow:
   lookback_days: 21
@@ -97,3 +111,6 @@ vol_shadow:
   vix_spike_ratio_halve: 2.0
   vix_trend_confirm_days: 5
   enforce_vix_halve_on_sizing: true
+  # Falling-knife overlay: hard-block new entries (incl. DIP_BOUNCE) on a
+  # confirmed VIX spike (>=2x 20d median, no downtrend confirm).
+  veto_entry_on_vix_spike: true

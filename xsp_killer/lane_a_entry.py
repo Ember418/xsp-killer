@@ -83,6 +83,8 @@ class EntryRules:
     dte_pick: str = "min"
     dte_target: int | None = None
     strike_pick: str = "cheapest_near_atm"
+    debit_spread_shadow: bool = False
+    debit_spread_width_strikes: int = 2
 
     @classmethod
     def from_yaml(cls, path: Path) -> EntryRules:
@@ -110,6 +112,8 @@ class EntryRules:
             strike_pick=str(entry.get("strike_pick", "cheapest_near_atm"))
             .strip()
             .lower(),
+            debit_spread_shadow=bool(entry.get("debit_spread_shadow", False)),
+            debit_spread_width_strikes=int(entry.get("debit_spread_width_strikes", 2)),
         )
 
 
@@ -135,6 +139,7 @@ class EntryDecision:
     premium_scale_used: float | None = None
     risk_gate: dict[str, Any] | None = None
     live_order: dict[str, Any] | None = None
+    debit_spread_shadow: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -410,6 +415,42 @@ def build_paper_position(
     }
 
 
+def compute_debit_spread_shadow(
+    *,
+    long_strike: float,
+    long_premium: float,
+    expiration: date,
+    premium_scale: float | None,
+    width_strikes: int = 2,
+) -> dict[str, Any] | None:
+    """Best-effort debit-spread economics for the entry log (prototype).
+
+    Fetches the short-leg premium from the same SPY chain proxy and models the
+    call debit spread vs the naked long call. Never raises — returns None on any
+    quote/model failure so it can't disturb the paper entry.
+    """
+    from xsp_killer.debit_spread import build_debit_spread, select_short_strike
+
+    try:
+        if long_premium is None or long_premium <= 0:
+            return None
+        short_strike = select_short_strike(long_strike, width_strikes=width_strikes)
+        short_prem_raw, _ = fetch_spy_call_quote(short_strike / 10.0, expiration)
+        if short_prem_raw is None or short_prem_raw <= 0:
+            return None
+        short_premium = scale_spy_premium(short_prem_raw, premium_scale)
+        spread = build_debit_spread(
+            long_strike=long_strike,
+            long_premium=long_premium,
+            short_strike=short_strike,
+            short_premium=short_premium,
+            premium_scale=premium_scale or 1.0,
+        )
+        return spread.to_dict() if spread is not None else None
+    except Exception:
+        return None
+
+
 def stamp_quote_source(
     position: dict[str, Any],
     source: str,
@@ -446,6 +487,7 @@ def append_entry_log(
         "premium_scale_used": decision.premium_scale_used,
         "risk_gate": decision.risk_gate,
         "position": decision.position,
+        "debit_spread_shadow": decision.debit_spread_shadow,
         "errors": decision.errors,
     }
     with path.open("a", encoding="utf-8") as fh:
@@ -863,6 +905,23 @@ def run_paper_entry(
         )
         return decision
 
+    # Falling-knife overlay: even a confirmed bounce is refused when VIX is in a
+    # confirmed spike (no-op unless veto_entry_on_vix_spike is enabled in config).
+    from xsp_killer.vol_monitor import vix_spike_entry_veto
+
+    vix_veto_reason = vix_spike_entry_veto(vol_shadow, rules_path=rules_file)
+    if vix_veto_reason:
+        decision.skip_reason = vix_veto_reason
+        _finalize_entry(
+            state,
+            state_path,
+            decision,
+            publish_intel,
+            log_path=log_path,
+            brief_path=brief_path,
+        )
+        return decision
+
     _, _, spy_ret, spy_session = fetch_spy_ohlcv()
     decision.prior_day_spy_return_pct = spy_ret
     decision.prior_day_spy_session = spy_session
@@ -989,6 +1048,16 @@ def run_paper_entry(
     position["dte_pick"] = entry_rules.dte_pick
     position["dte_target"] = entry_rules.dte_target
     position["entry_ta_detail"] = ta_signal.detail
+    if entry_rules.debit_spread_shadow:
+        decision.debit_spread_shadow = compute_debit_spread_shadow(
+            long_strike=strike,
+            long_premium=entry_mid,
+            expiration=expiration,
+            premium_scale=session_scale,
+            width_strikes=entry_rules.debit_spread_width_strikes,
+        )
+        if decision.debit_spread_shadow is not None:
+            position["debit_spread_shadow"] = decision.debit_spread_shadow
     paper_positions = state.setdefault("paper_positions", {})
     paper_positions[position["position_id"]] = position
 
@@ -1041,6 +1110,39 @@ def _live_entry_ref_id(instrument_id: str, day: str) -> str:
     return str(uuid.uuid5(_LIVE_ENTRY_REF_NAMESPACE, f"{instrument_id}:{day}"))
 
 
+def _live_entry_safety_config(path: Path = DEFAULT_RULES) -> dict[str, float | bool]:
+    cfg: dict[str, float | bool] = {
+        "max_loss_usd": 150.0,
+        "max_cost_frac": 0.5,
+        "veto_red": True,
+        "reviewer_max_spread_frac": 0.25,
+        "reviewer_max_contracts": 5,
+    }
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        live = data.get("live") or {}
+        cfg["max_loss_usd"] = float(live.get("max_loss_usd", cfg["max_loss_usd"]))
+        cfg["max_cost_frac"] = float(live.get("max_cost_frac", cfg["max_cost_frac"]))
+        cfg["veto_red"] = bool(live.get("veto_red", cfg["veto_red"]))
+        cfg["reviewer_max_spread_frac"] = float(
+            live.get("reviewer_max_spread_frac", cfg["reviewer_max_spread_frac"])
+        )
+        cfg["reviewer_max_contracts"] = int(
+            live.get("reviewer_max_contracts", cfg["reviewer_max_contracts"])
+        )
+    except Exception:
+        pass
+    return cfg
+
+
+def _live_variant_allowed(current_variant: str, allowlist_variant: str | None) -> bool:
+    allowed = (allowlist_variant or "").strip()
+    current = (current_variant or "").strip()
+    if not allowed or not current:
+        return False
+    return current == allowed or current.endswith(allowed)
+
+
 def _maybe_place_live_entry(
     decision: "EntryDecision",
     *,
@@ -1055,6 +1157,7 @@ def _maybe_place_live_entry(
     contract cost. Records the outcome on ``decision.live_order``. The paper
     position is unaffected (it continues as a shadow record).
     """
+    from xsp_killer.conductor_reviewer import live_reviewer_enabled, review_live_order
     from xsp_killer.robinhood_mcp import (
         RobinhoodMCPAdapter,
         kill_switch_engaged,
@@ -1070,6 +1173,38 @@ def _maybe_place_live_entry(
     if kill_switch_engaged():
         decision.live_order = {"placed": False, "reason": "kill switch engaged"}
         return
+    current_variant = str(
+        getattr(lane_rules, "logic_version", None) or decision.logic_version or ""
+    )
+    if not _live_variant_allowed(
+        current_variant, os.getenv("XSP_LANE_A_LIVE_VARIANT_ID")
+    ):
+        decision.live_order = {
+            "placed": False,
+            "reason": "variant not in live allowlist",
+        }
+        return
+    live_cfg = _live_entry_safety_config()
+    if bool(live_cfg["veto_red"]):
+        try:
+            regime_detail = read_regime_detail()
+            live_regime = (
+                regime_detail[0]
+                if isinstance(regime_detail, (tuple, list))
+                else regime_detail
+            )
+        except Exception as exc:
+            decision.live_order = {
+                "placed": False,
+                "reason": f"live skipped: regime unavailable ({exc})",
+            }
+            return
+        if str(live_regime or "").strip().upper() == "RED":
+            decision.live_order = {
+                "placed": False,
+                "reason": "live skipped: RED regime (shadow only)",
+            }
+            return
     try:
         adapter = RobinhoodMCPAdapter()
         contract = adapter.select_entry_contract(
@@ -1078,6 +1213,7 @@ def _maybe_place_live_entry(
             dte_min=lane_rules.dte_min,
             dte_max=lane_rules.dte_max,
             dte_pick=entry_rules.dte_pick,
+            dte_target=getattr(entry_rules, "dte_target", None),
             atm_steps=entry_rules.strike_max_steps_from_atm,
             strike_pick=entry_rules.strike_pick,
             today=today,
@@ -1086,6 +1222,8 @@ def _maybe_place_live_entry(
         limit = float(contract["ask"])
         cost = limit * 100.0 * qty
         buying_power = adapter.get_buying_power()
+        stop_loss_pct = float(getattr(lane_rules, "stop_loss_pct", 0.20))
+        est_max_loss = cost * stop_loss_pct
         if cost > buying_power:
             decision.live_order = {
                 "placed": False,
@@ -1097,6 +1235,62 @@ def _maybe_place_live_entry(
                 "buying_power": buying_power,
             }
             return
+        max_loss_usd = float(live_cfg["max_loss_usd"])
+        max_cost_frac = float(live_cfg["max_cost_frac"])
+        if est_max_loss > max_loss_usd:
+            decision.live_order = {
+                "placed": False,
+                "reason": (
+                    f"est max loss ${est_max_loss:,.0f} > live cap ${max_loss_usd:,.0f}"
+                ),
+                "contract": contract,
+                "buying_power": buying_power,
+                "cost_estimate": round(cost, 2),
+                "est_max_loss": round(est_max_loss, 2),
+                "max_loss_usd": max_loss_usd,
+            }
+            return
+        if cost > max_cost_frac * buying_power:
+            decision.live_order = {
+                "placed": False,
+                "reason": (
+                    f"est cost ${cost:,.0f} exceeds {max_cost_frac:.0%} of buying power"
+                ),
+                "contract": contract,
+                "buying_power": buying_power,
+                "cost_estimate": round(cost, 2),
+                "max_cost_usd": round(max_cost_frac * buying_power, 2),
+                "max_cost_frac": max_cost_frac,
+            }
+            return
+        # Deterministic pre-trade second opinion on the concrete order (spread,
+        # price sanity, cost/loss re-derivation, DTE band). Fail-closed.
+        review = None
+        if live_reviewer_enabled():
+            review = review_live_order(
+                contract=contract,
+                limit_price=limit,
+                quantity=qty,
+                cost=cost,
+                est_max_loss=est_max_loss,
+                buying_power=buying_power,
+                max_loss_usd=max_loss_usd,
+                max_cost_frac=max_cost_frac,
+                dte_min=lane_rules.dte_min,
+                dte_max=lane_rules.dte_max,
+                max_spread_frac=float(live_cfg["reviewer_max_spread_frac"]),
+                max_contracts=int(live_cfg["reviewer_max_contracts"]),
+            )
+            if not review.approved:
+                decision.live_order = {
+                    "placed": False,
+                    "reason": review.reason,
+                    "contract": contract,
+                    "buying_power": buying_power,
+                    "cost_estimate": round(cost, 2),
+                    "reviewer": review.to_dict(),
+                }
+                return
         ref_id = _live_entry_ref_id(contract["instrument_id"], today.isoformat())
         result = adapter.buy_to_open(
             instrument_id=contract["instrument_id"],
@@ -1110,7 +1304,12 @@ def _maybe_place_live_entry(
             "quantity": qty,
             "limit_price": round(limit, 2),
             "cost_estimate": round(cost, 2),
+            "est_max_loss": round(est_max_loss, 2),
             "buying_power": buying_power,
+            # Live orders price off real RH quotes — true 1x dollars, never the
+            # paper SPY->XSP premium scale (which is a shadow-book convenience).
+            "premium_scale": 1.0,
+            "reviewer": review.to_dict() if review is not None else None,
             "result": result,
         }
     except Exception as exc:

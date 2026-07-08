@@ -23,7 +23,7 @@ import yaml
 from xsp_killer.paper_economics import load_premium_scale
 from xsp_killer.rh_broker import (
     fetch_robinhood_option_positions,
-    rh_poll_enabled,  # re-exported for tests and lane_b
+    rh_poll_enabled,  # noqa: F401 — re-exported for tests and lane_b
     rh_read_enabled,
 )
 from xsp_killer.robinhood_mcp import (
@@ -515,10 +515,8 @@ def evaluate_exit_alerts(
     now = now_et or datetime.now(ET)
     alerts: list[ExitAlert] = []
 
-    if in_no_sell_window(now, rules):
-        return alerts
-
-    if pos.mark_quote_stale:
+    in_no_sell = in_no_sell_window(now, rules)
+    if in_no_sell and not rules.swing_hold:
         return alerts
 
     ret_pct = _position_return_pct(pos)
@@ -527,6 +525,10 @@ def evaluate_exit_alerts(
 
     pnl_c = pos.pnl_per_contract
     pnl = pos.pnl_usd
+
+    # Risk exits (SL, expiry/time stop) must fire even on a stale mark; never
+    # bank profit on a suspect high mark.
+    allow_take_profit = not pos.mark_quote_stale and not in_no_sell
 
     if ret_pct <= -rules.stop_loss_pct:
         alerts.append(
@@ -546,7 +548,7 @@ def evaluate_exit_alerts(
     # only in the morning sell window — the whole point is to sell into a
     # recovery whenever it comes during the multi-day hold.
     tp_window_ok = in_sell or rules.swing_hold
-    if tp_window_ok and ret_pct >= rules.take_profit_pct:
+    if tp_window_ok and allow_take_profit and ret_pct >= rules.take_profit_pct:
         can_take = True
         if rules.require_upper_bb_for_take_profit and ta_signal is not None:
             touched = getattr(ta_signal, "upper_bb_touched", False)

@@ -5,10 +5,12 @@ from __future__ import annotations
 import fcntl
 import json
 import logging
+import math
 import shutil
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -28,14 +30,13 @@ from xsp_killer.lane_a_entry import (
 from xsp_killer.lane_a_monitor import (
     DEFAULT_PAPER_BRIEF,
     DEFAULT_RULES,
-    ET,
-    LaneRules,
     compute_paper_open_mtm,
     load_state,
     run_monitor,
     save_state,
     write_paper_pnl_brief,
 )
+from xsp_killer.paper_economics import load_premium_scale
 
 logger = logging.getLogger("xsp_killer.lane_a_variants")
 
@@ -54,6 +55,7 @@ REGIME_GATE_COMPARISON_IDS = (
 
 PROMOTION_SESSIONS_GATE = 20
 PROMOTION_ENTERED_SESSIONS_GATE = 10
+PROMOTION_TRADES_GATE = 20
 
 
 @dataclass
@@ -148,6 +150,31 @@ def _write_variants_state(root: dict[str, Any], path: Path | None = None) -> Pat
         fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         lock.close()
     return p
+
+
+@contextmanager
+def _variants_rmw_lock(path: Path | None = None):
+    """Best-effort exclusive lock around a load→run→save cycle on the shared
+    variants state file. Guards against the intraday/entry/monitor timers
+    colliding on the same variants_state.json. Non-fatal if flock is
+    unavailable (e.g. unsupported filesystem): the cycle proceeds unlocked."""
+    p = path or DEFAULT_VARIANTS_STATE
+    lockfile = p.with_name(p.name + ".lock")
+    fh = None
+    try:
+        fh = _variants_state_lock(lockfile)
+    except Exception as exc:  # noqa: BLE001 — best-effort lock
+        logger.warning("variants RMW lock unavailable, proceeding unlocked: %s", exc)
+        fh = None
+    try:
+        yield
+    finally:
+        if fh is not None:
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                fh.close()
+            except Exception:  # noqa: BLE001 — best-effort release
+                pass
 
 
 def _baseline_brief_path(baseline_state_path: Path, default_path: Path) -> Path:
@@ -290,38 +317,39 @@ def run_all_variant_entries(
     specs = load_variant_specs(config_path)
     _prune_variant_rules_cache({s.variant_id for s in specs if s.active})
     clear_chain_cache()
-    root = load_variants_state(state_path)
-    created = ensure_variant_slices(root, specs)
-    if created:
-        _write_variants_state(root, state_path)
-    results: list[tuple[VariantSpec, Any]] = []
-    for spec in specs:
-        if not spec.active:
-            continue
-        if exclude and spec.variant_id in exclude:
-            continue
-        # Intraday passes only run variants that opt into intraday entries
-        # (dip-bounce swings); close-window variants are left to the 15:45 run.
-        if intraday_only and not _variant_intraday_enabled(spec):
-            continue
-        try:
-            decision = run_variant_entry(
-                spec,
-                root_state=root,
-                state_path=state_path,
-                now_et=now_et,
-                force=force,
-                intraday=intraday,
-            )
-            results.append((spec, decision))
-            logger.info(
-                "variant_entry %s entered=%s reason=%s",
-                spec.variant_id,
-                decision.entered,
-                decision.skip_reason,
-            )
-        except Exception as exc:
-            logger.exception("variant_entry %s failed: %s", spec.variant_id, exc)
+    with _variants_rmw_lock(state_path):
+        root = load_variants_state(state_path)
+        created = ensure_variant_slices(root, specs)
+        if created:
+            _write_variants_state(root, state_path)
+        results: list[tuple[VariantSpec, Any]] = []
+        for spec in specs:
+            if not spec.active:
+                continue
+            if exclude and spec.variant_id in exclude:
+                continue
+            # Intraday passes only run variants that opt into intraday entries
+            # (dip-bounce swings); close-window variants are left to the 15:45 run.
+            if intraday_only and not _variant_intraday_enabled(spec):
+                continue
+            try:
+                decision = run_variant_entry(
+                    spec,
+                    root_state=root,
+                    state_path=state_path,
+                    now_et=now_et,
+                    force=force,
+                    intraday=intraday,
+                )
+                results.append((spec, decision))
+                logger.info(
+                    "variant_entry %s entered=%s reason=%s",
+                    spec.variant_id,
+                    decision.entered,
+                    decision.skip_reason,
+                )
+            except Exception as exc:
+                logger.exception("variant_entry %s failed: %s", spec.variant_id, exc)
     return results
 
 
@@ -337,33 +365,34 @@ def run_all_variant_monitors(
 
     specs = load_variant_specs(config_path)
     clear_chain_cache()
-    root = load_variants_state(state_path)
-    created = ensure_variant_slices(root, specs)
-    if created:
-        _write_variants_state(root, state_path)
-    results: list[tuple[VariantSpec, Any]] = []
-    for spec in specs:
-        if not spec.active:
-            continue
-        if exclude and spec.variant_id in exclude:
-            continue
-        # Intraday passes only monitor variants that hold across days
-        # (swing/dip-bounce); close-window variants exit in the morning run.
-        if intraday_only and not _variant_intraday_enabled(spec):
-            continue
-        try:
-            report = run_variant_monitor(
-                spec, root_state=root, state_path=state_path, now_et=now_et
-            )
-            results.append((spec, report))
-            logger.info(
-                "variant_monitor %s positions=%d alerts=%d",
-                spec.variant_id,
-                len(report.positions),
-                len(report.alerts),
-            )
-        except Exception as exc:
-            logger.exception("variant_monitor %s failed: %s", spec.variant_id, exc)
+    with _variants_rmw_lock(state_path):
+        root = load_variants_state(state_path)
+        created = ensure_variant_slices(root, specs)
+        if created:
+            _write_variants_state(root, state_path)
+        results: list[tuple[VariantSpec, Any]] = []
+        for spec in specs:
+            if not spec.active:
+                continue
+            if exclude and spec.variant_id in exclude:
+                continue
+            # Intraday passes only monitor variants that hold across days
+            # (swing/dip-bounce); close-window variants exit in the morning run.
+            if intraday_only and not _variant_intraday_enabled(spec):
+                continue
+            try:
+                report = run_variant_monitor(
+                    spec, root_state=root, state_path=state_path, now_et=now_et
+                )
+                results.append((spec, report))
+                logger.info(
+                    "variant_monitor %s positions=%d alerts=%d",
+                    spec.variant_id,
+                    len(report.positions),
+                    len(report.alerts),
+                )
+            except Exception as exc:
+                logger.exception("variant_monitor %s failed: %s", spec.variant_id, exc)
     return results
 
 
@@ -1108,11 +1137,17 @@ def _build_promotion_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         if r.get("promotion_ready") and r.get("variant_id") != "v2_baseline_prod"
     ]
     collecting = sum(1 for r in rows if r.get("promotion_status") == "collecting")
+    edge_confirmed = [
+        r["variant_id"]
+        for r in rows
+        if r.get("edge_confirmed") and r.get("variant_id") != "v2_baseline_prod"
+    ]
     return {
         "sessions_gate": PROMOTION_SESSIONS_GATE,
         "entered_sessions_gate": PROMOTION_ENTERED_SESSIONS_GATE,
         "variants_collecting": collecting,
         "variants_eligible_review": eligible,
+        "variants_edge_confirmed": edge_confirmed,
         "baseline_promotion_ready": bool(
             next(
                 (r for r in rows if r.get("variant_id") == "v2_baseline_prod"),
@@ -1122,14 +1157,72 @@ def _build_promotion_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def wilson_lower_bound(wins: int, n: int, *, z: float = 1.96) -> float | None:
+    """Wilson score-interval lower bound on the win rate (fraction 0-1).
+
+    A small-n-honest floor on the true win rate: with few trades the bound sits
+    well below the point estimate, so a lucky 4/5 run can't masquerade as edge.
+    ``z=1.96`` ≈ 95% one-sided-ish confidence. Returns None when n<=0.
+    """
+    if n <= 0:
+        return None
+    phat = wins / n
+    z2 = z * z
+    denom = 1.0 + z2 / n
+    centre = phat + z2 / (2 * n)
+    margin = z * math.sqrt((phat * (1.0 - phat) + z2 / (4 * n)) / n)
+    return max(0.0, (centre - margin) / denom)
+
+
+def _variant_breakeven_win_rate(rules_path: Path) -> float | None:
+    """Breakeven win rate from the variant's TP/SL: SL / (TP + SL) (fraction).
+
+    For +40% TP / -50% SL this is 0.50/0.90 ≈ 0.556 — the win rate a symmetric
+    all-or-nothing bracket must beat to be +EV before costs.
+    """
+    try:
+        data = yaml.safe_load(rules_path.read_text(encoding="utf-8")) or {}
+        exit_cfg = data.get("exit") or {}
+        tp = float(exit_cfg.get("take_profit_pct"))
+        sl = float(exit_cfg.get("stop_loss_pct"))
+    except Exception:
+        return None
+    if tp + sl <= 0:
+        return None
+    return sl / (tp + sl)
+
+
 DIP_SWING_VARIANT_PREFIX = "v2_dip_swing"
+
+
+def _dip_swing_exit_breakdown(row: dict[str, Any]) -> dict[str, Any] | None:
+    """Compact per-variant exit-reason view so a cluster dominated by
+    near-expiry time_stop exits is visible. Built additively from whatever
+    exit-reason signal the scoreboard row already carries."""
+    counts: dict[str, int] = {}
+    last_exit = row.get("last_exit")
+    if isinstance(last_exit, dict):
+        reason = last_exit.get("exit_reason")
+        if reason:
+            counts[str(reason)] = counts.get(str(reason), 0) + 1
+    exit_shadow = row.get("exit_shadow")
+    if isinstance(exit_shadow, dict):
+        for bracket in (exit_shadow.get("brackets") or {}).values():
+            if not isinstance(bracket, dict):
+                continue
+            reason = bracket.get("last_exit_reason")
+            if reason:
+                counts[str(reason)] = counts.get(str(reason), 0) + 1
+    if not counts:
+        return None
+    return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
 def _build_dip_swing_cluster(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Isolate the dip-buy swing variants so the cluster can be watched as a
     group, separate from the legacy close-window variants. Ranked within the
     cluster by avg PnL per trade; a leader is only named once it clears the
-    low-sample gate (>=20 sessions and >=2 trades)."""
+    low-sample gate (>=20 sessions and >=20 trades)."""
     members = [
         r
         for r in rows
@@ -1142,10 +1235,17 @@ def _build_dip_swing_cluster(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "wins",
         "losses",
         "win_rate_pct",
+        "win_rate_wilson_lb_pct",
+        "breakeven_win_rate_pct",
+        "edge_confirmed",
         "realized_pnl_usd",
         "avg_pnl_per_trade_usd",
+        "premium_scale",
+        "realized_pnl_usd_1x_approx",
+        "avg_pnl_per_trade_usd_1x_approx",
         "open_positions",
         "sessions_evaluated",
+        "entered_sessions",
         "sessions_to_gate",
         "low_sample",
     )
@@ -1158,8 +1258,15 @@ def _build_dip_swing_cluster(rows: list[dict[str, Any]]) -> dict[str, Any]:
         reverse=True,
     )
     trimmed = [{k: r.get(k) for k in fields} for r in ranked]
+    for r, t in zip(ranked, trimmed):
+        breakdown = _dip_swing_exit_breakdown(r)
+        if breakdown is not None:
+            t["exit_breakdown"] = breakdown
     total_trades = sum(int(r.get("trades_closed") or 0) for r in members)
-    reliable = [r for r in members if not r.get("low_sample")]
+    # A leader must clear statistical separation, not just the sample gate:
+    # edge_confirmed = low_sample cleared AND avg_pnl>0 AND Wilson-LB win rate
+    # above the variant's TP/SL breakeven.
+    reliable = [r for r in members if r.get("edge_confirmed")]
     leader = None
     if reliable:
         leader = max(
@@ -1171,12 +1278,20 @@ def _build_dip_swing_cluster(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "total_trades_closed": total_trades,
         "ranked_by": "avg_pnl_per_trade_usd",
         "leader": leader,
-        "leader_gate": "low_sample=false (>=20 sessions and >=2 trades)",
+        "leader_gate": (
+            "edge_confirmed=true (>=20 sessions and >=20 trades, avg_pnl>0, "
+            "Wilson-LB win rate > TP/SL breakeven)"
+        ),
         "variants": trimmed,
         "note": (
             "Dip-buy swing cluster: buy a confirmed dip-bounce, hold for the "
             "recovery, sell into strength. Compare within this cluster; promote "
-            "the leader to base once low_sample clears."
+            "the leader to base once edge_confirmed. A leader must clear the "
+            "sample gate AND show avg_pnl>0 AND a Wilson lower-bound win rate "
+            "above its TP/SL breakeven (win_rate_wilson_lb_pct > "
+            "breakeven_win_rate_pct) — small-n averages are noisy. "
+            "*_1x_approx fields are the real-dollar (~$1k-account) equivalent, "
+            "approx = paper_$ / premium_scale."
         ),
     }
 
@@ -1230,6 +1345,34 @@ def build_scoreboard(
         sessions_evaluated = len(unique_et_sessions(entry_logs))
         win_rate = round(wins / trades * 100.0, 1) if trades else None
         avg_pnl = round(realized / trades, 2) if trades else None
+        # Dual-log the real-dollar (1x) equivalent so a $1k account can be judged
+        # directly. Paper $ use the SPY->XSP premium scale (~10x); dividing by it
+        # is a first-order approximation (fixed commission/slippage don't scale).
+        try:
+            scale = load_premium_scale(rules_path) or 1.0
+        except Exception:
+            scale = 1.0
+        realized_1x = round(realized / scale, 2) if scale else realized
+        avg_pnl_1x = (
+            round(avg_pnl / scale, 2) if (avg_pnl is not None and scale) else avg_pnl
+        )
+        # Statistical separation: a leader must clear the sample gate AND show a
+        # positive average AND a Wilson lower-bound win rate above its own
+        # TP/SL breakeven — so small-n luck can't crown a noisy winner.
+        low_sample_flag = (
+            sessions_evaluated < PROMOTION_SESSIONS_GATE
+            or trades < PROMOTION_TRADES_GATE
+        )
+        wilson_lb = wilson_lower_bound(wins, trades)
+        breakeven = _variant_breakeven_win_rate(rules_path)
+        edge_confirmed = bool(
+            not low_sample_flag
+            and avg_pnl is not None
+            and avg_pnl > 0
+            and wilson_lb is not None
+            and breakeven is not None
+            and wilson_lb > breakeven
+        )
         last_exit = _last_exit_with_contract_meta(state, events)
         contract_cluster_id = _contract_cluster_id(
             open_positions=open_pos,
@@ -1244,6 +1387,16 @@ def build_scoreboard(
             "win_rate_pct": win_rate,
             "realized_pnl_usd": realized,
             "avg_pnl_per_trade_usd": avg_pnl,
+            "premium_scale": round(scale, 4),
+            "realized_pnl_usd_1x_approx": realized_1x,
+            "avg_pnl_per_trade_usd_1x_approx": avg_pnl_1x,
+            "win_rate_wilson_lb_pct": (
+                round(wilson_lb * 100.0, 1) if wilson_lb is not None else None
+            ),
+            "breakeven_win_rate_pct": (
+                round(breakeven * 100.0, 1) if breakeven is not None else None
+            ),
+            "edge_confirmed": edge_confirmed,
             "sessions_evaluated": sessions_evaluated,
             "entry_evals_total": evals_total,
             "weekend_evals_excluded": weekend_evals_excluded,
@@ -1251,7 +1404,7 @@ def build_scoreboard(
             "open_positions": len(open_pos),
             "last_exit": last_exit,
             "contract_cluster_id": contract_cluster_id,
-            "low_sample": sessions_evaluated < PROMOTION_SESSIONS_GATE or trades < 2,
+            "low_sample": low_sample_flag,
         }
         row.update(_variant_track_meta(variant_id, spec))
         entry_stats = _entry_session_stats(entry_logs)
