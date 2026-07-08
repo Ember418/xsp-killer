@@ -41,6 +41,7 @@ from xsp_killer.data_hazards import (
     unwrap_tool_result,
     wrap_tool_result,
 )
+from xsp_killer.k37_reviewer_shadow import shadow_review_order
 
 logger = logging.getLogger("xsp_killer.robinhood_mcp")
 
@@ -1044,6 +1045,13 @@ class RobinhoodMCPAdapter:
         return result if isinstance(result, dict) else {"result": result}
 
     def place_option_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        # K37 Phase 1: log-only reviewer shadow. Never blocks; strategy untouched.
+        lane_id = str(order.get("lane_id") or "lane_a")
+        shadow_review_order(
+            "place_option_order",
+            order,
+            lane_id=lane_id,
+        )
         result = self.call_tool("place_option_order", self._inject_account(order))
         return result if isinstance(result, dict) else {"result": result}
 
