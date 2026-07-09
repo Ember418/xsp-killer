@@ -667,8 +667,53 @@ def test_live_entry_skips_when_est_max_loss_exceeds_cap(monkeypatch):
         d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
     )
     assert d.live_order["placed"] is False
-    assert "est max loss" in d.live_order["reason"]
+    assert "planned stop loss" in d.live_order["reason"]
     assert d.live_order["est_max_loss"] == 20000.0
+    assert adapter.placed is None
+
+
+def test_live_entry_skips_when_debit_exceeds_cap(monkeypatch):
+    # cost 3000 (ask 30 x 100) > max_debit_usd 2500, while the modeled stop-loss
+    # estimate (3000 x 20% = 600) is well under max_loss_usd and cost is under
+    # max_cost_frac of buying power -> only the full-debit gate should trip.
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+    _patch_green_regime(monkeypatch)
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=30.0, buying_power=1_000_000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert "max debit" in d.live_order["reason"]
+    assert d.live_order["max_debit_usd"] == 2500.0
+    assert d.live_order["cost_estimate"] == 3000.0
+    assert adapter.placed is None
+
+
+def test_live_variant_allowed_requires_exact_match():
+    from xsp_killer.lane_a_entry import _live_variant_allowed
+
+    assert _live_variant_allowed("xsp_lane_a_v2", "xsp_lane_a_v2") is True
+    # Suffix matches must NOT authorize live (previously allowed via endswith).
+    assert _live_variant_allowed("evil_xsp_lane_a_v2", "xsp_lane_a_v2") is False
+    assert _live_variant_allowed("xsp_lane_a_v2", "lane_a_v2") is False
+    assert _live_variant_allowed("xsp_lane_a_v2", "") is False
+    assert _live_variant_allowed("", "xsp_lane_a_v2") is False
+    assert _live_variant_allowed("xsp_lane_a_v2", None) is False
+
+
+def test_live_entry_skips_when_variant_is_suffix_only(monkeypatch):
+    # A current variant that merely ends with the allowlisted id must be refused.
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "lane_a_v2")
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert d.live_order["reason"] == "variant not in live allowlist"
     assert adapter.placed is None
 
 

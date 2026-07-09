@@ -96,13 +96,18 @@ paper_entry:
 live:
   # XSP_LANE_A_LIVE_VARIANT_ID selects the single promoted variant; unset fails closed.
   # Sized for 2-lot operator-profile swings (~$12 premium × 2 × 50% SL ≈ $1.2k).
+  # A 2-lot operator profile needs ~$5k buying power at a 50% cost frac
+  # (max_debit_usd $2.5k = 50% of $5k) so the full-debit gate and cost-frac gate
+  # bind together rather than one trivially dominating the other.
   max_loss_usd: 1200.0
+  max_debit_usd: 2500.0
+  documented_min_buying_power_usd: 5000
   max_cost_frac: 0.5
   veto_red: true
   # Deterministic pre-trade order reviewer (fail-closed second opinion before
   # buy-to-open). Disable via XSP_LANE_A_LIVE_REVIEWER=false (not recommended).
   reviewer_max_spread_frac: 0.25   # veto if (ask-bid)/mid exceeds this
-  reviewer_max_contracts: 5        # veto quantity outside [1, N]
+  reviewer_max_contracts: 2        # align with rh_mcp max_contracts_per_order
 
 # Shadow-only vol gates (never block paper entry unless operator enables enforce)
 vol_shadow:

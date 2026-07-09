@@ -497,6 +497,60 @@ def test_run_monitor_closes_paper_positions_with_spx_drift(tmp_path, monkeypatch
     assert pos["spy_drift_pct"] == 2.0
 
 
+def test_run_monitor_closes_paper_position_when_rh_read_enabled(
+    tmp_path, monkeypatch
+):
+    position_id = "paper:XSP:2026-07-18:6000"
+    state = {
+        "paper_positions": {
+            position_id: {
+                "position_id": position_id,
+                "lane": "A",
+                "chain_symbol": "XSP",
+                "option_type": "call",
+                "strike": 6000.0,
+                "expiration_date": "2026-07-18",
+                "quantity": 1.0,
+                "average_price": 2.5,
+                "mark_price": 2.5,
+                "entry_mid_premium": 2.5,
+                "status": "open",
+                "entry_ts": "2026-06-15T19:45:00+00:00",
+            }
+        }
+    }
+    save_state(tmp_path / "state.json", state)
+
+    monkeypatch.setattr(lane_a_monitor, "rh_read_enabled", lambda: True)
+    monkeypatch.setattr(
+        lane_a_monitor, "fetch_robinhood_option_positions", lambda: ([], None)
+    )
+
+    def _stop_loss_mark(rows):
+        return [{**row, "mark_price": 1.5} for row in rows]
+
+    monkeypatch.setattr(lane_a_monitor, "refresh_paper_marks", _stop_loss_mark)
+    monkeypatch.setattr("xsp_killer.lane_a_entry.fetch_spx_proxy", lambda: 6000.0)
+
+    report = run_monitor(
+        state_path=tmp_path / "state.json",
+        now_et=datetime(2026, 6, 16, 9, 45, tzinfo=ET),
+        publish_intel=False,
+        fetch_ta=False,
+        write_paper_brief=False,
+    )
+
+    refreshed = load_state(tmp_path / "state.json")
+    position = refreshed["paper_positions"][position_id]
+    assert report.rh_connected is True
+    assert report.rh_poll_skipped is False
+    assert report.paper_mode == "automated_paper"
+    assert any(alert["exit_reason"] == "stop_loss" for alert in report.alerts)
+    assert position["mark_price"] == 1.5
+    assert position["status"] == "closed"
+    assert position["exit_reason"] == "stop_loss"
+
+
 def test_run_monitor_opens_shadow_virtual_holds(tmp_path, monkeypatch):
     state = {
         "paper_positions": {
@@ -798,6 +852,32 @@ def test_dry_run_canary_disabled_by_flag(monkeypatch):
     out = dry_run_exit_reviews_via_mcp([_mk_alert(pid)], [_mk_position(pid)])
     assert any(r.get("skipped") for r in out)
     assert not any(r.get("canary") for r in out)
+
+
+def test_variant_monitor_skips_mcp_canary_when_idle(tmp_path, monkeypatch):
+    """Variant path (write_paper_brief=False) skips canary with no alerts/RH positions."""
+    monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
+    monkeypatch.setenv("XSP_LANE_A_PHASE1_CANARY", "true")
+    save_state(tmp_path / "state.json", {"paper_positions": {}})
+
+    class FakeAdapter:
+        config = None
+
+        def phase1_canary_review(self, **kwargs):
+            raise AssertionError("variant idle path must skip canary")
+
+        def review_option_order(self, order):
+            raise AssertionError("no reviews expected")
+
+    monkeypatch.setattr(lane_a_monitor, "RobinhoodMCPAdapter", FakeAdapter)
+    report = run_monitor(
+        state_path=tmp_path / "state.json",
+        now_et=datetime(2026, 6, 16, 9, 45, tzinfo=ET),
+        publish_intel=False,
+        fetch_ta=False,
+        write_paper_brief=False,
+    )
+    assert report.rh_mcp_reviews == []
 
 
 # --- Dip-buy swing: DIP_BOUNCE gate + swing-hold exits -----------------------

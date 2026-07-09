@@ -389,6 +389,7 @@ def build_paper_position(
     spx_at_entry: float | None = None,
 ) -> dict[str, Any]:
     pos_id = f"paper:{entry_rules.chain_symbol}:{expiration.isoformat()}:{int(strike)}"
+    dte_at_entry = compute_dte(expiration)
     return {
         "position_id": pos_id,
         "lane": "A",
@@ -402,8 +403,10 @@ def build_paper_position(
         "entry_mid_premium": round(entry_mid_premium, 4),
         "delta_at_entry": delta,
         "entry_ts": evaluated_at,
-        "dte": compute_dte(expiration),
-        "dte_actual": compute_dte(expiration),
+        "dte": dte_at_entry,
+        "dte_actual": dte_at_entry,
+        "dte_at_entry": dte_at_entry,
+        "dte_target": entry_rules.dte_target,
         "status": "open",
         "paper_mode": "automated_log_only",
         "entry_reason": entry_reason,
@@ -1044,9 +1047,13 @@ def run_paper_entry(
     except Exception:
         spy_row = None
     stamp_quote_source(position, quote_source, spy_row_strike=spy_row)
-    position["dte_actual"] = compute_dte(expiration, today=now.date())
+    dte_at_entry = compute_dte(expiration, today=now.date())
+    position["dte"] = dte_at_entry
+    position["dte_actual"] = dte_at_entry
+    position["dte_at_entry"] = dte_at_entry
     position["dte_pick"] = entry_rules.dte_pick
     position["dte_target"] = entry_rules.dte_target
+    position["expiration_date"] = expiration.isoformat()
     position["entry_ta_detail"] = ta_signal.detail
     if entry_rules.debit_spread_shadow:
         decision.debit_spread_shadow = compute_debit_spread_shadow(
@@ -1113,6 +1120,7 @@ def _live_entry_ref_id(instrument_id: str, day: str) -> str:
 def _live_entry_safety_config(path: Path = DEFAULT_RULES) -> dict[str, float | bool]:
     cfg: dict[str, float | bool] = {
         "max_loss_usd": 150.0,
+        "max_debit_usd": 2500.0,
         "max_cost_frac": 0.5,
         "veto_red": True,
         "reviewer_max_spread_frac": 0.25,
@@ -1122,6 +1130,7 @@ def _live_entry_safety_config(path: Path = DEFAULT_RULES) -> dict[str, float | b
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         live = data.get("live") or {}
         cfg["max_loss_usd"] = float(live.get("max_loss_usd", cfg["max_loss_usd"]))
+        cfg["max_debit_usd"] = float(live.get("max_debit_usd", cfg["max_debit_usd"]))
         cfg["max_cost_frac"] = float(live.get("max_cost_frac", cfg["max_cost_frac"]))
         cfg["veto_red"] = bool(live.get("veto_red", cfg["veto_red"]))
         cfg["reviewer_max_spread_frac"] = float(
@@ -1136,11 +1145,12 @@ def _live_entry_safety_config(path: Path = DEFAULT_RULES) -> dict[str, float | b
 
 
 def _live_variant_allowed(current_variant: str, allowlist_variant: str | None) -> bool:
+    """Exact match only — no suffix matching (a stray suffix must never authorize live)."""
     allowed = (allowlist_variant or "").strip()
     current = (current_variant or "").strip()
     if not allowed or not current:
         return False
-    return current == allowed or current.endswith(allowed)
+    return current == allowed
 
 
 def _maybe_place_live_entry(
@@ -1236,18 +1246,36 @@ def _maybe_place_live_entry(
             }
             return
         max_loss_usd = float(live_cfg["max_loss_usd"])
+        max_debit_usd = float(live_cfg["max_debit_usd"])
         max_cost_frac = float(live_cfg["max_cost_frac"])
         if est_max_loss > max_loss_usd:
             decision.live_order = {
                 "placed": False,
                 "reason": (
-                    f"est max loss ${est_max_loss:,.0f} > live cap ${max_loss_usd:,.0f}"
+                    f"planned stop loss ${est_max_loss:,.0f} "
+                    f"> live cap ${max_loss_usd:,.0f}"
                 ),
                 "contract": contract,
                 "buying_power": buying_power,
                 "cost_estimate": round(cost, 2),
                 "est_max_loss": round(est_max_loss, 2),
                 "max_loss_usd": max_loss_usd,
+            }
+            return
+        # Full-debit gate: the entire premium is at risk if the stop never fills
+        # (gap / halt / assignment). Cap the actual dollars committed, not just
+        # the modeled stop-loss estimate.
+        if cost > max_debit_usd:
+            decision.live_order = {
+                "placed": False,
+                "reason": (
+                    f"max debit ${cost:,.0f} > live cap ${max_debit_usd:,.0f}"
+                ),
+                "contract": contract,
+                "buying_power": buying_power,
+                "cost_estimate": round(cost, 2),
+                "est_max_loss": round(est_max_loss, 2),
+                "max_debit_usd": max_debit_usd,
             }
             return
         if cost > max_cost_frac * buying_power:

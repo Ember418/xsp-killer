@@ -1147,13 +1147,10 @@ def run_monitor(
 
     today = (now_et or datetime.now(ET)).date()
 
-    raw_positions: list[dict[str, Any]]
-    if positions_override is not None:
-        raw_positions = positions_override
-        report.rh_connected = True
-    elif not rh_read_enabled():
-        raw_positions = []
-        report.rh_poll_skipped = True
+    paper_raw: list[dict[str, Any]] = []
+    if state.get("paper_positions"):
+        report.paper_mode = "automated_paper"
+    if state.get("paper_positions") and not positions_override:
         from xsp_killer.lane_a_entry import reap_expired_paper_positions
 
         reap_expired_paper_positions(
@@ -1163,13 +1160,19 @@ def run_monitor(
             today=today,
         )
         paper_raw = load_open_paper_positions(state)
-        if paper_raw:
-            report.paper_mode = "automated_paper"
         for pr in paper_raw:
-            # Persist refreshed marks back into state
+            # Persist refreshed marks back into state.
             pid = pr.get("position_id")
             if pid and isinstance(state.get("paper_positions"), dict):
                 state["paper_positions"][pid] = pr
+
+    raw_positions: list[dict[str, Any]]
+    if positions_override is not None:
+        raw_positions = positions_override
+        report.rh_connected = True
+    elif not rh_read_enabled():
+        raw_positions = []
+        report.rh_poll_skipped = True
     else:
         raw_positions, err = fetch_robinhood_option_positions()
         if err:
@@ -1183,9 +1186,9 @@ def run_monitor(
         if pos is not None:
             classified.append(pos)
 
-    if not classified and report.rh_poll_skipped and not positions_override:
+    if not classified and state.get("paper_positions") and not positions_override:
         classified = paper_positions_to_lane(
-            load_open_paper_positions(state), rules, today=today
+            paper_raw, rules, today=today
         )
 
     merge_state_tags(classified, state)
@@ -1218,12 +1221,20 @@ def run_monitor(
         )
 
     report.alerts = [a.to_dict() for a in all_alerts]
-    report.rh_mcp_reviews = dry_run_exit_reviews_via_mcp(all_alerts, classified)
+    # Variant monitors (write_paper_brief=False or XSP_LANE_A_VARIANT_MONITOR=1)
+    # skip the phase-1 MCP canary when there is nothing to review — avoids
+    # N-variants × cron spam of buy-to-open proof-of-life previews.
+    _variant_monitor = (not write_paper_brief) or os.getenv(
+        "XSP_LANE_A_VARIANT_MONITOR", ""
+    ).strip().lower() in ("1", "true", "yes", "on")
+    _has_rh_positions = any(_real_option_id(p) for p in classified)
+    if _variant_monitor and not all_alerts and not _has_rh_positions:
+        report.rh_mcp_reviews = []
+    else:
+        report.rh_mcp_reviews = dry_run_exit_reviews_via_mcp(all_alerts, classified)
 
-    paper_positions_active = (
-        bool(state.get("paper_positions")) and report.rh_poll_skipped
-    )
-    if paper_positions_active and not positions_override:
+    paper_positions_active = bool(state.get("paper_positions")) and not positions_override
+    if paper_positions_active:
         try:
             from xsp_killer.lane_a_entry import fetch_spx_proxy
 

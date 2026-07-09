@@ -104,7 +104,7 @@ def test_merged_rules_operator_target_dte_stagger(tmp_path):
         assert data["entry"]["strike_pick"] == "otm_one"
         assert data["entry"]["regime_gate"] == "DIP_BOUNCE"
         assert data["paper_entry"]["quantity"] == 2
-        assert data["paper_entry"]["max_open_positions"] == 1
+        assert data["paper_entry"]["max_open_positions"] == 2
         assert data["exit"]["swing_hold"] is True
         assert data["ta"]["entry"]["mode"] == "bb_bounce"
 

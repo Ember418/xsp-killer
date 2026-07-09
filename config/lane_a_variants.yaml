@@ -451,7 +451,7 @@ variants:
         prior_day_spy_positive: false
       paper_entry:
         quantity: 2
-        max_open_positions: 1
+        max_open_positions: 2
       ta:
         entry:
           mode: bb_bounce
@@ -478,7 +478,7 @@ variants:
         prior_day_spy_positive: false
       paper_entry:
         quantity: 2
-        max_open_positions: 1
+        max_open_positions: 2
       ta:
         entry:
           mode: bb_bounce
@@ -505,7 +505,7 @@ variants:
         prior_day_spy_positive: false
       paper_entry:
         quantity: 2
-        max_open_positions: 1
+        max_open_positions: 2
       ta:
         entry:
           mode: bb_bounce
@@ -532,7 +532,7 @@ variants:
         prior_day_spy_positive: false
       paper_entry:
         quantity: 2
-        max_open_positions: 1
+        max_open_positions: 2
       ta:
         entry:
           mode: bb_bounce
