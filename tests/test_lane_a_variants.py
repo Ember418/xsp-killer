@@ -89,6 +89,26 @@ def test_merged_rules_stack3_variant(tmp_path):
     assert data["paper_entry"]["max_open_positions"] == 3
 
 
+def test_merged_rules_operator_target_dte_stagger(tmp_path):
+    """45–60 DTE OTM stagger grid matches operator dip-swing profile."""
+    import yaml
+
+    specs = load_variant_specs()
+    targets = {45: "v2_dip_swing_45dte_otm", 50: "v2_dip_swing_50dte_otm", 55: "v2_dip_swing_55dte_otm", 60: "v2_dip_swing_60dte_otm"}
+    for dte, vid in targets.items():
+        spec = next(s for s in specs if s.variant_id == vid)
+        assert spec.active
+        data = yaml.safe_load(merged_rules_path(spec, tmp_dir=tmp_path).read_text(encoding="utf-8"))
+        assert data["entry"]["dte_pick"] == "target"
+        assert data["entry"]["dte_target"] == dte
+        assert data["entry"]["strike_pick"] == "otm_one"
+        assert data["entry"]["regime_gate"] == "DIP_BOUNCE"
+        assert data["paper_entry"]["quantity"] == 2
+        assert data["paper_entry"]["max_open_positions"] == 1
+        assert data["exit"]["swing_hold"] is True
+        assert data["ta"]["entry"]["mode"] == "bb_bounce"
+
+
 def test_build_scoreboard(tmp_path):
     _write_variants_config(
         tmp_path,

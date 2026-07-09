@@ -433,6 +433,118 @@ variants:
         swing_hold: true
         max_hold_dte: 2
 
+  # --- Operator target profile (2026-07-09): stagger 45–60 DTE OTM, 2-lot swing ---
+  # Matches manual XSP dip buys (one-strike OTM, multi-week runway). Paper-soak
+  # grid compares DTE buckets before live promotion — operator does not fix 55 DTE.
+
+  v2_dip_swing_45dte_otm:
+    active: true
+    description: "Operator target: dip-swing ~45 DTE one-strike OTM, 2ct, TP +40% / SL -50%"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_dip_swing_45dte_otm
+      entry:
+        dte_pick: target
+        dte_target: 45
+        strike_pick: otm_one
+        regime_gate: DIP_BOUNCE
+        prior_day_spy_positive: false
+      paper_entry:
+        quantity: 2
+        max_open_positions: 1
+      ta:
+        entry:
+          mode: bb_bounce
+          intraday_enabled: true
+          require_vwap_reclaim: true
+      exit:
+        take_profit_pct: 0.40
+        stop_loss_pct: 0.50
+        require_upper_bb_for_take_profit: false
+        swing_hold: true
+        max_hold_dte: 2
+
+  v2_dip_swing_50dte_otm:
+    active: true
+    description: "Operator target: dip-swing ~50 DTE one-strike OTM, 2ct, TP +40% / SL -50%"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_dip_swing_50dte_otm
+      entry:
+        dte_pick: target
+        dte_target: 50
+        strike_pick: otm_one
+        regime_gate: DIP_BOUNCE
+        prior_day_spy_positive: false
+      paper_entry:
+        quantity: 2
+        max_open_positions: 1
+      ta:
+        entry:
+          mode: bb_bounce
+          intraday_enabled: true
+          require_vwap_reclaim: true
+      exit:
+        take_profit_pct: 0.40
+        stop_loss_pct: 0.50
+        require_upper_bb_for_take_profit: false
+        swing_hold: true
+        max_hold_dte: 2
+
+  v2_dip_swing_55dte_otm:
+    active: true
+    description: "Operator target: dip-swing ~55 DTE one-strike OTM, 2ct, TP +40% / SL -50%"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_dip_swing_55dte_otm
+      entry:
+        dte_pick: target
+        dte_target: 55
+        strike_pick: otm_one
+        regime_gate: DIP_BOUNCE
+        prior_day_spy_positive: false
+      paper_entry:
+        quantity: 2
+        max_open_positions: 1
+      ta:
+        entry:
+          mode: bb_bounce
+          intraday_enabled: true
+          require_vwap_reclaim: true
+      exit:
+        take_profit_pct: 0.40
+        stop_loss_pct: 0.50
+        require_upper_bb_for_take_profit: false
+        swing_hold: true
+        max_hold_dte: 2
+
+  v2_dip_swing_60dte_otm:
+    active: true
+    description: "Operator target: dip-swing ~60 DTE one-strike OTM, 2ct, TP +40% / SL -50%"
+    overrides:
+      logging:
+        logic_version: xsp_lane_a_v2_dip_swing_60dte_otm
+      entry:
+        dte_pick: target
+        dte_target: 60
+        strike_pick: otm_one
+        regime_gate: DIP_BOUNCE
+        prior_day_spy_positive: false
+      paper_entry:
+        quantity: 2
+        max_open_positions: 1
+      ta:
+        entry:
+          mode: bb_bounce
+          intraday_enabled: true
+          require_vwap_reclaim: true
+      exit:
+        take_profit_pct: 0.40
+        stop_loss_pct: 0.50
+        require_upper_bb_for_take_profit: false
+        swing_hold: true
+        max_hold_dte: 2
+
   # Debit-spread prototype (audit Phase D / fusion): same dip-bounce entry as the
   # 14dte flagship, but logs debit_spread_shadow economics (net debit, capped
   # payoff, est. theta/vega drag reduction vs the naked call) on every entry.

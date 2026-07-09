@@ -95,7 +95,8 @@ paper_entry:
 
 live:
   # XSP_LANE_A_LIVE_VARIANT_ID selects the single promoted variant; unset fails closed.
-  max_loss_usd: 150.0
+  # Sized for 2-lot operator-profile swings (~$12 premium × 2 × 50% SL ≈ $1.2k).
+  max_loss_usd: 1200.0
   max_cost_frac: 0.5
   veto_red: true
   # Deterministic pre-trade order reviewer (fail-closed second opinion before

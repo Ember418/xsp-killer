@@ -11,7 +11,7 @@ allowed_chain_symbols:
   - SPX
 
 live_exits: false  # master kill switch; env XSP_LANE_A_LIVE_EXITS overrides
-max_contracts_per_order: 1
+max_contracts_per_order: 2
 require_review_before_place: true
 
 audit_log: "logs/rh_mcp_audit.jsonl"
