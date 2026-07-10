@@ -1,0 +1,24 @@
+# K157 Muse Spark orchestration spike — Phase 0 (opt-in, NO-GO default).
+k157:
+  version: "2026-07-10"
+  model: meta_muse-spark-1.1
+  api:
+    base_url: "https://api.vals.ai/v1"
+    chat_completions_path: "/chat/completions"
+  spike:
+    window_days: 30
+    start_date: "2026-07-10"
+    end_date: "2026-08-09"
+    subagent: "pre_lane_a_macro_research"
+    note: "30-day operator spike; log-only enrichment — no Lane A executor swap"
+  cost_gate:
+    baseline_usd_per_loop: 0.12  # Claude/OpenAI macro-research reference
+    max_cost_usd_per_loop: 0.15
+    abort_on_breach: true
+  go_nogo:
+    default_verdict: "NO_GO"
+    min_samples_for_verdict: 10
+    latency_p50_ms_max: 20000
+    latency_p95_ms_max: 45000
+    rate_limit_stalls_max: 0
+    note: "GO only after stable delegation without rate-limit stalls during market hours"

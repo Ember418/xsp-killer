@@ -93,3 +93,12 @@ def build_monitor_macro_weather_extras(
     if isinstance(sofr, dict):
         extras["sofr_curve"] = sofr
     return extras
+
+
+def maybe_enrich_with_muse_spark(prompt: str) -> dict[str, Any] | None:
+    """Optional log-only Muse Spark enrichment when K157 spike is enabled."""
+    from xsp_killer.muse_spark_spike import muse_spark_enabled, run_macro_research_enrichment
+
+    if not muse_spark_enabled():
+        return None
+    return run_macro_research_enrichment(prompt)
