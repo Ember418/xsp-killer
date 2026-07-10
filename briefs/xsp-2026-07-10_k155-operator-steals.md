@@ -29,6 +29,11 @@ K155 **operator steals** — consolidated checklist from Capital Flows (SOFR con
 - `xsp_killer/lane_a_monitor.py` — attaches `macro_weather_extras` to monitor JSON (log-only)
 - `scripts/adopt_k155_ops_phase0.sh` — Phase 0 adoption manifest
 
+## Split briefs (Jul 10 13:17 UTC)
+
+- `briefs/2026-07-10_xsp-sofr-conviction-pre-lane-a-checklist.md` — SOFR + conviction journal (P0 ops, no prod code)
+- `briefs/2026-07-10_xsp-macro-weather-usdjpy-cpi-operator.md` — USDJPY/CPI/sentiment overlay (P0 ops, no prod code)
+
 ## Sources
 
 - `briefs/xsp-2026-07-10_capital-flows-sofr-conviction-framework-steal.md` (via `/opt/cemini/briefs/`)

@@ -113,7 +113,11 @@ def test_load_k155_notes_prod_config():
     notes = load_k155_notes()
     assert notes.get("version") == "2026-07-10"
     assert notes["events"]["cpi"]["date"] == "2026-07-15"
+    assert notes["events"]["cpi"]["overnight_posture"] == "halve_or_block"
     assert notes["cme_ssf"]["date"] == "2026-07-27"
+    assert notes["macro_weather_snapshot"]["yen_strength_narrative"] == "GPIF_domestic"
+    assert "conviction_journal" in notes
+    assert "vol_edge" in notes
 
 
 def test_run_monitor_attaches_macro_weather_extras(tmp_path, monkeypatch):

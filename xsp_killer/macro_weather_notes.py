@@ -84,6 +84,9 @@ def build_monitor_macro_weather_extras(
         "fundsmith_sentiment",
         "sox_kospi_watch",
         "usdjpy_zone",
+        "macro_weather_snapshot",
+        "conviction_journal",
+        "vol_edge",
     ):
         if key in k155:
             extras[key] = k155[key]

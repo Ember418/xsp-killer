@@ -23,6 +23,10 @@ from pathlib import Path
 payload = {
     "ts": datetime.now(timezone.utc).isoformat(),
     "brief": "xsp-2026-07-10_k155-operator-steals",
+    "split_briefs": [
+        "2026-07-10_xsp-sofr-conviction-pre-lane-a-checklist",
+        "2026-07-10_xsp-macro-weather-usdjpy-cpi-operator",
+    ],
     "phase": "P0",
     "verdict": "$VERDICT",
     "test_status": "$TEST_STATUS",
@@ -37,6 +41,8 @@ payload = {
     "steals": [
         "xsp-2026-07-10_capital-flows-sofr-conviction-framework-steal",
         "xsp-2026-07-10_macro-charts-jpy-gold-cpi-steal",
+        "2026-07-10_xsp-sofr-conviction-pre-lane-a-checklist",
+        "2026-07-10_xsp-macro-weather-usdjpy-cpi-operator",
     ],
     "gate_impact": "LOG_ONLY_NO_REGIME_GATE_CHANGE",
 }
