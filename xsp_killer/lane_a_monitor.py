@@ -176,6 +176,7 @@ class MonitorReport:
     paper_mtm_usd: float | None = None
     paper_hypothetical_exits: list[dict[str, Any]] = field(default_factory=list)
     ta_snapshot: dict[str, Any] | None = None
+    macro_weather_extras: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1144,6 +1145,18 @@ def run_monitor(
     )
     if ta_signal is not None and hasattr(ta_signal, "to_dict"):
         report.ta_snapshot = ta_signal.to_dict()
+
+    try:
+        from xsp_killer.macro_weather_notes import build_monitor_macro_weather_extras
+
+        report.macro_weather_extras = build_monitor_macro_weather_extras()
+        if report.macro_weather_extras:
+            logger.info(
+                "k155 macro_weather_extras attached (log-only): event_cluster=%s",
+                report.macro_weather_extras.get("event_cluster"),
+            )
+    except Exception as exc:
+        logger.info("k155 macro weather extras skipped: %s", exc)
 
     today = (now_et or datetime.now(ET)).date()
 

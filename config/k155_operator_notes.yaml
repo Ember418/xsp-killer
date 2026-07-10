@@ -1,0 +1,26 @@
+# K155 operator notes — log-only macro weather extras (Phase 0).
+k155:
+  version: "2026-07-10"
+  sofr_curve:
+    note: "SOFR curve as price-of-money anchor; read pre-Lane-A alongside macro weather GREEN/YELLOW"
+    cross_asset: ["CADJPY/oil", "Z6→ZN→ES"]
+  usdjpy_zone:
+    lo: 162.25
+    hi: 162.50
+    note: "clearest FX R/R band; yen strength regime input for Lane B"
+  event_cluster: "July FOMC / CPI cluster"
+  events:
+    cpi:
+      date: "2026-07-15"
+      note: "tighten Lane A overnight size into print; gold/GDX per MC report"
+    fomc_cluster:
+      month: "2026-07"
+      note: "align ZN/ES with Z6 floor narrative before overnight adds"
+  cme_ssf:
+    date: "2026-07-27"
+    note: "CME single-stock futures overnight hedge flows; ORCL-type mega-cap earnings"
+  fundsmith_sentiment:
+    h1_turnover_pct: 51
+    note: "sentiment extreme; no auto-trade"
+  sox_kospi_watch:
+    note: "watch MC target-range short trigger; do not front-run without range hit"
