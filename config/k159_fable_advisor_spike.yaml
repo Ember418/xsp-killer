@@ -1,0 +1,21 @@
+# K159 Fable Advisor orchestration spike — Phase 0 (opt-in, NO-GO default).
+k159:
+  version: "2026-07-11"
+  repo: DannyMac180/fable-advisor
+  license: MIT
+  roles:
+    fable: architect_reviewer_only
+    implementation_models:
+      - grok-4.5
+      - gpt-5.6-sol
+  token_reduction_adopt_threshold_pct: 30
+  cross_vendor_review_required: true
+  prereq:
+    claude_code_min_version: "2.1.170"
+  spike:
+    iterations: 1
+    note: "One XSP brief iteration; measure token spend vs baseline Fable-only session"
+  go_nogo:
+    default_verdict: "NO_GO"
+    min_samples_for_verdict: 1
+    note: "GO only when Grok lane available, ≥30% token reduction, and cross-vendor review on prod diffs"

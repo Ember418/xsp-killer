@@ -127,3 +127,25 @@ def maybe_enrich_with_muse_spark(prompt: str) -> dict[str, Any] | None:
     if not muse_spark_enabled():
         return None
     return run_macro_research_enrichment(prompt)
+
+
+def maybe_log_fable_spike(
+    task_id: str,
+    *,
+    baseline_tokens: int,
+    spike_tokens: int,
+    diff_touches_prod: bool = False,
+    cross_vendor_review_done: bool = False,
+) -> dict[str, Any] | None:
+    """Optional log-only Fable Advisor spike when K159 is enabled."""
+    from xsp_killer.fable_advisor_spike import fable_advisor_enabled, run_brief_iteration_spike
+
+    if not fable_advisor_enabled():
+        return None
+    return run_brief_iteration_spike(
+        task_id,
+        baseline_tokens=baseline_tokens,
+        spike_tokens=spike_tokens,
+        diff_touches_prod=diff_touches_prod,
+        cross_vendor_review_done=cross_vendor_review_done,
+    )
