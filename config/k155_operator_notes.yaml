@@ -36,9 +36,32 @@ k155:
       note: "align ZN/ES with Z6 floor narrative before overnight adds"
   cme_ssf:
     date: "2026-07-27"
-    note: "CME single-stock futures overnight hedge flows; ORCL-type mega-cap earnings"
+    tickers: ["NVDA", "MSFT", "ORCL", "PLTR"]
+    note: "CME single-stock futures overnight hedge flows; mega-cap earnings windows overlapping XSP book"
   fundsmith_sentiment:
     h1_turnover_pct: 51
     note: "sentiment extreme; no auto-trade"
   sox_kospi_watch:
     note: "watch MC target-range short trigger; do not front-run without range hit"
+
+# K158 operator steals — SOFR front-end / Jul 29 FOMC (log-only; extends K155).
+k158:
+  version: "2026-07-11"
+  sofr_front_end:
+    journal_spreads:
+      - Z6/Z7  # daily front-end read; ~6bp cuts as of Jul 11
+      - Z6/Z8  # calendar spread; front-end repricing risk on disinflation + overtighten
+    note: "log spread levels in macro weather / conviction journal; front-end repricing risk if disinflation + overtighten narrative wins"
+  fomc_jul29:
+    date: "2026-07-29"
+    catalyst_type: binary  # 66/34 hold/hike coin-flip per Capital Flows
+    overnight_posture: tighten  # tighten Lane A overnight size until post-meeting
+    note: "binary catalyst; tighten Lane A overnight size per K155 checklist until post-meeting"
+  cpi_skew:
+    skew: disinflation_print_drift_higher
+    between_catalysts: true
+    no_front_run_without: cross_asset_confirms
+    note: "disinflation print → drift higher between catalysts; do not front-run without cross-asset confirms"
+  japan_yen:
+    overlay: negative_real_short_end_funding
+    note: "negative real short-end funding deficit; complements K155 USDJPY zone for FX overlay"

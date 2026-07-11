@@ -13,14 +13,22 @@ DEFAULT_K155_NOTES = ROOT / "config" / "k155_operator_notes.yaml"
 USDJPY_ZONE = (162.25, 162.50)
 
 
+def _load_yaml_block(path: Path, key: str) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    block = data.get(key)
+    return dict(block) if isinstance(block, dict) else {}
+
+
 def load_k155_notes(path: Path | None = None) -> dict[str, Any]:
     """Load K155 operator notes from YAML config."""
-    p = path or DEFAULT_K155_NOTES
-    if not p.is_file():
-        return {}
-    data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    block = data.get("k155")
-    return dict(block) if isinstance(block, dict) else {}
+    return _load_yaml_block(path or DEFAULT_K155_NOTES, "k155")
+
+
+def load_k158_notes(path: Path | None = None) -> dict[str, Any]:
+    """Load K158 operator steals (extends K155) from YAML config."""
+    return _load_yaml_block(path or DEFAULT_K155_NOTES, "k158")
 
 
 def build_macro_weather_extras(
@@ -64,11 +72,16 @@ def build_monitor_macro_weather_extras(
     notes: dict[str, Any] | None = None,
     *,
     usdjpy: float | None = None,
+    k158_notes: dict[str, Any] | None = None,
+    notes_path: Path | None = None,
 ) -> dict[str, Any] | None:
-    """Merge K155 YAML notes with runtime extras for monitor attachment."""
-    k155 = notes if notes is not None else load_k155_notes()
+    """Merge K155/K158 YAML notes with runtime extras for monitor attachment."""
+    path = notes_path or DEFAULT_K155_NOTES
+    k155 = notes if notes is not None else load_k155_notes(path)
     if not k155:
         return None
+
+    k158 = k158_notes if k158_notes is not None else load_k158_notes(path)
 
     sofr = k155.get("sofr_curve")
     sofr_note = sofr.get("note") if isinstance(sofr, dict) else None
@@ -92,6 +105,18 @@ def build_monitor_macro_weather_extras(
             extras[key] = k155[key]
     if isinstance(sofr, dict):
         extras["sofr_curve"] = sofr
+
+    if k158:
+        extras["k158_version"] = k158.get("version")
+        for key in (
+            "sofr_front_end",
+            "fomc_jul29",
+            "cpi_skew",
+            "japan_yen",
+        ):
+            if key in k158:
+                extras[key] = k158[key]
+
     return extras
 
 

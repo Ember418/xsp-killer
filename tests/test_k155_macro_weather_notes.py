@@ -12,6 +12,7 @@ from xsp_killer.macro_weather_notes import (
     build_monitor_macro_weather_extras,
     conviction_journal_fields,
     load_k155_notes,
+    load_k158_notes,
 )
 
 
@@ -115,9 +116,83 @@ def test_load_k155_notes_prod_config():
     assert notes["events"]["cpi"]["date"] == "2026-07-15"
     assert notes["events"]["cpi"]["overnight_posture"] == "halve_or_block"
     assert notes["cme_ssf"]["date"] == "2026-07-27"
+    assert notes["cme_ssf"]["tickers"] == ["NVDA", "MSFT", "ORCL", "PLTR"]
     assert notes["macro_weather_snapshot"]["yen_strength_narrative"] == "GPIF_domestic"
     assert "conviction_journal" in notes
     assert "vol_edge" in notes
+
+
+def test_load_k158_notes_prod_config():
+    notes = load_k158_notes()
+    assert notes.get("version") == "2026-07-11"
+    assert "Z6/Z7" in notes["sofr_front_end"]["journal_spreads"]
+    assert "Z6/Z8" in notes["sofr_front_end"]["journal_spreads"]
+    assert notes["fomc_jul29"]["date"] == "2026-07-29"
+    assert notes["fomc_jul29"]["catalyst_type"] == "binary"
+    assert notes["fomc_jul29"]["overnight_posture"] == "tighten"
+    assert notes["cpi_skew"]["no_front_run_without"] == "cross_asset_confirms"
+    assert notes["japan_yen"]["overlay"] == "negative_real_short_end_funding"
+
+
+def test_build_monitor_macro_weather_extras_includes_k158(tmp_path: Path):
+    cfg = tmp_path / "k155.yaml"
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "k155": {
+                    "version": "2026-07-10",
+                    "event_cluster": "July FOMC / CPI cluster",
+                    "sofr_curve": {"note": "SOFR anchor"},
+                    "cme_ssf": {
+                        "date": "2026-07-27",
+                        "tickers": ["NVDA", "MSFT", "ORCL", "PLTR"],
+                    },
+                },
+                "k158": {
+                    "version": "2026-07-11",
+                    "sofr_front_end": {
+                        "journal_spreads": ["Z6/Z7", "Z6/Z8"],
+                    },
+                    "fomc_jul29": {
+                        "date": "2026-07-29",
+                        "catalyst_type": "binary",
+                        "overnight_posture": "tighten",
+                    },
+                    "cpi_skew": {
+                        "no_front_run_without": "cross_asset_confirms",
+                    },
+                    "japan_yen": {
+                        "overlay": "negative_real_short_end_funding",
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    notes = load_k155_notes(cfg)
+    extras = build_monitor_macro_weather_extras(
+        notes,
+        usdjpy=162.40,
+        k158_notes=load_k158_notes(cfg),
+        notes_path=cfg,
+    )
+    assert extras is not None
+    assert extras["k158_version"] == "2026-07-11"
+    assert extras["sofr_front_end"]["journal_spreads"] == ["Z6/Z7", "Z6/Z8"]
+    assert extras["fomc_jul29"]["date"] == "2026-07-29"
+    assert extras["cpi_skew"]["no_front_run_without"] == "cross_asset_confirms"
+    assert extras["japan_yen"]["overlay"] == "negative_real_short_end_funding"
+    assert extras["cme_ssf"]["tickers"] == ["NVDA", "MSFT", "ORCL", "PLTR"]
+
+
+def test_build_monitor_macro_weather_extras_k158_from_prod_config():
+    extras = build_monitor_macro_weather_extras(usdjpy=162.35)
+    assert extras is not None
+    assert extras["k158_version"] == "2026-07-11"
+    assert "Z6/Z7" in extras["sofr_front_end"]["journal_spreads"]
+    assert extras["fomc_jul29"]["overnight_posture"] == "tighten"
+    assert extras["cpi_skew"]["skew"] == "disinflation_print_drift_higher"
+    assert extras["japan_yen"]["overlay"] == "negative_real_short_end_funding"
 
 
 def test_run_monitor_attaches_macro_weather_extras(tmp_path, monkeypatch):
@@ -135,4 +210,7 @@ def test_run_monitor_attaches_macro_weather_extras(tmp_path, monkeypatch):
     )
     assert report.macro_weather_extras is not None
     assert report.macro_weather_extras["k155_version"] == "2026-07-10"
+    assert report.macro_weather_extras["k158_version"] == "2026-07-11"
+    assert "sofr_front_end" in report.macro_weather_extras
+    assert "fomc_jul29" in report.macro_weather_extras
     assert "events" in report.macro_weather_extras
