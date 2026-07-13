@@ -38,6 +38,11 @@ def test_load_variant_specs():
     assert "v2_21dte_atm" in ids
     assert "v2_yellow_top_quartile_bounce" in ids
     assert "v2_yellow_mid_bounce" in ids
+    active_ids = {s.variant_id for s in specs if s.active}
+    assert len(active_ids) == 12
+    assert "v2_yellow_mid_bounce" in active_ids
+    assert "v2_yellow_top_quartile_bounce" not in active_ids
+    assert "v2_21dte_atm" not in active_ids
 
 
 def test_merged_rules_dte_target(tmp_path):
@@ -90,14 +95,18 @@ def test_merged_rules_stack3_variant(tmp_path):
 
 
 def test_merged_rules_operator_target_dte_stagger(tmp_path):
-    """45–60 DTE OTM stagger grid matches operator dip-swing profile."""
+    """45–60 DTE OTM stagger grid matches operator dip-swing profile.
+
+    Pruned inactive 2026-07-13 (0 entries / starved); rules stay wired for
+    re-enable if 21dte_otm confirms with more sample.
+    """
     import yaml
 
     specs = load_variant_specs()
     targets = {45: "v2_dip_swing_45dte_otm", 50: "v2_dip_swing_50dte_otm", 55: "v2_dip_swing_55dte_otm", 60: "v2_dip_swing_60dte_otm"}
     for dte, vid in targets.items():
         spec = next(s for s in specs if s.variant_id == vid)
-        assert spec.active
+        assert not spec.active
         data = yaml.safe_load(merged_rules_path(spec, tmp_dir=tmp_path).read_text(encoding="utf-8"))
         assert data["entry"]["dte_pick"] == "target"
         assert data["entry"]["dte_target"] == dte
