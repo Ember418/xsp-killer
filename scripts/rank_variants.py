@@ -10,7 +10,11 @@ P&L in the logs is premium-scaled (SPY chain mid -> XSP notional via
 single real XSP contract.
 
 Usage:
-    python3 scripts/rank_variants.py [--scale 10] [--min-trades N]
+    python3 scripts/rank_variants.py [--scale 10] [--min-trades N] [--active-only]
+
+With ``--active-only``, only variants marked ``active: true`` in
+``config/lane_a_variants.yaml`` are ranked (pruned / inactive ids are skipped
+even if their monitor logs still exist).
 """
 
 from __future__ import annotations
@@ -21,8 +25,22 @@ import glob
 import json
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 LOG_GLOB = str(ROOT / "logs" / "xsp_lane_a_variant_*.jsonl")
+VARIANTS_CONFIG = ROOT / "config" / "lane_a_variants.yaml"
+
+
+def load_active_variant_ids(path: Path | None = None) -> set[str]:
+    """Return variant ids with ``active: true`` in lane_a_variants.yaml."""
+    cfg_path = path or VARIANTS_CONFIG
+    data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+    active: set[str] = set()
+    for variant_id, raw in (data.get("variants") or {}).items():
+        if isinstance(raw, dict) and bool(raw.get("active", True)):
+            active.add(str(variant_id))
+    return active
 
 
 def analyze(path: str) -> dict:
@@ -60,11 +78,22 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--scale", type=float, default=10.0, help="premium_scale")
     ap.add_argument("--min-trades", type=int, default=0)
+    ap.add_argument(
+        "--active-only",
+        action="store_true",
+        help="only rank variants with active: true in config/lane_a_variants.yaml",
+    )
     args = ap.parse_args()
+
+    active_ids: set[str] | None = None
+    if args.active_only:
+        active_ids = load_active_variant_ids()
 
     rows = []
     for f in sorted(glob.glob(LOG_GLOB)):
         name = Path(f).stem.replace("xsp_lane_a_variant_", "")
+        if active_ids is not None and name not in active_ids:
+            continue
         rows.append((name, analyze(f)))
     rows.sort(key=lambda kv: -kv[1]["total"])
 

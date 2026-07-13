@@ -19,7 +19,7 @@ variants:
         require_upper_bb_for_take_profit: false
 
   v2_21dte_atm:
-    active: true
+    active: false  # pruned 2026-07-13: DTE axis covered by 14dte_atm + 28dte_atm; free capacity for dip-swing
     description: "21 DTE target, ATM — between min and 28"
     overrides:
       logging:
@@ -114,7 +114,7 @@ variants:
         require_upper_bb_for_take_profit: false
 
   v2_28dte_cheapest:
-    active: true
+    active: false  # pruned 2026-07-13: clone of v2_28dte_atm (identical realized book)
     description: "28 DTE, cheapest near ATM — mentor-style scan"
     overrides:
       logging:
@@ -129,7 +129,7 @@ variants:
 
   # --- Exit axis (28 DTE ATM) ---
   v2_28dte_wide_sl:
-    active: true
+    active: false  # pruned 2026-07-13: clone of v2_28dte_easy_tp (identical realized book)
     description: "28 DTE ATM, 30% SL / 15% TP — room for overnight noise"
     overrides:
       logging:
@@ -159,7 +159,7 @@ variants:
 
   # --- Tape filter ---
   v2_14dte_green_day:
-    active: true
+    active: false  # pruned 2026-07-13: only net-negative active shadow
     description: "Min DTE, prior-day SPY green required"
     overrides:
       logging:
@@ -221,7 +221,7 @@ variants:
         require_upper_bb_for_take_profit: false
 
   v2_yellow_top_quartile_bounce:
-    active: true
+    active: false  # pruned 2026-07-13: clone of v2_yellow_mid_bounce (identical realized book)
     description: "28 DTE ATM — YELLOW top-quartile (frac≥0.75) + BB bounce at close (shadow)"
     overrides:
       logging:
@@ -303,7 +303,7 @@ variants:
 
   # Max runway / low theta: ~30 DTE ATM.
   v2_dip_swing_30dte:
-    active: true
+    active: false  # pruned 2026-07-13: thin sample; collapse DTE axis to 14 vs 21
     description: "Dip-swing, ~30 DTE ATM, TP +40% / SL -50%"
     overrides:
       logging:
@@ -382,7 +382,7 @@ variants:
 
   # Looser entry: no VWAP-reclaim requirement -> more dip trades, more sample.
   v2_dip_swing_14dte_loose:
-    active: true
+    active: false  # pruned 2026-07-13: duplicate of v2_dip_swing_14dte (identical realized book)
     description: "Dip-swing, ~14 DTE ATM, loose entry (no VWAP reclaim), TP +40% / SL -50%"
     overrides:
       logging:
@@ -438,7 +438,7 @@ variants:
   # grid compares DTE buckets before live promotion — operator does not fix 55 DTE.
 
   v2_dip_swing_45dte_otm:
-    active: true
+    active: false  # pruned 2026-07-13: 0 entries / starved (far-DTE OTM)
     description: "Operator target: dip-swing ~45 DTE one-strike OTM, 2ct, TP +40% / SL -50%"
     overrides:
       logging:
@@ -465,7 +465,7 @@ variants:
         max_hold_dte: 2
 
   v2_dip_swing_50dte_otm:
-    active: true
+    active: false  # pruned 2026-07-13: 0 entries / starved (far-DTE OTM)
     description: "Operator target: dip-swing ~50 DTE one-strike OTM, 2ct, TP +40% / SL -50%"
     overrides:
       logging:
@@ -492,7 +492,7 @@ variants:
         max_hold_dte: 2
 
   v2_dip_swing_55dte_otm:
-    active: true
+    active: false  # pruned 2026-07-13: 0 entries / starved (far-DTE OTM)
     description: "Operator target: dip-swing ~55 DTE one-strike OTM, 2ct, TP +40% / SL -50%"
     overrides:
       logging:
@@ -519,7 +519,7 @@ variants:
         max_hold_dte: 2
 
   v2_dip_swing_60dte_otm:
-    active: true
+    active: false  # pruned 2026-07-13: 0 entries / starved (far-DTE OTM)
     description: "Operator target: dip-swing ~60 DTE one-strike OTM, 2ct, TP +40% / SL -50%"
     overrides:
       logging:
