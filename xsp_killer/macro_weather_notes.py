@@ -31,6 +31,16 @@ def load_k158_notes(path: Path | None = None) -> dict[str, Any]:
     return _load_yaml_block(path or DEFAULT_K155_NOTES, "k158")
 
 
+def load_k161_notes(path: Path | None = None) -> dict[str, Any]:
+    """Load K161 CEV aspiration operator notes (log-only; no solver)."""
+    return _load_yaml_block(path or DEFAULT_K155_NOTES, "k161")
+
+
+def load_k162_notes(path: Path | None = None) -> dict[str, Any]:
+    """Load K162 Macro Charts sentiment capitulation notes (log-only)."""
+    return _load_yaml_block(path or DEFAULT_K155_NOTES, "k162")
+
+
 def build_macro_weather_extras(
     *,
     usdjpy: float | None,
@@ -73,15 +83,19 @@ def build_monitor_macro_weather_extras(
     *,
     usdjpy: float | None = None,
     k158_notes: dict[str, Any] | None = None,
+    k161_notes: dict[str, Any] | None = None,
+    k162_notes: dict[str, Any] | None = None,
     notes_path: Path | None = None,
 ) -> dict[str, Any] | None:
-    """Merge K155/K158 YAML notes with runtime extras for monitor attachment."""
+    """Merge K155/K158/K161/K162 YAML notes with runtime extras for monitor attachment."""
     path = notes_path or DEFAULT_K155_NOTES
     k155 = notes if notes is not None else load_k155_notes(path)
     if not k155:
         return None
 
     k158 = k158_notes if k158_notes is not None else load_k158_notes(path)
+    k161 = k161_notes if k161_notes is not None else load_k161_notes(path)
+    k162 = k162_notes if k162_notes is not None else load_k162_notes(path)
 
     sofr = k155.get("sofr_curve")
     sofr_note = sofr.get("note") if isinstance(sofr, dict) else None
@@ -116,6 +130,16 @@ def build_monitor_macro_weather_extras(
         ):
             if key in k158:
                 extras[key] = k158[key]
+
+    if k161:
+        extras["k161_version"] = k161.get("version")
+        if "cev_aspiration" in k161:
+            extras["cev_aspiration"] = k161["cev_aspiration"]
+
+    if k162:
+        extras["k162_version"] = k162.get("version")
+        if "sentiment_capitulation" in k162:
+            extras["sentiment_capitulation"] = k162["sentiment_capitulation"]
 
     return extras
 

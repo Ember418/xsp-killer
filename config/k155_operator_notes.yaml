@@ -65,3 +65,23 @@ k158:
   japan_yen:
     overlay: negative_real_short_end_funding
     note: "negative real short-end funding deficit; complements K155 USDJPY zone for FX overlay"
+
+# K161 — CEV resistance/support aspiration levels (log-only; no integral solver).
+k161:
+  version: "2026-07-13"
+  cev_aspiration:
+    note: "resistance/support as hidden aspiration levels under CEV; positive-drift → band not one-sided GBM"
+    regime_tag_required: true
+    band_thinking_on_positive_drift: true
+    elasticity_widen_bands_when_vol_sensitive: true
+    no_integral_solver: true
+
+# K162 — Macro Charts sentiment capitulation (log-only; extends K155).
+k162:
+  version: "2026-07-13"
+  sentiment_capitulation:
+    crowded_semis_risk: elevated
+    sox_relative_weakness: watch
+    gold_models_turning_up: context_only
+    yen_hedge_narrative_only: true
+    no_chase_spmo_semis_into_lane_a_overnight: true

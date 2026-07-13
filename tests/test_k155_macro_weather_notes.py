@@ -13,6 +13,8 @@ from xsp_killer.macro_weather_notes import (
     conviction_journal_fields,
     load_k155_notes,
     load_k158_notes,
+    load_k161_notes,
+    load_k162_notes,
 )
 
 
@@ -195,6 +197,88 @@ def test_build_monitor_macro_weather_extras_k158_from_prod_config():
     assert extras["japan_yen"]["overlay"] == "negative_real_short_end_funding"
 
 
+def test_load_k161_notes_prod_config():
+    notes = load_k161_notes()
+    assert notes.get("version") == "2026-07-13"
+    cev = notes["cev_aspiration"]
+    assert cev["regime_tag_required"] is True
+    assert cev["band_thinking_on_positive_drift"] is True
+    assert cev["elasticity_widen_bands_when_vol_sensitive"] is True
+    assert cev["no_integral_solver"] is True
+
+
+def test_load_k162_notes_prod_config():
+    notes = load_k162_notes()
+    assert notes.get("version") == "2026-07-13"
+    sc = notes["sentiment_capitulation"]
+    assert sc["crowded_semis_risk"] == "elevated"
+    assert sc["sox_relative_weakness"] == "watch"
+    assert sc["gold_models_turning_up"] == "context_only"
+    assert sc["yen_hedge_narrative_only"] is True
+    assert sc["no_chase_spmo_semis_into_lane_a_overnight"] is True
+
+
+def test_build_monitor_macro_weather_extras_includes_k161_k162(tmp_path: Path):
+    cfg = tmp_path / "k155.yaml"
+    cfg.write_text(
+        yaml.safe_dump(
+            {
+                "k155": {
+                    "version": "2026-07-10",
+                    "event_cluster": "July FOMC / CPI cluster",
+                    "sofr_curve": {"note": "SOFR anchor"},
+                },
+                "k161": {
+                    "version": "2026-07-13",
+                    "cev_aspiration": {
+                        "regime_tag_required": True,
+                        "band_thinking_on_positive_drift": True,
+                        "elasticity_widen_bands_when_vol_sensitive": True,
+                        "no_integral_solver": True,
+                    },
+                },
+                "k162": {
+                    "version": "2026-07-13",
+                    "sentiment_capitulation": {
+                        "crowded_semis_risk": "elevated",
+                        "sox_relative_weakness": "watch",
+                        "gold_models_turning_up": "context_only",
+                        "yen_hedge_narrative_only": True,
+                        "no_chase_spmo_semis_into_lane_a_overnight": True,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    notes = load_k155_notes(cfg)
+    extras = build_monitor_macro_weather_extras(
+        notes,
+        usdjpy=162.40,
+        k161_notes=load_k161_notes(cfg),
+        k162_notes=load_k162_notes(cfg),
+        notes_path=cfg,
+    )
+    assert extras is not None
+    assert extras["k161_version"] == "2026-07-13"
+    assert extras["cev_aspiration"]["no_integral_solver"] is True
+    assert extras["cev_aspiration"]["band_thinking_on_positive_drift"] is True
+    assert extras["k162_version"] == "2026-07-13"
+    assert extras["sentiment_capitulation"]["crowded_semis_risk"] == "elevated"
+    assert extras["sentiment_capitulation"]["no_chase_spmo_semis_into_lane_a_overnight"] is True
+
+
+def test_build_monitor_macro_weather_extras_k161_k162_from_prod_config():
+    extras = build_monitor_macro_weather_extras(usdjpy=162.35)
+    assert extras is not None
+    assert extras["k161_version"] == "2026-07-13"
+    assert extras["cev_aspiration"]["no_integral_solver"] is True
+    assert extras["cev_aspiration"]["regime_tag_required"] is True
+    assert extras["k162_version"] == "2026-07-13"
+    assert extras["sentiment_capitulation"]["sox_relative_weakness"] == "watch"
+    assert extras["sentiment_capitulation"]["yen_hedge_narrative_only"] is True
+
+
 def test_run_monitor_attaches_macro_weather_extras(tmp_path, monkeypatch):
     from xsp_killer.lane_a_monitor import run_monitor
 
@@ -211,6 +295,10 @@ def test_run_monitor_attaches_macro_weather_extras(tmp_path, monkeypatch):
     assert report.macro_weather_extras is not None
     assert report.macro_weather_extras["k155_version"] == "2026-07-10"
     assert report.macro_weather_extras["k158_version"] == "2026-07-11"
+    assert report.macro_weather_extras["k161_version"] == "2026-07-13"
+    assert report.macro_weather_extras["k162_version"] == "2026-07-13"
     assert "sofr_front_end" in report.macro_weather_extras
     assert "fomc_jul29" in report.macro_weather_extras
+    assert "cev_aspiration" in report.macro_weather_extras
+    assert "sentiment_capitulation" in report.macro_weather_extras
     assert "events" in report.macro_weather_extras
