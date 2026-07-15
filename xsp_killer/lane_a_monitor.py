@@ -177,6 +177,7 @@ class MonitorReport:
     paper_hypothetical_exits: list[dict[str, Any]] = field(default_factory=list)
     ta_snapshot: dict[str, Any] | None = None
     macro_weather_extras: dict[str, Any] | None = None
+    uw_shadow: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1183,6 +1184,19 @@ def run_monitor(
             )
     except Exception as exc:
         logger.info("k155 macro weather extras skipped: %s", exc)
+
+    try:
+        from xsp_killer.uw_shadow import build_monitor_uw_shadow
+
+        report.uw_shadow = build_monitor_uw_shadow(now_et=now_et)
+        if report.uw_shadow:
+            logger.info(
+                "uw_shadow attached (log-only): bias=%s wall=%s",
+                (report.uw_shadow.get("flow") or {}).get("net_prem_bias"),
+                (report.uw_shadow.get("gex") or {}).get("wall_side"),
+            )
+    except Exception as exc:
+        logger.info("uw_shadow skipped: %s", exc)
 
     today = (now_et or datetime.now(ET)).date()
 
