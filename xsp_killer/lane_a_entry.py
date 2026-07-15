@@ -1186,13 +1186,11 @@ def _maybe_place_live_entry(
     current_variant = str(
         getattr(lane_rules, "logic_version", None) or decision.logic_version or ""
     )
-    if not _live_variant_allowed(
-        current_variant, os.getenv("XSP_LANE_A_LIVE_VARIANT_ID")
-    ):
-        decision.live_order = {
-            "placed": False,
-            "reason": "variant not in live allowlist",
-        }
+    from xsp_killer.live_gates import human_variant_review_allows
+
+    ok_review, review_reason = human_variant_review_allows(current_variant)
+    if not ok_review:
+        decision.live_order = {"placed": False, "reason": review_reason}
         return
     live_cfg = _live_entry_safety_config()
     if bool(live_cfg["veto_red"]):

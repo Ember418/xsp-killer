@@ -550,6 +550,22 @@ _ENTRY = types.SimpleNamespace(
 )
 
 
+def _human_promote(monkeypatch, tmp_path, variant_id: str = "xsp_lane_a_v2") -> None:
+    """Satisfy dual-env + ack-file human review gate for live places."""
+    from xsp_killer.live_gates import REQUIRED_STATEMENT
+
+    ack = tmp_path / "LIVE_HUMAN_REVIEW.json"
+    ack.write_text(
+        __import__("json").dumps(
+            {"variant_id": variant_id, "statement": REQUIRED_STATEMENT}
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", variant_id)
+    monkeypatch.setenv("XSP_LANE_A_LIVE_HUMAN_ACK", variant_id)
+    monkeypatch.setenv("XSP_LANE_A_LIVE_HUMAN_ACK_PATH", str(ack))
+
+
 class _FakeEntryAdapter:
     def __init__(self, *, ask=1.0, buying_power=1000.0):
         self._ask = ask
@@ -633,23 +649,12 @@ def test_live_entry_blocked_by_kill_switch(monkeypatch):
     assert "kill switch" in d.live_order["reason"]
 
 
-def test_live_entry_skips_when_variant_allowlist_unset(monkeypatch):
+def test_live_entry_skips_when_variant_allowlist_unset(monkeypatch, tmp_path):
     monkeypatch.delenv("XSP_LANE_A_LIVE_VARIANT_ID", raising=False)
-    d = _mk_decision()
-    adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)
-    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
-    _maybe_place_live_entry(
-        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    monkeypatch.delenv("XSP_LANE_A_LIVE_HUMAN_ACK", raising=False)
+    monkeypatch.setenv(
+        "XSP_LANE_A_LIVE_HUMAN_ACK_PATH", str(tmp_path / "missing.json")
     )
-    assert d.live_order == {
-        "placed": False,
-        "reason": "variant not in live allowlist",
-    }
-    assert adapter.placed is None
-
-
-def test_live_entry_skips_when_variant_allowlist_differs(monkeypatch):
-    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "different_variant")
     d = _mk_decision()
     adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)
     _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
@@ -657,12 +662,29 @@ def test_live_entry_skips_when_variant_allowlist_differs(monkeypatch):
         d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
     )
     assert d.live_order["placed"] is False
-    assert d.live_order["reason"] == "variant not in live allowlist"
+    assert "LIVE_VARIANT_ID unset" in d.live_order["reason"]
     assert adapter.placed is None
 
 
-def test_live_entry_skips_red_regime(monkeypatch):
-    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+def test_live_entry_skips_when_variant_allowlist_differs(monkeypatch, tmp_path):
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "different_variant")
+    monkeypatch.setenv("XSP_LANE_A_LIVE_HUMAN_ACK", "different_variant")
+    monkeypatch.setenv(
+        "XSP_LANE_A_LIVE_HUMAN_ACK_PATH", str(tmp_path / "missing.json")
+    )
+    d = _mk_decision()
+    adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)
+    _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
+    _maybe_place_live_entry(
+        d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
+    )
+    assert d.live_order["placed"] is False
+    assert "human review blocked" in d.live_order["reason"]
+    assert adapter.placed is None
+
+
+def test_live_entry_skips_red_regime(monkeypatch, tmp_path):
+    _human_promote(monkeypatch, tmp_path)
     monkeypatch.setattr(
         "xsp_killer.lane_a_entry.read_regime_detail",
         lambda: ("RED", False, None, None),
@@ -680,8 +702,8 @@ def test_live_entry_skips_red_regime(monkeypatch):
     assert adapter.placed is None
 
 
-def test_live_entry_fails_safe_on_insufficient_buying_power(monkeypatch):
-    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+def test_live_entry_fails_safe_on_insufficient_buying_power(monkeypatch, tmp_path):
+    _human_promote(monkeypatch, tmp_path)
     _patch_green_regime(monkeypatch)
     d = _mk_decision()
     adapter = _FakeEntryAdapter(ask=2.0, buying_power=50.0)  # cost 200 > 50
@@ -694,8 +716,8 @@ def test_live_entry_fails_safe_on_insufficient_buying_power(monkeypatch):
     assert adapter.placed is None
 
 
-def test_live_entry_skips_when_est_max_loss_exceeds_cap(monkeypatch):
-    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+def test_live_entry_skips_when_est_max_loss_exceeds_cap(monkeypatch, tmp_path):
+    _human_promote(monkeypatch, tmp_path)
     _patch_green_regime(monkeypatch)
     d = _mk_decision()
     adapter = _FakeEntryAdapter(ask=1000.0, buying_power=1_000_000.0)
@@ -709,11 +731,11 @@ def test_live_entry_skips_when_est_max_loss_exceeds_cap(monkeypatch):
     assert adapter.placed is None
 
 
-def test_live_entry_skips_when_debit_exceeds_cap(monkeypatch):
+def test_live_entry_skips_when_debit_exceeds_cap(monkeypatch, tmp_path):
     # cost 3000 (ask 30 x 100) > max_debit_usd 2500, while the modeled stop-loss
     # estimate (3000 x 20% = 600) is well under max_loss_usd and cost is under
     # max_cost_frac of buying power -> only the full-debit gate should trip.
-    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+    _human_promote(monkeypatch, tmp_path)
     _patch_green_regime(monkeypatch)
     d = _mk_decision()
     adapter = _FakeEntryAdapter(ask=30.0, buying_power=1_000_000.0)
@@ -740,9 +762,13 @@ def test_live_variant_allowed_requires_exact_match():
     assert _live_variant_allowed("xsp_lane_a_v2", None) is False
 
 
-def test_live_entry_skips_when_variant_is_suffix_only(monkeypatch):
+def test_live_entry_skips_when_variant_is_suffix_only(monkeypatch, tmp_path):
     # A current variant that merely ends with the allowlisted id must be refused.
     monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "lane_a_v2")
+    monkeypatch.setenv("XSP_LANE_A_LIVE_HUMAN_ACK", "lane_a_v2")
+    monkeypatch.setenv(
+        "XSP_LANE_A_LIVE_HUMAN_ACK_PATH", str(tmp_path / "missing.json")
+    )
     d = _mk_decision()
     adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)
     _patch_mcp(monkeypatch, enabled=True, entries=True, kill=False, adapter=adapter)
@@ -750,12 +776,12 @@ def test_live_entry_skips_when_variant_is_suffix_only(monkeypatch):
         d, lane_rules=_LANE, entry_rules=_ENTRY, today=date(2026, 7, 7)
     )
     assert d.live_order["placed"] is False
-    assert d.live_order["reason"] == "variant not in live allowlist"
+    assert "human review blocked" in d.live_order["reason"]
     assert adapter.placed is None
 
 
-def test_live_entry_places_when_authorized_and_funded(monkeypatch):
-    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+def test_live_entry_places_when_authorized_and_funded(monkeypatch, tmp_path):
+    _human_promote(monkeypatch, tmp_path)
     _patch_green_regime(monkeypatch)
     d = _mk_decision()
     adapter = _FakeEntryAdapter(ask=1.0, buying_power=1000.0)  # cost 100 <= 1000
@@ -776,8 +802,8 @@ class _WideSpreadAdapter(_FakeEntryAdapter):
         return c
 
 
-def test_live_entry_vetoed_by_reviewer_on_wide_spread(monkeypatch):
-    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+def test_live_entry_vetoed_by_reviewer_on_wide_spread(monkeypatch, tmp_path):
+    _human_promote(monkeypatch, tmp_path)
     monkeypatch.delenv("XSP_LANE_A_LIVE_REVIEWER", raising=False)
     _patch_green_regime(monkeypatch)
     d = _mk_decision()
@@ -792,8 +818,8 @@ def test_live_entry_vetoed_by_reviewer_on_wide_spread(monkeypatch):
     assert adapter.placed is None
 
 
-def test_live_entry_reviewer_can_be_disabled(monkeypatch):
-    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", "xsp_lane_a_v2")
+def test_live_entry_reviewer_can_be_disabled(monkeypatch, tmp_path):
+    _human_promote(monkeypatch, tmp_path)
     monkeypatch.setenv("XSP_LANE_A_LIVE_REVIEWER", "false")
     _patch_green_regime(monkeypatch)
     d = _mk_decision()

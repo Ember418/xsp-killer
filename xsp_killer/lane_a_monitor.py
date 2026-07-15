@@ -939,8 +939,9 @@ def dry_run_exit_reviews_via_mcp(
     - Every real exit reviews first (``review_option_order``) for an audited
       preview, then places (``place_option_order``) ONLY when live exits are
       enabled and the kill switch is clear; otherwise it stays review-only.
-    - Variant monitors only place when ``XSP_LANE_A_LIVE_VARIANT_ID`` exactly
-      matches ``variant_id`` (baseline / non-variant may place without that gate).
+    - Live places require hard human variant review (``XSP_LANE_A_LIVE_VARIANT_ID``
+      + ``XSP_LANE_A_LIVE_HUMAN_ACK`` + ack file) for that exact variant; paper
+      synthetic positions never place.
     - Live placement uses a deterministic ``ref_id`` per (option, day, reason)
       so the 4 morning monitor runs can't create duplicate exit orders.
     - When nothing is reviewable, a single buy-to-open proof-of-life canary
@@ -952,12 +953,16 @@ def dry_run_exit_reviews_via_mcp(
     pos_by_id = {p.position_id: p for p in positions}
     adapter = RobinhoodMCPAdapter()
     live = live_exits_enabled(config=adapter.config) and not kill_switch_engaged()
-    if live and variant_monitor:
-        from xsp_killer.lane_a_entry import _live_variant_allowed
+    if live:
+        from xsp_killer.live_gates import human_variant_review_allows
 
-        if not _live_variant_allowed(
-            variant_id or "", os.getenv("XSP_LANE_A_LIVE_VARIANT_ID")
-        ):
+        # Variant monitors: ack must match this variant. Baseline uses
+        # LIVE_VARIANT_ID as the promoted id (must still dual-ack).
+        check_id = (variant_id or "").strip() or os.getenv(
+            "XSP_LANE_A_LIVE_VARIANT_ID", ""
+        )
+        ok_review, _reason = human_variant_review_allows(check_id)
+        if not ok_review:
             live = False
     day = datetime.now(ET).date().isoformat()
     reviews: list[dict[str, Any]] = []

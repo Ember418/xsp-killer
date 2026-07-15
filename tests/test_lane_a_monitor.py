@@ -874,9 +874,21 @@ def test_dry_run_reviews_real_position_no_place_when_off(monkeypatch):
     assert "review" in out[0]
 
 
-def test_dry_run_places_real_exit_when_live(monkeypatch):
+def test_dry_run_places_real_exit_when_live(monkeypatch, tmp_path):
     monkeypatch.setattr(lane_a_monitor, "rh_mcp_enabled", lambda: True)
     _force_live(monkeypatch, True)
+    from xsp_killer.live_gates import REQUIRED_STATEMENT
+    import json
+
+    vid = "xsp_lane_a_v2"
+    ack = tmp_path / "LIVE_HUMAN_REVIEW.json"
+    ack.write_text(
+        json.dumps({"variant_id": vid, "statement": REQUIRED_STATEMENT}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XSP_LANE_A_LIVE_VARIANT_ID", vid)
+    monkeypatch.setenv("XSP_LANE_A_LIVE_HUMAN_ACK", vid)
+    monkeypatch.setenv("XSP_LANE_A_LIVE_HUMAN_ACK_PATH", str(ack))
     seen: dict[str, object] = {}
 
     class FakeAdapter:
