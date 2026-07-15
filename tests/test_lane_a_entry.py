@@ -474,6 +474,43 @@ def test_reap_expired_paper_positions_closes_only_expired(tmp_path):
     assert state["paper_events"][-1]["position_id"] == "expired"
 
 
+def test_reap_expired_books_full_debit_loss(tmp_path):
+    from xsp_killer.paper_economics import PaperEconomics, pnl_from_entry_fill
+
+    state = {
+        "paper_positions": {
+            "paper:XSP:2026-06-13:6000": {
+                "position_id": "paper:XSP:2026-06-13:6000",
+                "status": "open",
+                "expiration_date": "2026-06-13",
+                "quantity": 2.0,
+                "average_price": 2.5,
+                "entry_mid_premium": 2.4,
+                "logic_version": "xsp_lane_a_v2",
+            }
+        }
+    }
+    closed = reap_expired_paper_positions(
+        state,
+        state_path=tmp_path / "state.json",
+        evaluated_at="2026-06-16T14:00:00+00:00",
+        today=date(2026, 6, 16),
+    )
+    assert len(closed) == 1
+    econ = PaperEconomics.from_yaml()
+    expected_per = pnl_from_entry_fill(entry_fill=2.5, exit_mid=0.0, econ=econ)
+    row = state["paper_positions"]["paper:XSP:2026-06-13:6000"]
+    assert row["status"] == "closed"
+    assert row["exit_reason"] == "expired"
+    assert row["exit_pnl_per_contract"] == expected_per
+    assert row["exit_pnl_usd"] == round(expected_per * 2.0, 2)
+    assert expected_per < 0
+    evt = state["paper_events"][-1]
+    assert evt["exit_reason"] == "expired"
+    assert evt["paper_pnl_per_contract"] == expected_per
+    assert evt["paper_pnl_usd"] == round(expected_per * 2.0, 2)
+
+
 # --- Live entry buy path (gated) --------------------------------------------
 
 import types  # noqa: E402
