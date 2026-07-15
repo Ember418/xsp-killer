@@ -288,7 +288,9 @@ def build_iv_rank_summary(provider: Any, ticker: str = "SPY") -> dict[str, Any] 
         return None
 
 
-def build_gex_levels_summary(provider: Any, ticker: str = "SPY") -> dict[str, Any] | None:
+def build_gex_levels_summary(
+    provider: Any, ticker: str = "SPY"
+) -> dict[str, Any] | None:
     """UW gex-levels for *ticker*. Returns None on failure."""
     if not hasattr(provider, "_request"):
         return None
