@@ -37,10 +37,10 @@ RULES = LaneRules(
     chain_symbols=("SPX", "XSP"),
     stop_loss_pct=0.20,
     take_profit_pct=0.20,
-    sell_eval_start_et=time(9, 30),
-    sell_deadline_et=time(10, 0),
-    no_sell_start_et=time(8, 30),
-    no_sell_end_et=time(9, 30),
+    sell_eval_start_et=time(8, 0),
+    sell_deadline_et=time(9, 30),
+    no_sell_start_et=time(0, 0),
+    no_sell_end_et=time(8, 0),
     require_upper_bb_for_take_profit=True,
     logic_version="xsp_lane_a_v2",
 )
@@ -99,19 +99,36 @@ def test_stop_loss_20pct_alert():
     assert any(a.exit_reason == "stop_loss" for a in alerts)
 
 
-def test_no_sell_during_830_930():
+def test_no_sell_before_premarket_window():
     pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
     assert pos is not None
-    now = datetime(2026, 6, 14, 9, 0, tzinfo=ET)
+    now = datetime(2026, 6, 14, 7, 30, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
     assert alerts == []
+
+
+def test_premarket_sell_allows_stop_loss():
+    pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
+    assert pos is not None
+    now = datetime(2026, 6, 14, 8, 30, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
+    assert any(a.exit_reason == "stop_loss" for a in alerts)
+
+
+def test_premarket_sell_allows_take_profit():
+    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
+    assert pos is not None
+    ta = TaSignal("upper_bb_exit", None, None, False, True, True, "upper touch")
+    now = datetime(2026, 6, 14, 8, 45, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, RULES, now_et=now, ta_signal=ta)
+    assert any(a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts)
 
 
 def test_take_profit_waits_without_upper_bb():
     pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     ta = TaSignal("none", None, None, False, False, False, "")
-    now = datetime(2026, 6, 14, 9, 45, tzinfo=ET)
+    now = datetime(2026, 6, 14, 9, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now, ta_signal=ta)
     assert alerts == []
 
@@ -120,7 +137,7 @@ def test_take_profit_fires_with_upper_bb_touch():
     pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     ta = TaSignal("upper_bb_exit", None, None, False, True, True, "upper touch")
-    now = datetime(2026, 6, 14, 9, 45, tzinfo=ET)
+    now = datetime(2026, 6, 14, 9, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now, ta_signal=ta)
     assert any(a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts)
 
@@ -129,7 +146,7 @@ def test_time_stop_at_deadline():
     pos = classify_position(_raw(avg=2.00, mark=2.10), RULES, today=FIXED_TODAY)
     assert pos is not None
     pos.entry_ts = "2026-06-13T19:45:00+00:00"
-    now = datetime(2026, 6, 14, 10, 0, tzinfo=ET)
+    now = datetime(2026, 6, 14, 9, 30, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
     assert any(a.exit_reason == "time_stop" for a in alerts)
 
@@ -204,7 +221,7 @@ def test_upper_bb_exit_in_sell_window():
         detail="upper BB rejection",
     )
     alerts = evaluate_exit_alerts(
-        pos, RULES, now_et=datetime(2026, 6, 14, 9, 45, tzinfo=ET), ta_signal=ta
+        pos, RULES, now_et=datetime(2026, 6, 14, 9, 0, tzinfo=ET), ta_signal=ta
     )
     assert any(a.exit_reason == "upper_bb_rejection" for a in alerts)
 
@@ -305,7 +322,7 @@ def test_stale_mark_suppresses_take_profit_not_risk_exits():
     )
     pos.pnl_per_contract = 150.0
     pos.pnl_usd = 150.0
-    now = datetime(2026, 6, 17, 9, 45, tzinfo=ET)
+    now = datetime(2026, 6, 17, 9, 0, tzinfo=ET)
     # ret = +25% >= TP 20%, in the sell window, but the stale mark suppresses TP.
     assert evaluate_exit_alerts(pos, RULES, now_et=now) == []
     # A fresh mark on the identical setup DOES take profit.
@@ -576,7 +593,7 @@ def test_run_monitor_opens_shadow_virtual_holds(tmp_path, monkeypatch):
     )
     report = run_monitor(
         state_path=tmp_path / "state.json",
-        now_et=datetime(2026, 6, 16, 9, 45, tzinfo=ET),
+        now_et=datetime(2026, 6, 16, 9, 0, tzinfo=ET),
         publish_intel=False,
         fetch_ta=False,
         write_paper_brief=False,
@@ -894,10 +911,10 @@ SWING_RULES = LaneRules(
     chain_symbols=("SPX", "XSP"),
     stop_loss_pct=0.50,
     take_profit_pct=0.40,
-    sell_eval_start_et=time(9, 30),
-    sell_deadline_et=time(10, 0),
-    no_sell_start_et=time(8, 30),
-    no_sell_end_et=time(9, 30),
+    sell_eval_start_et=time(8, 0),
+    sell_deadline_et=time(9, 30),
+    no_sell_start_et=time(0, 0),
+    no_sell_end_et=time(8, 0),
     require_upper_bb_for_take_profit=False,
     logic_version="xsp_lane_a_v2_dip_swing_14dte",
     regime_gate="DIP_BOUNCE",
@@ -958,7 +975,7 @@ def test_swing_hold_does_not_time_stop_across_days():
 
 def test_swing_hold_takes_profit_intraday_outside_window():
     pos = _swing_pos(avg=5.0, mark=7.0, dte=20)  # +40%
-    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)  # outside 9:30-10:00
+    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)  # outside 8:00-9:30
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert any(a.exit_reason == "take_profit" for a in alerts)
     # Without swing_hold, take-profit is gated to the morning sell window, so a
@@ -1002,7 +1019,7 @@ def test_swing_hold_stop_loss_fires_inside_no_sell_window():
     pos = _swing_pos(avg=5.0, mark=2.5, dte=20)  # -50% SL hit
     pos.pnl_per_contract = -250.0
     pos.pnl_usd = -250.0
-    now = datetime(2026, 6, 20, 9, 0, tzinfo=ET)  # inside 08:30-09:30
+    now = datetime(2026, 6, 20, 7, 30, tzinfo=ET)  # inside 00:00-08:00 no-sell
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert any(a.exit_reason == "stop_loss" for a in alerts)
 

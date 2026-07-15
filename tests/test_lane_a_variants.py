@@ -637,7 +637,7 @@ def test_build_scoreboard_exit_shadow_summary(tmp_path):
                                     },
                                     {
                                         "bracket_id": "no_morning_cut_14dte",
-                                        "label": "Suppress 10:00 time_stop for DTE≥14",
+                                        "label": "Suppress morning time_stop for DTE≥14",
                                         "would_exit": False,
                                         "exit_reason": None,
                                     },
@@ -647,7 +647,7 @@ def test_build_scoreboard_exit_shadow_summary(tmp_path):
                                 "event_type": "virtual_hold_closed",
                                 "evaluated_at": "2026-07-02T14:00:00+00:00",
                                 "bracket_id": "no_morning_cut_14dte",
-                                "label": "Suppress 10:00 time_stop for DTE≥14",
+                                "label": "Suppress morning time_stop for DTE≥14",
                                 "exit_reason": "take_profit",
                                 "paper_pnl_usd": 42.5,
                             },
@@ -656,7 +656,7 @@ def test_build_scoreboard_exit_shadow_summary(tmp_path):
                             {
                                 "virtual_hold_id": "vh-1",
                                 "bracket_id": "no_morning_cut_14dte",
-                                "label": "Suppress 10:00 time_stop for DTE≥14",
+                                "label": "Suppress morning time_stop for DTE≥14",
                                 "status": "open",
                             }
                         ],

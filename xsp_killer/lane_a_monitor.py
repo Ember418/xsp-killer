@@ -98,15 +98,15 @@ class LaneRules:
             stop_loss_pct=float(exit_cfg.get("stop_loss_pct", 0.20)),
             take_profit_pct=float(exit_cfg.get("take_profit_pct", 0.20)),
             sell_eval_start_et=_parse_time(
-                str(exit_cfg.get("sell_eval_start_et", "09:30"))
+                str(exit_cfg.get("sell_eval_start_et", "08:00"))
             ),
             sell_deadline_et=_parse_time(
-                str(exit_cfg.get("sell_deadline_et", "10:00"))
+                str(exit_cfg.get("sell_deadline_et", "09:30"))
             ),
             no_sell_start_et=_parse_time(
-                str(exit_cfg.get("no_sell_start_et", "08:30"))
+                str(exit_cfg.get("no_sell_start_et", "00:00"))
             ),
-            no_sell_end_et=_parse_time(str(exit_cfg.get("no_sell_end_et", "09:30"))),
+            no_sell_end_et=_parse_time(str(exit_cfg.get("no_sell_end_et", "08:00"))),
             require_upper_bb_for_take_profit=bool(
                 exit_cfg.get("require_upper_bb_for_take_profit", True)
             ),
@@ -512,7 +512,7 @@ def evaluate_exit_alerts(
     ta_signal: Any | None = None,
     suppress_morning_cut_dte: int | None = None,
 ) -> list[ExitAlert]:
-    """Mentor v2: no-sell 08:30–09:30; SL anytime after; TP in sell window; time-stop at 10:00."""
+    """Mentor v2: no-sell before 08:00; TP/SL in 08:00–09:30 premarket sell window; time-stop at 09:30."""
     now = now_et or datetime.now(ET)
     alerts: list[ExitAlert] = []
 

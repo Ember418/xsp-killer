@@ -24,10 +24,10 @@ RULES = LaneRules(
     chain_symbols=("SPX", "XSP"),
     stop_loss_pct=0.20,
     take_profit_pct=0.20,
-    sell_eval_start_et=time(9, 30),
-    sell_deadline_et=time(10, 0),
-    no_sell_start_et=time(8, 30),
-    no_sell_end_et=time(9, 30),
+    sell_eval_start_et=time(8, 0),
+    sell_deadline_et=time(9, 30),
+    no_sell_start_et=time(0, 0),
+    no_sell_end_et=time(8, 0),
     require_upper_bb_for_take_profit=True,
     logic_version="xsp_lane_a_v2",
 )
@@ -83,7 +83,7 @@ def test_shadow_brackets_show_wide_sl_would_hold():
     )
     pos.pnl_per_contract = -2540.0
     pos.pnl_usd = -2540.0
-    now = datetime(2026, 6, 23, 9, 35, tzinfo=ET)
+    now = datetime(2026, 6, 23, 9, 0, tzinfo=ET)
     actual = ExitAlert(
         position_id=pos.position_id,
         exit_reason="stop_loss",

@@ -252,7 +252,7 @@ def evaluate_shadow_brackets(
     brackets.append(
         ShadowBracket(
             bracket_id="no_morning_cut_14dte",
-            label="Suppress 10:00 time_stop for DTE≥14",
+            label="Suppress morning time_stop for DTE≥14",
             would_exit=bool(no_cut_alerts),
             exit_reason=no_cut_alerts[0].exit_reason if no_cut_alerts else None,
             ret_pct=round(ret * 100, 2) if ret is not None else None,

@@ -1,4 +1,4 @@
-# XSP Lane A — mentor playbook v2 (buy at close, sell by 10am)
+# XSP Lane A — mentor playbook v2 (buy at close, sell into 08:00–09:30 premarket spike)
 # Entry: close window, ≥2wk DTE, cheapest near-ATM strike
 # Exit: 20% stop / 20% take-profit (patient until upper BB touched)
 
@@ -24,10 +24,13 @@ entry:
 exit:
   stop_loss_pct: 0.20
   take_profit_pct: 0.20
-  sell_eval_start_et: "09:30"
-  sell_deadline_et: "10:00"
-  no_sell_start_et: "08:30"
-  no_sell_end_et: "09:30"
+  # Sell into the premarket/index open spike (operator thesis). Applies to
+  # baseline and all shadow variants (inherited via deep-merge).
+  sell_eval_start_et: "08:00"
+  sell_deadline_et: "09:30"
+  # Block automated exits before the premarket sell window only.
+  no_sell_start_et: "00:00"
+  no_sell_end_et: "08:00"
   require_upper_bb_for_take_profit: true
 
 paper_economics:
@@ -77,8 +80,8 @@ exit_reasons:
   - manual
 
 monitor:
-  et_check_minutes: [30, 35, 45, 0]
-  et_check_hours: [9, 9, 10]
+  et_check_minutes: [0, 15, 30, 45, 0, 15, 30]
+  et_check_hours: [8, 8, 8, 8, 9, 9, 9]
   intraday_minutes: [0, 15, 30, 45]
   phase: 0
   rh_poll: false

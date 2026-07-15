@@ -1,4 +1,6 @@
-# Parallel shadow variants — same close entry / morning exit cadence, different params.
+# Parallel shadow variants — same close entry / premarket (08:00–09:30 ET) exit
+# cadence, different params. Sell-window times inherit from lane_a_rules.yaml
+# unless a variant explicitly overrides exit.sell_* / exit.no_sell_*.
 # Production baseline still runs via lane_a_rules.yaml + systemd.
 # Scoreboard: briefs/xsp-lane-a-variants-scoreboard.json
 #

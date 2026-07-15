@@ -50,7 +50,7 @@ def _write_base_rules(tmp_path: Path) -> Path:
         "exit": {
             "stop_loss_pct": 0.20,
             "take_profit_pct": 0.20,
-            "sell_deadline_et": "10:00",
+            "sell_deadline_et": "09:30",
         },
         "logging": {
             "logic_version": "xsp_lane_a_v2",
