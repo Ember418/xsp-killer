@@ -1,14 +1,11 @@
 [Unit]
-Description=XSP Killer Lane A premarket sell window — 08:00–09:30 ET (Mon-Fri)
+Description=XSP Killer Lane A exit poll — every 15m Mon–Fri (GTH/RTH/curb when open)
 
 [Timer]
-OnCalendar=Mon..Fri *-*-* 08:00:00 America/New_York
-OnCalendar=Mon..Fri *-*-* 08:15:00 America/New_York
-OnCalendar=Mon..Fri *-*-* 08:30:00 America/New_York
-OnCalendar=Mon..Fri *-*-* 08:45:00 America/New_York
-OnCalendar=Mon..Fri *-*-* 09:00:00 America/New_York
-OnCalendar=Mon..Fri *-*-* 09:15:00 America/New_York
-OnCalendar=Mon..Fri *-*-* 09:30:00 America/New_York
+OnCalendar=Mon..Fri *-*-* *:00:00 America/New_York
+OnCalendar=Mon..Fri *-*-* *:15:00 America/New_York
+OnCalendar=Mon..Fri *-*-* *:30:00 America/New_York
+OnCalendar=Mon..Fri *-*-* *:45:00 America/New_York
 Persistent=true
 RandomizedDelaySec=30
 

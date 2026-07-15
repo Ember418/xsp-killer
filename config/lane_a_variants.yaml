@@ -1,7 +1,6 @@
-# Parallel shadow variants — same close entry / premarket (08:00–09:30 ET) exit
-# cadence, different params. Sell-window times inherit from lane_a_rules.yaml
-# unless a variant explicitly overrides exit.sell_* / exit.no_sell_*.
-# Production baseline still runs via lane_a_rules.yaml + systemd.
+# Parallel shadow variants — same close entry; exits anytime XSP session is open
+# when TP/SL/BB conditions hit (no clock sell window). Production baseline
+# still runs via lane_a_rules.yaml + systemd.
 # Scoreboard: briefs/xsp-lane-a-variants-scoreboard.json
 #
 # Capacity (8GB VPS): ~12 variants ≈ 30s + ~150MB peak at 15:45 entry; safe headroom.

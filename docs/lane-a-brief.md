@@ -7,12 +7,12 @@
 - **Regime:** GREEN required (macro_regime fallback when Redis intel absent)
 - **No BB gate** at entry — mentor: hardest part is timing; automate buy at close
 
-## Exit (sell into premarket spike, by 09:30 ET)
-- **Sell window:** 08:00–09:30 ET (indexes often spike here — sell when exit conditions met)
-- **No-sell zone:** before 08:00 ET only
+## Exit (anytime XSP session is open)
+- **Session gate only:** Cboe XSP GTH (20:15–09:25), RTH (09:30–16:15), or Curb (16:15–17:00) ET
+- **No clock sell / no-sell window** — if TP/SL/BB conditions hit while tradeable, sell
 - **Stop loss:** −20% from entry mid
 - **Take profit:** +20% only when upper Bollinger band touched or rejection signal
-- **Time stop:** 09:30 ET if neither SL nor TP fired
+- **No daily morning time_stop** — exit on conditions, not the clock
 - **Patience:** If +20% but no upper BB touch → hold (wait for real run)
 - **Inherited by all shadow variants** via `lane_a_rules.yaml` deep-merge
 

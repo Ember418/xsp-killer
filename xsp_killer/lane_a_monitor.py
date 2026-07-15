@@ -433,6 +433,36 @@ def regime_gate_allows(
     return False, f"regime {regime} blocks new risk"
 
 
+
+def xsp_session_open(now: datetime) -> bool:
+    """True when Cboe XSP is tradeable (GTH, RTH, or Curb), America/New_York.
+
+    GTH: 20:15 previous calendar evening through 09:25 (nearly 24x5).
+    RTH: 09:30–16:15.
+    Curb: 16:15–17:00.
+    Gap 09:25–09:30 is not tradeable. Weekends closed except Sun evening GTH.
+    """
+    now = now.astimezone(ET) if now.tzinfo else now.replace(tzinfo=ET)
+    wd = now.weekday()  # Mon=0 .. Sun=6
+    t = now.time()
+
+    # Saturday: only early morning leftovers of Fri overnight GTH (until 09:25)
+    if wd == 5:
+        return t <= time(9, 25)
+    # Sunday: GTH starts 20:15
+    if wd == 6:
+        return t >= time(20, 15)
+
+    # Monday–Friday
+    if t >= time(20, 15) or t <= time(9, 25):
+        return True  # GTH
+    if time(9, 30) <= t <= time(16, 15):
+        return True  # RTH
+    if time(16, 15) < t <= time(17, 0):
+        return True  # Curb
+    return False
+
+
 def in_no_sell_window(now: datetime, rules: LaneRules) -> bool:
     t = now.time()
     return rules.no_sell_start_et <= t < rules.no_sell_end_et
@@ -512,12 +542,18 @@ def evaluate_exit_alerts(
     ta_signal: Any | None = None,
     suppress_morning_cut_dte: int | None = None,
 ) -> list[ExitAlert]:
-    """Mentor v2: no-sell before 08:00; TP/SL in 08:00–09:30 premarket sell window; time-stop at 09:30."""
+    """Exit when TP/SL/BB conditions hit whenever XSP session is open.
+
+    No clock sell/no-sell window: if Cboe XSP is tradeable (GTH/RTH/curb) and
+    sell conditions fire, exit. Daily morning time_stop removed. Swing-hold
+    still near-expiry cuts via max_hold_dte. ``suppress_morning_cut_dte`` kept
+    for shadow-bracket API compatibility (unused for prod exits).
+    """
     now = now_et or datetime.now(ET)
     alerts: list[ExitAlert] = []
+    _ = suppress_morning_cut_dte  # retained for call-site compatibility
 
-    in_no_sell = in_no_sell_window(now, rules)
-    if in_no_sell and not rules.swing_hold:
+    if not xsp_session_open(now):
         return alerts
 
     ret_pct = _position_return_pct(pos)
@@ -527,9 +563,8 @@ def evaluate_exit_alerts(
     pnl_c = pos.pnl_per_contract
     pnl = pos.pnl_usd
 
-    # Risk exits (SL, expiry/time stop) must fire even on a stale mark; never
-    # bank profit on a suspect high mark.
-    allow_take_profit = not pos.mark_quote_stale and not in_no_sell
+    # Risk exits must fire even on a stale mark; never bank profit on suspect marks.
+    allow_take_profit = not pos.mark_quote_stale
 
     if ret_pct <= -rules.stop_loss_pct:
         alerts.append(
@@ -543,13 +578,7 @@ def evaluate_exit_alerts(
         )
         return alerts
 
-    in_sell = in_sell_window(now, rules)
-
-    # Swing-hold variants take profit on any evaluation (intraday too), not
-    # only in the morning sell window — the whole point is to sell into a
-    # recovery whenever it comes during the multi-day hold.
-    tp_window_ok = in_sell or rules.swing_hold
-    if tp_window_ok and allow_take_profit and ret_pct >= rules.take_profit_pct:
+    if allow_take_profit and ret_pct >= rules.take_profit_pct:
         can_take = True
         if rules.require_upper_bb_for_take_profit and ta_signal is not None:
             touched = getattr(ta_signal, "upper_bb_touched", False)
@@ -578,8 +607,7 @@ def evaluate_exit_alerts(
             return alerts
 
     if rules.swing_hold:
-        # Hold for the recovery: no daily morning cut. Only force-exit near
-        # expiry so the option is closed before it decays to nothing.
+        # Hold for recovery: only force-exit near expiry.
         if pos.dte is not None and pos.dte <= rules.max_hold_dte:
             alerts.append(
                 ExitAlert(
@@ -595,31 +623,7 @@ def evaluate_exit_alerts(
             )
         return alerts
 
-    entry_day = _entry_date_et(pos.entry_ts)
-    suppress_cut = (
-        suppress_morning_cut_dte is not None
-        and pos.dte is not None
-        and pos.dte >= suppress_morning_cut_dte
-    )
-    if (
-        entry_day is not None
-        and entry_day < now.date()
-        and now.time() >= rules.sell_deadline_et
-        and not suppress_cut
-    ):
-        alerts.append(
-            ExitAlert(
-                position_id=pos.position_id,
-                exit_reason="time_stop",
-                message=(
-                    f"Time stop at {rules.sell_deadline_et.strftime('%H:%M')} ET "
-                    f"(return {ret_pct * 100:.1f}%)"
-                ),
-                pnl_usd=pnl,
-                pnl_per_contract=pnl_c,
-            )
-        )
-
+    # Baseline: no clock-forced morning cut — exit only on SL/TP/BB above.
     return alerts
 
 

@@ -1,4 +1,4 @@
-"""XSP Lane A intraday cycle — BB/VWAP entry + exit during RTH."""
+"""XSP Lane A intraday cycle — BB/VWAP entry in RTH; exits any XSP session."""
 
 from __future__ import annotations
 
@@ -16,7 +16,12 @@ from xsp_killer.lane_a_entry import (
     open_paper_positions,
     run_paper_entry,
 )
-from xsp_killer.lane_a_monitor import DEFAULT_OUT, run_monitor, write_report
+from xsp_killer.lane_a_monitor import (
+    DEFAULT_OUT,
+    run_monitor,
+    write_report,
+    xsp_session_open,
+)
 from xsp_killer.lane_a_ta import TaRules, evaluate_ta_signals, in_rth
 
 logger = logging.getLogger("xsp_killer.xsp_lane_a_intraday")
@@ -69,6 +74,27 @@ def run_intraday_cycle(
         exit_alerts_n=0,
     )
 
+    # Exits: any time XSP is tradeable (GTH/RTH/curb), regardless of clock windows.
+    if open_n > 0 and xsp_session_open(now):
+        ta_exit = None
+        if report.in_rth:
+            ta_exit = evaluate_ta_signals(ta_rules)
+            report.ta_snapshot = ta_exit.to_dict()
+            report.ta_signal = ta_exit.signal
+        mon = run_monitor(
+            rules_path=rules_path,
+            state_path=state_path,
+            now_et=now,
+            publish_intel=publish_intel,
+            ta_signal=ta_exit,
+            fetch_ta=False,
+        )
+        report.monitor = mon.to_dict()
+        report.exit_alerts_n = len(mon.alerts)
+        write_report(mon, DEFAULT_OUT)
+        _write_intraday_brief(report)
+        return report
+
     if not report.in_rth:
         report.skip_reason = "outside RTH"
         _write_intraday_brief(report)
@@ -77,21 +103,6 @@ def run_intraday_cycle(
     ta = evaluate_ta_signals(ta_rules)
     report.ta_snapshot = ta.to_dict()
     report.ta_signal = ta.signal
-
-    if open_n > 0:
-        mon = run_monitor(
-            rules_path=rules_path,
-            state_path=state_path,
-            now_et=now,
-            publish_intel=publish_intel,
-            ta_signal=ta,
-            fetch_ta=False,
-        )
-        report.monitor = mon.to_dict()
-        report.exit_alerts_n = len(mon.alerts)
-        write_report(mon, DEFAULT_OUT)
-        _write_intraday_brief(report)
-        return report
 
     if not ta_rules.intraday_entry_enabled:
         report.skip_reason = "intraday entry disabled"

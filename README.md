@@ -6,7 +6,7 @@ Two lanes:
 
 | Lane | Role | Schedule |
 |------|------|----------|
-| **A** | Overnight swing — BB/VWAP mentor playbook, paper entries/exits | Intraday 15m RTH + close window 3:45–4:00 PM ET + premarket sell 8:00–9:30 ET |
+| **A** | Overnight swing — BB/VWAP mentor playbook, paper entries/exits | Close entry 3:45–4:00 PM ET; exits anytime XSP GTH/RTH/curb when TP/SL/BB hit |
 | **B** | LEAPS core book — hedge-gap alerts only | Daily 8:00 AM ET |
 
 **No Robinhood orders** by default — log-only paper mode until you enable live RH poll.
@@ -72,7 +72,7 @@ sudo systemctl disable --now cemini-xsp-lane-a-intraday.timer \
 ## Mentor playbook (Lane A)
 
 - **Entry:** dump bounces off lower/mid Bollinger Band + VWAP reclaim (1h + 15m confirm)
-- **Exit:** sell into 08:00–09:30 ET premarket spike when TP/SL/BB conditions met; morning cut at 09:30 (suppressed when DTE ≥ 30)
+- **Exit:** sell whenever XSP is tradeable (GTH/RTH/curb) if TP/SL/BB conditions hit — no clock window
 - **Close window:** 3:45–4:00 PM ET still required for close-window entries
 
 See `docs/lane-a-brief.md`, `docs/lane-b-brief.md`, and `docs/rh_mcp_runbook.md` (Agentic MCP — ready, not connected in paper mode).

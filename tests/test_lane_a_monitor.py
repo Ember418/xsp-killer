@@ -17,6 +17,7 @@ from xsp_killer.lane_a_monitor import (
     compute_dte,
     dry_run_exit_reviews_via_mcp,
     evaluate_exit_alerts,
+    xsp_session_open,
     is_lane_a_contract,
     load_state,
     record_paper_exit_signals,
@@ -94,32 +95,55 @@ def test_lane_a_rejects_non_spx_chain():
 def test_stop_loss_20pct_alert():
     pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
     assert pos is not None
-    now = datetime(2026, 6, 14, 9, 45, tzinfo=ET)
+    now = datetime(2026, 6, 16, 9, 45, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
     assert any(a.exit_reason == "stop_loss" for a in alerts)
 
 
-def test_no_sell_before_premarket_window():
+def test_no_exit_when_xsp_session_closed():
     pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
     assert pos is not None
-    now = datetime(2026, 6, 14, 7, 30, tzinfo=ET)
+    # Weekday after curb / before GTH (18:00 ET)
+    now = datetime(2026, 6, 16, 18, 0, tzinfo=ET)
+    assert not xsp_session_open(now)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
     assert alerts == []
 
 
-def test_premarket_sell_allows_stop_loss():
+def test_gth_allows_stop_loss():
     pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
     assert pos is not None
-    now = datetime(2026, 6, 14, 8, 30, tzinfo=ET)
+    now = datetime(2026, 6, 16, 8, 30, tzinfo=ET)
+    assert xsp_session_open(now)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
     assert any(a.exit_reason == "stop_loss" for a in alerts)
 
 
-def test_premarket_sell_allows_take_profit():
+def test_gth_allows_take_profit():
     pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     ta = TaSignal("upper_bb_exit", None, None, False, True, True, "upper touch")
-    now = datetime(2026, 6, 14, 8, 45, tzinfo=ET)
+    now = datetime(2026, 6, 16, 8, 45, tzinfo=ET)
+    alerts = evaluate_exit_alerts(pos, RULES, now_et=now, ta_signal=ta)
+    assert any(a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts)
+
+
+def test_curb_allows_take_profit():
+    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
+    assert pos is not None
+    ta = TaSignal("upper_bb_exit", None, None, False, True, True, "upper touch")
+    now = datetime(2026, 6, 16, 16, 30, tzinfo=ET)
+    assert xsp_session_open(now)
+    alerts = evaluate_exit_alerts(pos, RULES, now_et=now, ta_signal=ta)
+    assert any(a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts)
+
+
+def test_rth_afternoon_allows_take_profit_without_sell_window():
+    """Conditions-only: TP fires mid-RTH, not gated to a morning clock window."""
+    pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
+    assert pos is not None
+    ta = TaSignal("upper_bb_exit", None, None, False, True, True, "upper touch")
+    now = datetime(2026, 6, 16, 13, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now, ta_signal=ta)
     assert any(a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts)
 
@@ -128,7 +152,7 @@ def test_take_profit_waits_without_upper_bb():
     pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     ta = TaSignal("none", None, None, False, False, False, "")
-    now = datetime(2026, 6, 14, 9, 0, tzinfo=ET)
+    now = datetime(2026, 6, 16, 9, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now, ta_signal=ta)
     assert alerts == []
 
@@ -137,25 +161,25 @@ def test_take_profit_fires_with_upper_bb_touch():
     pos = classify_position(_raw(avg=2.00, mark=2.50), RULES, today=FIXED_TODAY)
     assert pos is not None
     ta = TaSignal("upper_bb_exit", None, None, False, True, True, "upper touch")
-    now = datetime(2026, 6, 14, 9, 0, tzinfo=ET)
+    now = datetime(2026, 6, 16, 9, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now, ta_signal=ta)
     assert any(a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts)
 
 
-def test_time_stop_at_deadline():
+def test_no_clock_forced_time_stop():
     pos = classify_position(_raw(avg=2.00, mark=2.10), RULES, today=FIXED_TODAY)
     assert pos is not None
-    pos.entry_ts = "2026-06-13T19:45:00+00:00"
-    now = datetime(2026, 6, 14, 9, 30, tzinfo=ET)
+    pos.entry_ts = "2026-06-15T19:45:00+00:00"
+    now = datetime(2026, 6, 16, 9, 30, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
-    assert any(a.exit_reason == "time_stop" for a in alerts)
+    assert not any(a.exit_reason == "time_stop" for a in alerts)
 
 
 def test_time_stop_skips_same_entry_day():
     pos = classify_position(_raw(avg=2.00, mark=2.10), RULES, today=FIXED_TODAY)
     assert pos is not None
     pos.entry_ts = "2026-06-14T19:45:00+00:00"
-    now = datetime(2026, 6, 14, 15, 45, tzinfo=ET)
+    now = datetime(2026, 6, 16, 15, 45, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
     assert not any(a.exit_reason == "time_stop" for a in alerts)
 
@@ -163,7 +187,7 @@ def test_time_stop_skips_same_entry_day():
 def test_stop_loss_outside_tp_window():
     pos = classify_position(_raw(avg=2.00, mark=1.50), RULES, today=FIXED_TODAY)
     assert pos is not None
-    now = datetime(2026, 6, 14, 10, 30, tzinfo=ET)
+    now = datetime(2026, 6, 16, 10, 30, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, RULES, now_et=now)
     assert any(a.exit_reason == "stop_loss" for a in alerts)
 
@@ -178,7 +202,7 @@ def test_run_monitor_with_fixture(tmp_path):
     report = run_monitor(
         state_path=tmp_path / "state.json",
         positions_override=fixture,
-        now_et=datetime(2026, 6, 14, 9, 45, tzinfo=ET),
+        now_et=datetime(2026, 6, 16, 9, 45, tzinfo=ET),
         publish_intel=False,
     )
     assert report.phase == 0
@@ -221,7 +245,7 @@ def test_upper_bb_exit_in_sell_window():
         detail="upper BB rejection",
     )
     alerts = evaluate_exit_alerts(
-        pos, RULES, now_et=datetime(2026, 6, 14, 9, 0, tzinfo=ET), ta_signal=ta
+        pos, RULES, now_et=datetime(2026, 6, 16, 9, 0, tzinfo=ET), ta_signal=ta
     )
     assert any(a.exit_reason == "upper_bb_rejection" for a in alerts)
 
@@ -962,39 +986,36 @@ def test_dip_bounce_gate_requires_confirmed_bounce():
 
 
 def test_swing_hold_does_not_time_stop_across_days():
-    # Small green, far from expiry, day after entry, at the old 10:00 deadline.
+    # Small green, far from expiry — no clock forced cut for swing or baseline.
     pos = _swing_pos(avg=5.0, mark=5.1, dte=20)
-    now = datetime(2026, 6, 20, 10, 0, tzinfo=ET)
+    now = datetime(2026, 6, 19, 10, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert not any(a.exit_reason == "time_stop" for a in alerts)
-    # A non-swing config WOULD cut it at the morning deadline.
     non_swing = dataclasses.replace(SWING_RULES, swing_hold=False)
     alerts_ns = evaluate_exit_alerts(pos, non_swing, now_et=now)
-    assert any(a.exit_reason == "time_stop" for a in alerts_ns)
+    assert not any(a.exit_reason == "time_stop" for a in alerts_ns)
 
 
 def test_swing_hold_takes_profit_intraday_outside_window():
     pos = _swing_pos(avg=5.0, mark=7.0, dte=20)  # +40%
-    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)  # outside 8:00-9:30
+    now = datetime(2026, 6, 19, 13, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert any(a.exit_reason == "take_profit" for a in alerts)
-    # Without swing_hold, take-profit is gated to the morning sell window, so a
-    # 13:00 pop is NOT banked as profit (the non-swing config instead just
-    # time-stops the day-old position).
-    non_swing = dataclasses.replace(SWING_RULES, swing_hold=False)
+    # Baseline now also takes profit anytime session is open (no clock gate).
+    non_swing = dataclasses.replace(SWING_RULES, swing_hold=False, require_upper_bb_for_take_profit=False)
     alerts_ns = evaluate_exit_alerts(pos, non_swing, now_et=now)
-    assert not any(a.exit_reason == "take_profit" for a in alerts_ns)
+    assert any(a.exit_reason == "take_profit" for a in alerts_ns)
 
 
 def test_swing_hold_stop_loss_fires_anytime():
     pos = _swing_pos(avg=5.0, mark=2.5, dte=20)  # -50%
-    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    now = datetime(2026, 6, 19, 13, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert any(a.exit_reason == "stop_loss" for a in alerts)
 
 
 def test_swing_hold_near_expiry_cut():
-    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    now = datetime(2026, 6, 19, 13, 0, tzinfo=ET)
     # DTE at the cutoff -> force close.
     near = _swing_pos(avg=5.0, mark=4.9, dte=2)
     alerts = evaluate_exit_alerts(near, SWING_RULES, now_et=now)
@@ -1010,16 +1031,16 @@ def test_swing_hold_stop_loss_fires_when_mark_stale():
     pos.mark_quote_stale = True
     pos.pnl_per_contract = -250.0
     pos.pnl_usd = -250.0
-    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    now = datetime(2026, 6, 19, 13, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert any(a.exit_reason == "stop_loss" for a in alerts)
 
 
-def test_swing_hold_stop_loss_fires_inside_no_sell_window():
+def test_swing_hold_stop_loss_fires_in_gth():
     pos = _swing_pos(avg=5.0, mark=2.5, dte=20)  # -50% SL hit
     pos.pnl_per_contract = -250.0
     pos.pnl_usd = -250.0
-    now = datetime(2026, 6, 20, 7, 30, tzinfo=ET)  # inside 00:00-08:00 no-sell
+    now = datetime(2026, 6, 19, 7, 30, tzinfo=ET)  # GTH morning
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert any(a.exit_reason == "stop_loss" for a in alerts)
 
@@ -1029,7 +1050,7 @@ def test_swing_hold_take_profit_suppressed_when_mark_stale():
     pos.mark_quote_stale = True
     pos.pnl_per_contract = 200.0
     pos.pnl_usd = 200.0
-    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    now = datetime(2026, 6, 19, 13, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert not any(
         a.exit_reason in ("take_profit", "upper_bb_rejection") for a in alerts
@@ -1040,6 +1061,6 @@ def test_swing_hold_near_expiry_cut_still_fires():
     pos = _swing_pos(avg=5.0, mark=4.9, dte=2)  # dte == max_hold_dte
     pos.pnl_per_contract = -10.0
     pos.pnl_usd = -10.0
-    now = datetime(2026, 6, 20, 13, 0, tzinfo=ET)
+    now = datetime(2026, 6, 19, 13, 0, tzinfo=ET)
     alerts = evaluate_exit_alerts(pos, SWING_RULES, now_et=now)
     assert any(a.exit_reason == "time_stop" for a in alerts)
