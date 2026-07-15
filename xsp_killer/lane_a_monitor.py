@@ -1191,9 +1191,11 @@ def run_monitor(
         report.uw_shadow = build_monitor_uw_shadow(now_et=now_et)
         if report.uw_shadow:
             logger.info(
-                "uw_shadow attached (log-only): bias=%s wall=%s",
+                "uw_shadow attached (log-only): flow_bias=%s npt_bias=%s wall=%s iv_rank=%s",
                 (report.uw_shadow.get("flow") or {}).get("net_prem_bias"),
+                (report.uw_shadow.get("net_prem") or {}).get("net_prem_bias"),
                 (report.uw_shadow.get("gex") or {}).get("wall_side"),
+                (report.uw_shadow.get("iv_rank") or {}).get("iv_rank_1y"),
             )
     except Exception as exc:
         logger.info("uw_shadow skipped: %s", exc)

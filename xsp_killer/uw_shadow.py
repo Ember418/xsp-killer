@@ -1,6 +1,7 @@
 """TipDrop UW Advanced shadow overlay — log/brief only.
 
-Attaches SPY flow + GEX (+ optional dark pool) to Lane A monitor reports.
+Attaches SPY flow + local GEX fallback + net-prem ticks + iv-rank + UW
+gex-levels (+ optional dark pool) to Lane A monitor reports.
 Never places, never vetoes. Fail-open if TipDrop/UW unavailable.
 Shares TipDrop's UW rate limiter / daily budget (no duplicate limiter).
 """
@@ -218,6 +219,114 @@ def build_darkpool_summary(provider: Any, ticker: str = "SPY") -> dict[str, Any]
     }
 
 
+def build_net_prem_summary(provider: Any, ticker: str = "SPY") -> dict[str, Any] | None:
+    """Sum UW net-prem-ticks for *ticker*. Returns None on failure."""
+    if not hasattr(provider, "_request"):
+        return None
+    try:
+        payload = provider._request(
+            f"/stock/{ticker}/net-prem-ticks",
+            cache_key=f"uw:npt:{ticker}",
+            cache_ttl=60,
+        )
+        rows = (payload or {}).get("data")
+        if not isinstance(rows, list) or not rows:
+            return None
+
+        call_sum = 0.0
+        put_sum = 0.0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            call_sum += _f(row.get("net_call_premium"))
+            put_sum += _f(row.get("net_put_premium"))
+
+        net = call_sum - put_sum
+        if abs(net) < 1.0:
+            bias = "neutral"
+        elif net > 0:
+            bias = "call"
+        else:
+            bias = "put"
+
+        last = rows[-1] if isinstance(rows[-1], dict) else {}
+        return {
+            "ticker": ticker,
+            "n_ticks": len(rows),
+            "net_call_prem": round(call_sum, 2),
+            "net_put_prem": round(put_sum, 2),
+            "net_prem": round(net, 2),
+            "net_prem_bias": bias,
+            "last_tape_time": last.get("tape_time"),
+        }
+    except Exception as exc:  # noqa: BLE001 — fail-open
+        logger.debug("uw_shadow net-prem fetch failed: %s", exc)
+        return None
+
+
+def build_iv_rank_summary(provider: Any, ticker: str = "SPY") -> dict[str, Any] | None:
+    """UW IV rank for *ticker*. Returns None on failure."""
+    if not hasattr(provider, "get_iv_rank_uw"):
+        return None
+    try:
+        row = provider.get_iv_rank_uw(ticker)
+        if row is None or not isinstance(row, dict):
+            return None
+
+        raw = row.get("iv_rank_1y")
+        if raw is None or raw == "":
+            raw = row.get("iv_rank")
+        iv_rank_1y = _f(raw) if raw is not None and raw != "" else None
+
+        return {
+            "ticker": ticker,
+            "iv_rank_1y": iv_rank_1y,
+            "raw": row,
+        }
+    except Exception as exc:  # noqa: BLE001 — fail-open
+        logger.debug("uw_shadow iv-rank fetch failed: %s", exc)
+        return None
+
+
+def build_gex_levels_summary(provider: Any, ticker: str = "SPY") -> dict[str, Any] | None:
+    """UW gex-levels for *ticker*. Returns None on failure."""
+    if not hasattr(provider, "_request"):
+        return None
+    try:
+        payload = provider._request(
+            f"/stock/{ticker}/gex-levels",
+            cache_key=f"uw:gexlvl:{ticker}",
+            cache_ttl=300,
+        )
+        rows = (payload or {}).get("data")
+        if not isinstance(rows, list) or not rows:
+            return None
+
+        latest = rows[-1]
+        if not isinstance(latest, dict):
+            return None
+
+        logger.debug("uw_shadow gex-levels keys: %s", list(latest.keys()))
+
+        gw_raw = latest.get("gamma_wall")
+        if gw_raw is None or gw_raw == "":
+            gw_raw = latest.get("gex_level")
+        cw_raw = latest.get("call_wall")
+        pw_raw = latest.get("put_wall")
+
+        return {
+            "ticker": ticker,
+            "n_rows": len(rows),
+            "latest_raw": latest,
+            "gamma_wall": _f(gw_raw) if gw_raw is not None and gw_raw != "" else None,
+            "call_wall": _f(cw_raw) if cw_raw is not None and cw_raw != "" else None,
+            "put_wall": _f(pw_raw) if pw_raw is not None and pw_raw != "" else None,
+        }
+    except Exception as exc:  # noqa: BLE001 — fail-open
+        logger.debug("uw_shadow gex-levels fetch failed: %s", exc)
+        return None
+
+
 def build_monitor_uw_shadow(
     *,
     ticker: str = "SPY",
@@ -243,6 +352,9 @@ def build_monitor_uw_shadow(
             "ticker": ticker,
             "flow": build_flow_summary(provider, ticker=ticker),
             "gex": build_gex_summary(provider, ticker=ticker),
+            "net_prem": build_net_prem_summary(provider, ticker=ticker),
+            "iv_rank": build_iv_rank_summary(provider, ticker=ticker),
+            "gex_levels": build_gex_levels_summary(provider, ticker=ticker),
         }
         if _darkpool_enabled():
             out["darkpool"] = build_darkpool_summary(provider, ticker=ticker)
